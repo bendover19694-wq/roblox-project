@@ -111,6 +111,12 @@ Every new mission opens a liftoff card with a countdown (3, 2, 1, LIFTOFF) and a
 ## Mission Patches
 A collection derived from visits and career stage (nothing extra is saved): one patch per destination (earned when a trip has reached it) and one per career stage (earned at that stage). Unearned patches show as "???". The collection lives under More, Mission patches.
 
+## Jackpot trips
+About 1 arrival in 12 (`Tuning.jackpot.chance` = 0.08) pays triple. The server rolls it in `completeTrip`, so it also applies to offline trips. The client shows a gold "JACKPOT +$X" pop, a big coin burst and confetti. It is free: it is never sold, and no purchase changes the chance. The 2x Cash pass doubles the payout like any other cash. Logic: `Economy.jackpotBonus` (tested).
+
+## Thrusters (tap a flying rocket)
+Tap a rocket marker on the map to fire its thrusters. Each tap cuts `Tuning.thrust.seconds` (1.5 s) off the current trip, capped at `maxShare` (50%) of that trip. The cap resets on every new trip. Taps go through their own rate limiter, so fast tapping never blocks other actions. Feedback: smoke puffs, a "+1.5s" float, and a "THRUST xN" combo with rising pitch. At the cap the float reads "MAX THRUST". This gives active players something to do between arrivals, while idle players lose nothing. Logic: `Economy.thrust` (tested). A one-time tip appears once the first rocket is flying.
+
 ## Money and conversion notes
 New cash sources: contract rewards, playtime gifts and the Perfect Launch bonus. New sink: research. All three sources scale with `stageRewardMult` so they stay meaningful at every stage.
 - **Honest examples:** each shop card shows a number computed from the player's own best mission ("+$A to +$2A per trip", "<duration> to <duration> per trip"), never an inflated one.

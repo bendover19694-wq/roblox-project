@@ -237,9 +237,11 @@ function Kit.button(o: ButtonOpts): any
 		ic.AnchorPoint = Vector2.new(0, 0.5)
 		ic.Parent = face
 		local function place()
-			-- TextBounds comes back in screen pixels (after every UIScale above); offsets are design pixels
+			-- The padding moves the child origin too: the text's left edge sits at 0.5 + pad / 2 - tb / 2 of the
+			-- face, which is (0.5, -tb / 2) in the padded box, so the icon goes one `pad` further left.
+			-- TextBounds comes back in screen pixels (after every UIScale above); offsets are design pixels.
 			local tb = face.TextBounds.X / Kit.totalScale(face)
-			ic.Position = UDim2.new(0.5, -(pad / 2 + tb / 2), 0.5, 0)
+			ic.Position = UDim2.new(0.5, -(tb / 2 + pad), 0.5, 0)
 		end
 		face:GetPropertyChangedSignal("TextBounds"):Connect(place)
 		place()

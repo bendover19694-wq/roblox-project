@@ -17,4 +17,6 @@ return {
 	arrival = s("action_jump_land.mp3", 0.25, 1.2),
 	stage = s("action_get_up.mp3", 0.5, 1.0),
 	whoosh = s("action_falling.ogg", 0.15, 1.5),
+	thrust = s("volume_slider.ogg", 0.3, 1.5),
+	jackpot = s("action_get_up.mp3", 0.6, 1.25),
 } :: { [string]: { id: string, volume: number, speed: number } }

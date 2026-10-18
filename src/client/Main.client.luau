@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 
+local Tuning = require(ReplicatedStorage.Shared.Config.Tuning)
 local App = require(script.Parent.App)
 local UI = script.Parent.UI
 local Advisor = require(UI.Advisor)
@@ -56,6 +57,23 @@ App.routes.openDaily = Modals.daily
 App.routes.openShop = Shop.open
 App.routes.openSettings = Modals.settings
 App.routes.openHelp = Modals.help
+-- Thruster tap on a map rocket: instant puff, then a float once the server accepts the tap.
+App.routes.thrust = function(missionId: string, screen: Vector2)
+	Juice.thrust(screen, nil)
+	Juice.thrust(screen, if App.act("thrust", missionId) then Tuning.thrust.seconds else 0)
+end
+-- One-time tip once the first rocket is flying.
+local thrustTipShown = false
+App.changed.Event:Connect(function()
+	local v = App.view
+	if not thrustTipShown and v and #v.missions > 0 and v.tips and not v.tips.thrust then
+		thrustTipShown = true
+		task.delay(6, function()
+			Toasts.show("Tip: tap a flying rocket to fire its thrusters!", "info")
+			App.act("seenTip", "thrust")
+		end)
+	end
+end)
 
 -- First state: either found the agency, or start playing.
 local started = false

@@ -20,10 +20,14 @@ def mcp(*args):
     return subprocess.run(MCP + list(args), capture_output=True, text=True, encoding="utf-8", cwd=ROOT).stdout.strip()
 
 
-def click(text, wait=700):
-    out = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "ui_click.py"), SID, text, str(wait)], capture_output=True, text=True, encoding="utf-8", cwd=ROOT).stdout.strip()
-    print(" ", out)
-    return "clicked" in out
+def click(text, wait=700, tries=1):
+    # tries > 1 retries once a second while the element isn't on screen yet (e.g. behind the boot screen)
+    for i in range(tries):
+        out = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "ui_click.py"), SID, text, str(wait)], capture_output=True, text=True, encoding="utf-8", cwd=ROOT).stdout.strip()
+        if "clicked" in out or i == tries - 1:
+            print(" ", out)
+            return "clicked" in out
+        time.sleep(1)
 
 
 def type_text(text):
@@ -41,7 +45,7 @@ def shot(label):
 
 time.sleep(10)
 shot("start")
-click("Agency name", 300)
+click("Agency name", 300, tries=30)
 type_text("Nova Orbital")
 click("LAUNCH MY AGENCY", 1500)
 shot("agency_created")

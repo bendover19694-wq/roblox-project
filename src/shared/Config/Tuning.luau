@@ -51,6 +51,10 @@ return {
 		},
 	},
 	stageRewardMult = { 1, 2, 4, 8, 16, 32 },
+	-- Free lucky trips: about 1 arrival in 12 pays triple. Never sold; purchases never change the chance.
+	jackpot = { chance = 0.08, mult = 3 },
+	-- Tap a flying rocket to fire its thrusters: each tap removes `seconds`, at most `maxShare` of a trip.
+	thrust = { seconds = 1.5, maxShare = 0.5 },
 	perfectLaunch = { opensAfter = 2.6, windowSeconds = 0.5, graceSeconds = 0.3, bonus = 0.25 },
 	contracts = {
 		count = 3,

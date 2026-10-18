@@ -16,7 +16,8 @@ function Sounds.enabled(): boolean
 	return Players.LocalPlayer:GetAttribute("Sound") ~= false
 end
 
-function Sounds.play(name: string)
+-- `pitch` multiplies the configured speed (rising pitch on combos).
+function Sounds.play(name: string, pitch: number?)
 	local def = Config[name]
 	if not def or not Sounds.enabled() then
 		return
@@ -35,6 +36,7 @@ function Sounds.play(name: string)
 		snd.Parent = SoundService
 		made[name] = snd
 	end
+	snd.PlaybackSpeed = def.speed * (pitch or 1)
 	snd:Play()
 end
 

@@ -186,4 +186,20 @@ function Economy.tripsBetween(arriveAt: number, _from: number, to: number, tripS
 	return n, arriveAt + n * cycle
 end
 
+-- Free lucky trip. `roll` is a uniform 0..1 number from the server's Random. Returns the extra cash.
+function Economy.jackpotBonus(profit: number, roll: number): number
+	local j = Tuning.jackpot
+	if profit <= 0 or roll >= j.chance then
+		return 0
+	end
+	return math.floor(profit * (j.mult - 1))
+end
+
+-- Seconds one thruster tap removes from a flight: `remaining` until arrival, `tripSec` the full trip,
+-- `used` already removed this trip. Never more than maxShare of the trip in total.
+function Economy.thrust(remaining: number, tripSec: number, used: number): number
+	local t = Tuning.thrust
+	return math.max(0, math.min(t.seconds, tripSec * t.maxShare - used, remaining))
+end
+
 return Economy

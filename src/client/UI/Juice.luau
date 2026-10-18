@@ -6,6 +6,7 @@ local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Format = require(ReplicatedStorage.Shared.Format)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Icons = require(script.Parent.Icons)
 local Kit = require(script.Parent.Kit)
@@ -88,6 +89,92 @@ function Juice.confetti()
 	end
 end
 
+-- Text that pops at `screen` (true screen pixels), rises and fades.
+function Juice.float(screen: Vector2, text: string, color: Color3, size: number?)
+	local at = toLocal(screen) - layer.AbsolutePosition
+	local px = size or 20
+	local label = Kit.new("TextLabel", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.fromOffset(at.X, at.Y - 10),
+		Size = UDim2.fromOffset(320, px + 8),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = color,
+		TextSize = px,
+		FontFace = Theme.mono,
+		TextStrokeColor3 = Theme.navy,
+		TextStrokeTransparency = 0.2,
+		Parent = layer,
+	})
+	if Motion.reduced() then
+		task.delay(0.9, function()
+			label:Destroy()
+		end)
+		return
+	end
+	Motion.pop(label)
+	Kit.tween(label, 1.1, {
+		Position = UDim2.fromOffset(at.X, at.Y - 10 - px * 2.4),
+		TextTransparency = 1,
+		TextStrokeTransparency = 1,
+	}, Enum.EasingStyle.Quad, Enum.EasingDirection.In).Completed
+		:Connect(function()
+			label:Destroy()
+		end)
+end
+
+-- Small smoke puffs that burst out of `screen` and fade.
+local function puffs(screen: Vector2, n: number)
+	if Motion.reduced() then
+		return
+	end
+	local at = toLocal(screen) - layer.AbsolutePosition
+	for _ = 1, n do
+		local d = rng:NextInteger(8, 14)
+		local puff = Kit.new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromOffset(at.X, at.Y),
+			Size = UDim2.fromOffset(d, d),
+			BackgroundColor3 = Theme.white,
+			BackgroundTransparency = 0.2,
+			Parent = layer,
+		}, { Kit.round() })
+		local a = rng:NextNumber(0, math.pi * 2)
+		local r = rng:NextNumber(14, 26)
+		Kit.tween(puff, 0.45, {
+			Position = UDim2.fromOffset(at.X + math.cos(a) * r, at.Y + math.sin(a) * r),
+			Size = UDim2.fromOffset(d * 2.2, d * 2.2),
+			BackgroundTransparency = 1,
+		}).Completed
+			:Connect(function()
+				puff:Destroy()
+			end)
+	end
+end
+
+-- Thruster tap feedback on a map rocket. `gained` is nil while the server hasn't answered yet,
+-- 0 when this trip's thrust cap is reached.
+local combo, lastTap = 0, 0
+function Juice.thrust(screen: Vector2, gained: number?)
+	if gained == nil then
+		local t = os.clock()
+		combo = if t - lastTap < 1 then combo + 1 else 1
+		lastTap = t
+		puffs(screen, 3)
+		Sounds.play("thrust", 1 + math.min(combo, 12) * 0.05)
+		return
+	end
+	if gained <= 0 then
+		Juice.float(screen, "MAX THRUST", Theme.muted, 14)
+		return
+	end
+	if combo >= 3 then
+		Juice.float(screen, `THRUST x{combo}`, Theme.orange, 18 + math.min(combo, 10))
+	else
+		Juice.float(screen, `+{string.format("%.1f", gained)}s`, Theme.cyan, 16)
+	end
+end
+
 local function screenCentre(): Vector2
 	return workspace.CurrentCamera.ViewportSize / 2
 end
@@ -115,9 +202,25 @@ function Juice.start(canvas: Frame)
 			Map.ping(data.dest)
 			Sounds.play("arrival")
 			local from = Map.nodeCenter(data.dest)
-			if from and os.clock() - lastBurst >= 0.6 then
-				lastBurst = os.clock()
-				Juice.coins(from, 5)
+			local jackpot = if type(data.jackpot) == "number" then data.jackpot else 0
+			local profit = if type(data.profit) == "number" then data.profit else 0
+			if from and jackpot > 0 then
+				-- the lucky trip: big gold pop, a fat coin burst, a flash of confetti
+				Juice.float(from, `JACKPOT +{Format.money(profit + jackpot)}`, Theme.amber, 30)
+				Juice.coins(from, 14)
+				Sounds.play("jackpot")
+				Juice.confetti()
+			elseif from then
+				Juice.float(
+					from,
+					`{if profit >= 0 then "+" else ""}{Format.money(profit)}`,
+					if profit >= 0 then Theme.green else Theme.red,
+					18
+				)
+				if os.clock() - lastBurst >= 0.6 then
+					lastBurst = os.clock()
+					Juice.coins(from, 5)
+				end
 			end
 		elseif kind == "reward" then
 			Juice.coins(screenCentre(), 8)

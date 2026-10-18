@@ -153,3 +153,22 @@ test("Economy.earn counts only positive amounts as lifetime earnings", function(
 	Economy.earn(p, -30)
 	assert(p.cash == 120 and p.lifetimeEarned == 50, "loss")
 end)
+
+test("jackpot pays (mult - 1) x profit only on a lucky roll, never on a losing trip", function()
+	local Tuning = shared("Config/Tuning")
+	local j = Tuning.jackpot
+	assert(Economy.jackpotBonus(1000, j.chance - 0.001) == 1000 * (j.mult - 1), "lucky roll should pay")
+	assert(Economy.jackpotBonus(1000, j.chance) == 0, "roll at the chance boundary should not pay")
+	assert(Economy.jackpotBonus(1000, 0.99) == 0, "unlucky roll paid")
+	assert(Economy.jackpotBonus(-500, 0) == 0, "a losing trip must not jackpot")
+end)
+
+test("thrust taps are capped per tap, per trip, and by the time left", function()
+	local Tuning = shared("Config/Tuning")
+	local t = Tuning.thrust
+	assert(Economy.thrust(20, 30, 0) == t.seconds, "normal tap")
+	assert(Economy.thrust(0.5, 30, 0) == 0.5, "can't skip past arrival")
+	local cap = 30 * t.maxShare
+	assert(Economy.thrust(20, 30, cap) == 0, "trip cap reached")
+	assert(math.abs(Economy.thrust(20, 30, cap - 0.4) - 0.4) < 1e-9, "partial tap up to the cap")
+end)

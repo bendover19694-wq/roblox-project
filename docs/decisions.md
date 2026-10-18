@@ -184,3 +184,13 @@ A smaller share is **feel and look**, where a human must judge: ship readability
 - Contracts use UTC days, so the reset time varies by region.
 
 **Status:** accepted.
+
+## D-015 · 2026-10-17 · More dopamine: jackpot trips and thruster taps
+- **Owner direction:** "make it funner, dopamine".
+- **Jackpot trips** add a variable reward to every arrival. They are free and server-rolled, so they are not a paid random item.
+- **Thruster taps** make the map interactive, with real but capped value. The cap is 50% of each trip, so idle play stays the main path and tapping only speeds it up.
+- **Rejected:**
+  - Paid luck boosts (hard rule).
+  - Uncapped tapping, which would turn the game into a clicker and break the trip-time economy.
+- **Status:** accepted. Studio check pending in this session.
+

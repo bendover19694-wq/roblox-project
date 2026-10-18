@@ -212,11 +212,25 @@ local function drawMissions()
 				end)
 			end
 		end
-		local marker = Icons.make("rocket", 26, Theme.white)
-		marker.AnchorPoint = Vector2.new(0.5, 0.5)
-		marker.ZIndex = 5
-		marker.Parent = layer
-		table.insert(markers, { marker = marker, mission = m, a = earth, b = target })
+		-- the rocket is a tap target: tapping fires its thrusters (a generous 52 px hit area for thumbs)
+		local marker = Kit.new("TextButton", {
+			Name = "Rocket",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(52, 52),
+			BackgroundTransparency = 1,
+			Text = "",
+			ZIndex = 5,
+			Parent = layer,
+		})
+		local icon = Icons.make("rocket", 26, Theme.white)
+		icon.AnchorPoint = Vector2.new(0.5, 0.5)
+		icon.Position = UDim2.fromScale(0.5, 0.5)
+		icon.Parent = marker
+		local missionId = m.id
+		marker.Activated:Connect(function()
+			App.go("thrust", missionId, marker.AbsolutePosition + marker.AbsoluteSize / 2)
+		end)
+		table.insert(markers, { marker = marker, icon = icon, mission = m, a = earth, b = target })
 	end
 end
 
@@ -437,7 +451,7 @@ function Map.start()
 				tangent = -tangent
 			end
 			mk.marker.Position = UDim2.fromOffset(p.X, p.Y)
-			mk.marker.Rotation = math.deg(math.atan2(tangent.Y, tangent.X)) + 45
+			mk.icon.Rotation = math.deg(math.atan2(tangent.Y, tangent.X)) + 45
 			mk.marker.Visible = now < m.arriveAt
 		end
 	end)

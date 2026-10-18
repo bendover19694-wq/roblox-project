@@ -25,6 +25,8 @@ local Telemetry = require(script.Parent.Telemetry)
 local AgencyService = {}
 
 local allowAct = Net.limiter(8, 12)
+local allowThrust = Net.limiter(8, 10) -- thruster taps are their own bucket so fast tapping never blocks real actions
+local luck = Random.new()
 local ready: { [Player]: boolean } = {}
 local passes: { [Player]: { doubleCash: boolean, fastLaunch: boolean } } = {}
 
@@ -170,8 +172,8 @@ local function careerCheck(player: Player, p: any): boolean
 	return changed
 end
 
--- One completed trip for a mission. Returns the trip result.
-local function completeTrip(player: Player, p: any, m: any): Economy.Trip
+-- One completed trip for a mission. Returns the trip result and any jackpot bonus (already paid).
+local function completeTrip(player: Player, p: any, m: any): (Economy.Trip, number)
 	local rocket = findById(p.rockets, m.rocket)
 	local firstVisit = not p.stats.visited[m.dest]
 	local t = Economy.trip(
@@ -182,10 +184,14 @@ local function completeTrip(player: Player, p: any, m: any): Economy.Trip
 		cashMult(player) * Progression.tripMult(m),
 		Research.effects(p.research)
 	)
-	Economy.earn(p, t.profit)
+	local bonus = Economy.jackpotBonus(t.profit, luck:NextNumber())
+	Economy.earn(p, t.profit + bonus)
 	Telemetry.accrue(player, "Trip", t.profit)
+	if bonus > 0 then
+		Telemetry.accrue(player, "Jackpot", bonus)
+	end
 	m.trips += 1
-	m.earned += t.profit
+	m.earned += t.profit + bonus
 	m.lastProfit = t.profit
 	m.lastLoad = t.load
 	rocket.trips += 1
@@ -194,13 +200,14 @@ local function completeTrip(player: Player, p: any, m: any): Economy.Trip
 	p.stats.passengers += t.filled
 	p.stats.visited[m.dest] = true
 	Progression.onTrip(player, p, m, t, firstVisit)
-	return t
+	return t, bonus
 end
 
 local function schedule(player: Player, p: any, m: any, rocketModel: string, from: number)
 	local sec = Economy.tripSeconds(rocketModel, m.dest, fast(player), Research.effects(p.research).speedMult)
 	m.departAt = from
 	m.arriveAt = from + sec
+	m.thrusted = 0
 end
 
 -- ACTIONS ------------------------------------------------------------------------------------------
@@ -348,6 +355,26 @@ function actions.setFlag(player, p, key, value)
 	return true, nil
 end
 
+-- Tap a flying rocket: its thrusters cut a little off this trip (capped per trip by Economy.thrust).
+function actions.thrust(_player, p, missionId)
+	local m = if type(missionId) == "string" and #missionId <= 12
+		then findById(p.missions, missionId)
+		else nil
+	if not m then
+		return false, nil
+	end
+	local t = now()
+	local secs = Economy.thrust(m.arriveAt - t, m.arriveAt - m.departAt, m.thrusted or 0)
+	if secs <= 0 then
+		return false, nil
+	end
+	-- shift both ends so the flight keeps its length and the rocket visibly jumps ahead
+	m.departAt -= secs
+	m.arriveAt -= secs
+	m.thrusted = (m.thrusted or 0) + secs
+	return true, nil
+end
+
 function actions.seenTip(_player, p, tipId)
 	if type(tipId) ~= "string" or #tipId > 24 then
 		return false, nil
@@ -393,8 +420,8 @@ local function catchUp(player: Player, p: any)
 			local n = Economy.tripsBetween(m.arriveAt, m.departAt, windowEnd, sec)
 			n = math.min(n, 2000)
 			for _ = 1, n do
-				local r = completeTrip(player, p, m)
-				earned += r.profit
+				local r, bonus = completeTrip(player, p, m)
+				earned += r.profit + bonus
 				trips += 1
 				pax += r.filled
 			end
@@ -464,7 +491,11 @@ end
 
 function AgencyService.start()
 	Remotes.Act.OnServerInvoke = function(player: Player, action: any, ...: any)
-		if not allowAct(player) then
+		if action == "thrust" then
+			if not allowThrust(player) then
+				return false, nil -- silent: a fast tapper just loses the extra taps
+			end
+		elseif not allowAct(player) then
 			return false, "Slow down"
 		end
 		local p = DataService.peek(player)
@@ -552,20 +583,22 @@ function AgencyService.start()
 						if t >= m.arriveAt then
 							local rocket = findById(p.rockets, m.rocket)
 							if rocket then
-								local r = completeTrip(player, p, m)
+								local r, bonus = completeTrip(player, p, m)
 								schedule(player, p, m, rocket.model, m.arriveAt + Tuning.turnaroundSeconds)
 								if p.stats.trips == 1 then
 									Telemetry.funnel(player, 4, p)
 								end
 								Remotes.Toast:FireClient(
 									player,
-									`{Destinations.byId[m.dest].code} arrival, +{Format.money(r.profit)}`,
+									`{Destinations.byId[m.dest].code} arrival, +{Format.money(
+										r.profit + bonus
+									)}`,
 									"arrival"
 								)
 								Remotes.Celebrate:FireClient(
 									player,
 									"arrival",
-									{ dest = m.dest, profit = r.profit }
+									{ dest = m.dest, profit = r.profit, jackpot = bonus }
 								)
 								if p.stats.trips % 100 == 0 then
 									toast(
