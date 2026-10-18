@@ -1,5 +1,5 @@
 --!strict
--- "Nova · Mission Control": the first-session guide. One speech bubble plus a pulsing ring on the exact
+-- "Nova  |  Mission Control": the first-session guide. One speech bubble plus a pulsing ring on the exact
 -- control to press next. Steps are derived from game state, so it can never get stuck out of sync.
 
 local Players = game:GetService("Players")
@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 
 local App = require(script.Parent.Parent.App)
 local Hud = require(script.Parent.Hud)
+local Icons = require(script.Parent.Icons)
 local Kit = require(script.Parent.Kit)
 local Map = require(script.Parent.Map)
 local Modals = require(script.Parent.Modals)
@@ -19,7 +20,7 @@ local Advisor = {}
 local bubble: Frame
 local message: TextLabel
 local ring: Frame
-local arrow: TextLabel
+local arrow: Frame
 local target: GuiObject? = nil
 local finished = false
 
@@ -95,11 +96,11 @@ function Advisor.start(canvas: Frame)
 		ZIndex = 40,
 		Parent = canvas,
 	}, { Kit.stroke(Theme.line, 1) })
-	local avatar = Kit.iconCircle("👩‍🚀", Theme.blueSoft, 72, Theme.ink)
+	local avatar = Kit.iconCircle("astronaut", Theme.orange, 72, Theme.white)
 	avatar.Position = UDim2.fromOffset(18, 30)
 	avatar.Parent = bubble
 	Kit.text(
-		"Nova · Mission Control",
+		"Nova  |  Mission Control",
 		16,
 		Theme.heavy,
 		Theme.blue,
@@ -133,13 +134,10 @@ function Advisor.start(canvas: Frame)
 		{ BackgroundTransparency = 1, Visible = false, Parent = overlay },
 		{ Kit.corner(18), Kit.stroke(Theme.orange, 5) }
 	)
-	arrow = Kit.text("⬇", 40, Theme.heavy, Theme.orange, {
-		AnchorPoint = Vector2.new(0.5, 1),
-		Size = UDim2.fromOffset(48, 48),
-		TextXAlignment = Enum.TextXAlignment.Center,
-		Visible = false,
-		Parent = overlay,
-	})
+	arrow = Icons.make("arrowDown", 40, Theme.orange)
+	arrow.AnchorPoint = Vector2.new(0.5, 1)
+	arrow.Visible = false
+	arrow.Parent = overlay
 
 	App.changed.Event:Connect(update)
 	App.uiChanged.Event:Connect(function()

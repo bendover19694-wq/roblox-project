@@ -1,6 +1,6 @@
 --!strict
 -- Destinations. Map positions are stylised (scale 0..1 of the map area), not astronomy.
--- demand = units wanting to fly per trip · fare = per unit at Standard · competition = share rivals take
+-- demand = units wanting to fly per trip, fare = per unit at Standard, competition = share rivals take
 
 export type Destination = {
 	id: string,

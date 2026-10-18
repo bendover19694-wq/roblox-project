@@ -11,7 +11,9 @@ local Destinations = require(ReplicatedStorage.Shared.Config.Destinations)
 local Economy = require(ReplicatedStorage.Shared.Economy)
 local Tuning = require(ReplicatedStorage.Shared.Config.Tuning)
 local App = require(script.Parent.Parent.App)
+local Icons = require(script.Parent.Icons)
 local Kit = require(script.Parent.Kit)
+local Motion = require(script.Parent.Motion)
 local Theme = require(script.Parent.Theme)
 
 local Map = {}
@@ -23,6 +25,7 @@ local nodes: { [string]: any } = {}
 local markers: { any } = {}
 local pickCallback: ((string) -> ())? = nil
 local pickable: { [string]: boolean } = {}
+local drawn: { [string]: boolean } = {} -- mission ids whose arc has already drawn on
 
 local function S(): number
 	return math.clamp(workspace.CurrentCamera.ViewportSize.Y / 1080, 0.45, 1.4)
@@ -69,7 +72,7 @@ local function label(code: string, name: string): TextButton
 		Kit.corner(15),
 		Kit.pad(12, 0),
 		Kit.list(6, true),
-		Kit.text(`<b>{code}</b> <font color="#6B7488">· {name}</font>`, 15, Theme.medium, Theme.ink, {
+		Kit.text(`<b>{code}</b> <font color="#6B7488">  |  {name}</font>`, 15, Theme.medium, Theme.ink, {
 			Name = "Name",
 			AutomaticSize = Enum.AutomaticSize.X,
 			Size = UDim2.fromScale(0, 1),
@@ -79,13 +82,13 @@ local function label(code: string, name: string): TextButton
 	})
 end
 
-local function setTag(node: any, text: string?, fg: Color3?, bg: Color3?)
+local function setTag(node: any, text: string?, fg: Color3?, bg: Color3?, icon: string?)
 	local old = node.label:FindFirstChild("Tag")
 	if old then
 		old:Destroy()
 	end
 	if text then
-		local chip = Kit.chip(text, fg :: Color3, bg :: Color3, 12)
+		local chip = Kit.chip(text, fg :: Color3, bg :: Color3, 12, icon)
 		chip.Name = "Tag"
 		chip.LayoutOrder = 2
 		chip.Size = UDim2.fromOffset(0, 22)
@@ -191,24 +194,28 @@ local function drawMissions()
 	for _, m in v.missions do
 		local d = Destinations.byId[m.dest]
 		local target = screenPos(d.pos)
+		local reveal = not drawn[m.id] and not Motion.reduced()
+		drawn[m.id] = true
 		for i = 1, 24 do
 			local p = bezier(earth, target, i / 25)
-			Kit.new("Frame", {
+			local dot = Kit.new("Frame", {
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.fromOffset(p.X, p.Y),
 				Size = UDim2.fromOffset(4, 4),
 				BackgroundColor3 = color,
-				BackgroundTransparency = 0.25,
+				BackgroundTransparency = if reveal then 1 else 0.25,
 				Parent = arcs,
 			}, { Kit.round() })
+			if reveal then
+				task.delay(0.8 * i / 24, function()
+					dot.BackgroundTransparency = 0.25
+				end)
+			end
 		end
-		local marker = Kit.text("🚀", math.floor(26 * S()), Theme.bold, color, {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Size = UDim2.fromOffset(34, 34),
-			TextXAlignment = Enum.TextXAlignment.Center,
-			ZIndex = 5,
-			Parent = layer,
-		})
+		local marker = Icons.make("rocket", 26, Theme.white)
+		marker.AnchorPoint = Vector2.new(0.5, 0.5)
+		marker.ZIndex = 5
+		marker.Parent = layer
 		table.insert(markers, { marker = marker, mission = m, a = earth, b = target })
 	end
 end
@@ -227,20 +234,20 @@ local function refreshTags()
 		local locked = v.stage < d.stage
 		node.body.BackgroundTransparency = if locked then 0.55 else 0
 		if locked then
-			setTag(node, `🔒 STAGE {d.stage}`, Theme.muted, Theme.soft)
+			setTag(node, `STAGE {d.stage}`, Theme.muted, Theme.soft, "lock")
 		elseif serving[d.id] then
 			setTag(node, "SERVING", Theme.greenDark, Theme.greenSoft)
 		elseif Economy.demandLabel(d.id) == "Very high" then
-			setTag(node, "↑ HIGH DEMAND", Theme.greenDark, Theme.greenSoft)
+			setTag(node, "HIGH DEMAND", Theme.greenDark, Theme.greenSoft, "arrowUp")
 		elseif d.competition >= 0.25 then
-			setTag(node, "× COMPETITION", Theme.red, Theme.redSoft)
+			setTag(node, "COMPETITION", Theme.red, Theme.redSoft, "chart")
 		else
 			setTag(node, nil)
 		end
 	end
 	local earthLabel = nodes.earth.label:FindFirstChild("Name")
 	earthLabel.Text =
-		`<b>EARTH</b> <font color="#6B7488">· {v.agency.name ~= "" and v.agency.name or "Your spaceport"}</font>`
+		`<b>EARTH</b> <font color="#6B7488">  |  {v.agency.name ~= "" and v.agency.name or "Your spaceport"}</font>`
 end
 
 -- Pick mode: highlight `ids` (green rings), dim the rest. Pass nil to exit.
@@ -264,6 +271,45 @@ end
 function Map.node(id: string): GuiObject?
 	local n = nodes[id]
 	return n and n.root
+end
+
+-- Centre of a node in true screen pixels. The Map ignores the GUI inset, so no offset is needed here;
+-- overlays that honour the inset (Juice) subtract GuiService:GetGuiInset() themselves.
+function Map.nodeCenter(destId: string): Vector2?
+	local n = nodes[destId]
+	if not n then
+		return nil
+	end
+	return n.root.AbsolutePosition + n.root.AbsoluteSize / 2
+end
+
+-- A cyan ring that grows from 1x to 2.2x the node and fades. Reduced motion: one short highlight.
+function Map.ping(destId: string)
+	local n = nodes[destId]
+	if not n then
+		return
+	end
+	local ring = Kit.new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		ZIndex = 6,
+		Parent = n.root,
+	}, { Kit.round() })
+	local stroke = Kit.stroke(Theme.cyan, 4, 0)
+	stroke.Parent = ring
+	if Motion.reduced() then
+		ring.Size = UDim2.fromScale(1.3, 1.3)
+		Kit.tween(stroke, 0.3, { Transparency = 1 }).Completed:Connect(function()
+			ring:Destroy()
+		end)
+		return
+	end
+	Kit.tween(ring, 0.6, { Size = UDim2.fromScale(2.2, 2.2) })
+	Kit.tween(stroke, 0.6, { Transparency = 1 }).Completed:Connect(function()
+		ring:Destroy()
+	end)
 end
 
 function Map.start()

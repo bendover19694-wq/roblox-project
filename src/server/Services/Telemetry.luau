@@ -1,6 +1,6 @@
 --!strict
 -- AnalyticsService wrapper. Server-only; every call is pcall'd so analytics can never break gameplay.
--- Funnel steps (docs/launch-liveops-and-metrics.md §4): logged once per player, in order.
+-- Funnel steps (docs/launch-liveops-and-metrics.md section 4): logged once per player, in order.
 
 local AnalyticsService = game:GetService("AnalyticsService")
 

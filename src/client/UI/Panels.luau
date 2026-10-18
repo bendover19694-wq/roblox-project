@@ -1,25 +1,29 @@
 --!strict
--- Right-hand slide-in panels: Missions, Fleet, Career, More. Rebuilt from the view; live bits tick at 4 Hz.
+-- Right-hand panels: Missions, Fleet, Career, Mission patches, More. They slide and fade in from the right when
+-- opened (switching tabs just re-renders). Rebuilt from the view; live bits tick at 4 Hz.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Destinations = require(ReplicatedStorage.Shared.Config.Destinations)
 local Economy = require(ReplicatedStorage.Shared.Economy)
 local Format = require(ReplicatedStorage.Shared.Format)
+local Patches = require(ReplicatedStorage.Shared.Patches)
 local Rockets = require(ReplicatedStorage.Shared.Config.Rockets)
 local Tuning = require(ReplicatedStorage.Shared.Config.Tuning)
 local App = require(script.Parent.Parent.App)
+local Icons = require(script.Parent.Icons)
 local Kit = require(script.Parent.Kit)
+local Motion = require(script.Parent.Motion)
 local RocketView = require(script.Parent.RocketView)
+local Sections = require(script.Parent.Sections)
 local Theme = require(script.Parent.Theme)
 
 local Panels = {}
 
-local root: Frame
+local root: CanvasGroup
 local body: ScrollingFrame
-local titleLabel: TextLabel
-local subLabel: TextLabel
-local iconHolder: Frame
+local headHolder: Frame
+local shown = false -- whether the panel is open, so only opening and closing animate
 local live: { () -> () } = {}
 Panels.anchors = {} :: { [string]: GuiObject } -- named controls the advisor can point at
 
@@ -57,11 +61,8 @@ function Panels.status(m: any, now: number): (string, number)
 end
 
 local function header(icon: string, title: string, sub: string)
-	iconHolder:ClearAllChildren()
-	local ic = Kit.iconCircle(icon, Theme.soft, 52, Theme.blue)
-	ic.Parent = iconHolder
-	titleLabel.Text = title
-	subLabel.Text = sub
+	headHolder:ClearAllChildren()
+	Kit.header(icon, title, sub).Parent = headHolder
 end
 
 local function section(text: string, order: number)
@@ -91,7 +92,7 @@ local function missionCard(m: any, order: number)
 		Parent = card,
 	}, { Kit.round() })
 	Kit.text(
-		`EARTH  →  {d.code}`,
+		`EARTH to {d.code}`,
 		24,
 		Theme.heavy,
 		Theme.ink,
@@ -99,24 +100,24 @@ local function missionCard(m: any, order: number)
 	)
 	local fare, service = Economy.fare(m.fare), Economy.service(m.service)
 	Kit.text(
-		`{d.name} · {fare.name} fare · {service.name}`,
+		`{d.name}  |  {fare.name} fare  |  {service.name}`,
 		15,
 		Theme.medium,
 		Theme.muted,
 		{ Position = UDim2.fromOffset(22, 46), Size = UDim2.new(1, -40, 0, 20), Parent = card }
 	)
 	local quality: { any } = if (m.lastLoad or 1) >= 0.9
-		then { "★ GREAT", Theme.greenDark, Theme.greenSoft }
+		then { "GREAT", Theme.greenDark, Theme.greenSoft, "star" }
 		elseif (m.lastLoad or 1) >= 0.6 then { "OK", Theme.amber, Theme.amberSoft }
 		else { "HALF EMPTY", Theme.red, Theme.redSoft }
-	local chip = Kit.chip(quality[1], quality[2], quality[3], 13)
+	local chip = Kit.chip(quality[1], quality[2], quality[3], 13, quality[4])
 	chip.AnchorPoint = Vector2.new(1, 0)
 	chip.Position = UDim2.new(1, -16, 0, 16)
 	chip.Parent = card
 	Kit.text(
-		`<b>{math.floor((m.lastLoad or 1) * 100)}% full</b> · <b>{if m.trips > 0
+		`<b>{math.floor((m.lastLoad or 1) * 100)}% full</b>  |  <b>{if m.trips > 0
 			then Format.money(m.lastProfit or 0)
-			else "—"}</b> last trip · {m.trips} trips · {spec and spec.name or "?"} #{rocket and rocket.tail or ""}`,
+			else "None yet"}</b> last trip  |  {m.trips} trips  |  {spec and spec.name or "?"} #{rocket and rocket.tail or ""}`,
 		15,
 		Theme.medium,
 		Theme.ink,
@@ -125,7 +126,7 @@ local function missionCard(m: any, order: number)
 	local status = Kit.text(
 		"",
 		13,
-		Theme.heavy,
+		Theme.mono,
 		Theme.blue,
 		{ Position = UDim2.fromOffset(22, 100), Size = UDim2.new(1, -140, 0, 18), Parent = card }
 	)
@@ -196,7 +197,7 @@ local function suggestions(order: number)
 			AutoButtonColor = true,
 			Parent = box,
 		}, { Kit.corner(14) })
-		local ic = Kit.iconCircle("🛰", Theme.greenSoft, 44, Theme.greenDark)
+		local ic = Kit.iconCircle("satellite", Theme.greenSoft, 44, Theme.greenDark)
 		ic.Position = UDim2.fromOffset(12, 12)
 		ic.Parent = row
 		Kit.text(
@@ -207,18 +208,16 @@ local function suggestions(order: number)
 			{ Position = UDim2.fromOffset(68, 12), Size = UDim2.new(1, -110, 0, 22), Parent = row }
 		)
 		Kit.text(
-			`{Economy.demandLabel(d.id)} demand · {d.kind} · distance {d.distance}`,
+			`{Economy.demandLabel(d.id)} demand  |  {d.kind}  |  distance {d.distance}`,
 			14,
 			Theme.regular,
 			Theme.muted,
 			{ Position = UDim2.fromOffset(68, 36), Size = UDim2.new(1, -110, 0, 18), Parent = row }
 		)
-		Kit.text("›", 30, Theme.bold, Theme.faint, {
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -16, 0.5, 0),
-			Size = UDim2.fromOffset(20, 30),
-			Parent = row,
-		})
+		local chev = Icons.make("chevron", 22, Theme.faint)
+		chev.AnchorPoint = Vector2.new(1, 0.5)
+		chev.Position = UDim2.new(1, -16, 0.5, 0)
+		chev.Parent = row
 		row.Activated:Connect(function()
 			App.go("openWizard", d.id)
 		end)
@@ -236,13 +235,18 @@ local function buildMissions()
 			idle += 1
 		end
 	end
-	header("🛰", "Missions", `{#v.missions} active · {idle} rocket{if idle == 1 then "" else "s"} free`)
+	header(
+		"satellite",
+		"Missions",
+		`{#v.missions} active  |  {idle} rocket{if idle == 1 then "" else "s"} free`
+	)
 	local row = Kit.new(
 		"Frame",
 		{ LayoutOrder = 1, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 60), Parent = body }
 	)
 	local newBtn = Kit.button({
-		text = "＋  NEW MISSION",
+		text = "NEW MISSION",
+		icon = "plus",
 		size = UDim2.fromScale(1, 1),
 		onClick = function()
 			App.go("pickDestination")
@@ -277,32 +281,33 @@ local function rocketCard(r: any, order: number)
 		{ Position = UDim2.fromOffset(230, 16), Size = UDim2.new(1, -250, 0, 28), Parent = card }
 	)
 	Kit.text(
-		`#{r.tail} · {spec.class} · {spec.capacity} seats · range {spec.range}`,
+		`#{r.tail}  |  {spec.class}  |  {spec.capacity} seats  |  range {spec.range}`,
 		15,
 		Theme.medium,
 		Theme.muted,
 		{ Position = UDim2.fromOffset(230, 46), Size = UDim2.new(1, -250, 0, 20), Parent = card }
 	)
 	Kit.text(
-		`{r.trips} trips · <font color="#0E8A4F"><b>+{Format.money(r.earned)}</b></font> lifetime`,
+		`{r.trips} trips  |  <font color="#0E8A4F"><b>+{Format.money(r.earned)}</b></font> lifetime`,
 		15,
 		Theme.medium,
 		Theme.ink,
 		{ Position = UDim2.fromOffset(230, 70), Size = UDim2.new(1, -250, 0, 20), Parent = card }
 	)
 	if r.mission then
-		local status = Kit.chip("", Theme.blue, Theme.blueSoft, 13)
+		local status = Kit.chip("", Theme.blue, Theme.blueSoft, 13, "rocket")
 		status.Position = UDim2.fromOffset(230, 104)
 		status.Parent = card
 		local label = status:FindFirstChildWhichIsA("TextLabel") :: TextLabel
+		label.FontFace = Theme.mono
 		table.insert(live, function()
 			local m = missionById(App.view, r.mission)
 			if m then
-				label.Text = "✈ " .. (Panels.status(m, App.now()))
+				label.Text = (Panels.status(m, App.now()))
 			end
 		end)
 	else
-		local ready = Kit.chip("✓ READY FOR MISSION", Theme.greenDark, Theme.greenSoft, 13)
+		local ready = Kit.chip("READY FOR MISSION", Theme.greenDark, Theme.greenSoft, 13, "check")
 		ready.Position = UDim2.fromOffset(230, 104)
 		ready.Parent = card
 		local plan = Kit.button({
@@ -335,7 +340,7 @@ local function buildFleet()
 	for _ in flown do
 		nFlown += 1
 	end
-	header("🚀", "Fleet", `{#v.rockets} rocket{if #v.rockets == 1 then "" else "s"} · {idle} free`)
+	header("rocket", "Fleet", `{#v.rockets} rocket{if #v.rockets == 1 then "" else "s"}  |  {idle} free`)
 	local row = Kit.new(
 		"Frame",
 		{ LayoutOrder = 1, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 60), Parent = body }
@@ -355,7 +360,8 @@ local function buildFleet()
 	})
 	catalog.Parent = row
 	local buy = Kit.button({
-		text = "＋  BUY ROCKET",
+		text = "BUY ROCKET",
+		icon = "plus",
 		color = Theme.green,
 		shade = Theme.greenDark,
 		size = UDim2.fromScale(0.66, 1),
@@ -369,12 +375,17 @@ local function buildFleet()
 	for i, r in v.rockets do
 		rocketCard(r, 10 + i)
 	end
+	Sections.research(body, 100, v)
 end
 
 -- CAREER -------------------------------------------------------------------------------------------
 local function buildCareer()
 	local v = App.view
-	header("🏆", "Career", `{v.stageName} · stage {v.stage} of {v.stageCount}`)
+	header("trophy", "Career", `{v.stageName}  |  stage {v.stage} of {v.stageCount}`)
+	local tick = Sections.contracts(body, 0, v)
+	if tick then
+		table.insert(live, tick)
+	end
 	local hero = Kit.new(
 		"Frame",
 		{ LayoutOrder = 1, BackgroundColor3 = Theme.navyCard, Size = UDim2.new(1, 0, 0, 236), Parent = body },
@@ -476,13 +487,10 @@ local function buildCareer()
 			Parent = row,
 		}, { Kit.round(), Kit.stroke(if g.done then Theme.green else Theme.line, 2) })
 		if g.done then
-			Kit.text(
-				"✓",
-				20,
-				Theme.heavy,
-				Theme.white,
-				{ Size = UDim2.fromScale(1, 1), TextXAlignment = Enum.TextXAlignment.Center, Parent = check }
-			)
+			local mark = Icons.make("check", 20, Theme.white)
+			mark.AnchorPoint = Vector2.new(0.5, 0.5)
+			mark.Position = UDim2.fromScale(0.5, 0.5)
+			mark.Parent = check
 		end
 		Kit.text(
 			g.label,
@@ -493,10 +501,10 @@ local function buildCareer()
 		)
 		local valueText = if g.kind == "earned"
 			then `{Format.money(math.min(g.value, g.target))} / {Format.money(g.target)}`
-			elseif g.kind == "rating" then string.format("%.1f / %.1f★", g.value, g.target)
+			elseif g.kind == "rating" then string.format("%.1f / %.1f star", g.value, g.target)
 			else `{math.min(g.value, g.target)} / {g.target}`
 		Kit.text(
-			`{valueText} · Reward <font color="#0E8A4F"><b>{Format.money(g.reward)}</b></font>`,
+			`{valueText}  |  Reward <font color="#0E8A4F"><b>{Format.money(g.reward)}</b></font>`,
 			15,
 			Theme.medium,
 			Theme.muted,
@@ -555,53 +563,71 @@ local function moreRow(
 		Theme.muted,
 		{ Position = UDim2.fromOffset(84, 42), Size = UDim2.new(1, -130, 0, 20), Parent = row }
 	)
-	Kit.text("›", 30, Theme.bold, Theme.faint, {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -18, 0.5, 0),
-		Size = UDim2.fromOffset(20, 30),
-		Parent = row,
-	})
+	local chev = Icons.make("chevron", 24, Theme.faint)
+	chev.AnchorPoint = Vector2.new(1, 0.5)
+	chev.Position = UDim2.new(1, -18, 0.5, 0)
+	chev.Parent = row
 	row.Activated:Connect(onClick)
 end
 
 local function buildMore()
 	local v = App.view
-	header("•••", "More", v.agency.name)
+	header("more", "More", v.agency.name)
 	section("Progress", 1)
-	moreRow(2, "🏆", Theme.amberSoft, "Career", `{v.stageName}: what's next`, function()
+	moreRow(2, "trophy", Theme.amberSoft, "Career", `{v.stageName}: what's next`, function()
 		App.go("openPanel", "career")
 	end)
 	moreRow(
 		3,
-		"🎁",
+		"gift",
 		Theme.greenSoft,
 		"Daily operations reward",
-		if v.daily.ready then `Ready to claim · +{Format.money(v.daily.reward)}` else "Come back tomorrow",
+		if v.daily.ready then `Ready to claim, +{Format.money(v.daily.reward)}` else "Come back tomorrow",
 		function()
 			App.go("openDaily")
 		end
 	)
+	local earned, total = Patches.count(Patches.list(v.stats.visited, v.stage))
+	moreRow(4, "patch", Theme.cyanSoft, "Mission patches", `{earned} of {total} collected`, function()
+		App.go("openPanel", "patches")
+	end)
 	section("Shop", 10)
-	moreRow(11, "🛍", Theme.amberSoft, "Shop", "Game passes and server boosts", function()
+	moreRow(11, "bag", Theme.amberSoft, "Shop", "Game passes and server boosts", function()
 		App.go("openShop")
 	end)
 	section("Help", 20)
-	moreRow(21, "⚙", Theme.soft, "Settings", "Reduced motion", function()
+	moreRow(21, "gear", Theme.soft, "Settings", "Sound and motion", function()
 		App.go("openSettings")
 	end)
-	moreRow(22, "?", Theme.blueSoft, "How to play", "A quick refresher", function()
+	moreRow(22, "question", Theme.blueSoft, "How to play", "A quick refresher", function()
 		App.go("openHelp")
 	end)
 end
 
-local builders = { missions = buildMissions, fleet = buildFleet, career = buildCareer, more = buildMore }
+local function buildPatches()
+	local v = App.view
+	local earned, total = Patches.count(Patches.list(v.stats.visited, v.stage))
+	header("patch", "Mission patches", `{earned} of {total} collected`)
+	Sections.patches(body, 1, v)
+end
+
+local builders = {
+	missions = buildMissions,
+	fleet = buildFleet,
+	career = buildCareer,
+	patches = buildPatches,
+	more = buildMore,
+}
 
 function Panels.render()
 	live = {}
 	Panels.anchors = {}
 	local id = App.ui.panel
-	root.Visible = id ~= nil and App.view ~= nil
-	if not root.Visible then
+	if id == nil or App.view == nil then
+		if shown then
+			shown = false
+			Motion.exit(root, "right")
+		end
 		return
 	end
 	for _, c in body:GetChildren() do
@@ -613,15 +639,20 @@ function Panels.render()
 	for _, fn in live do
 		fn()
 	end
+	if not shown then
+		shown = true
+		Motion.enter(root, "right")
+	end
 end
 
 function Panels.start(canvas: Frame)
-	root = Kit.card({
+	root = Kit.new("CanvasGroup", {
 		Name = "Panel",
 		AnchorPoint = Vector2.new(1, 0),
+		BackgroundColor3 = Theme.white,
 		Visible = false,
 		Parent = canvas,
-	}, { Kit.stroke(Theme.line, 1) })
+	}, { Kit.corner(), Kit.stroke(Theme.line, 1) })
 	-- compact (phones): a full-height sheet on the right, clear of the left-hand HUD column
 	App.onLayout(function(compact)
 		if compact then
@@ -632,40 +663,15 @@ function Panels.start(canvas: Frame)
 			root.Size = UDim2.new(0, 600, 1, -250)
 		end
 	end)
-	local head =
+	headHolder =
 		Kit.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 92), Parent = root })
-	iconHolder = Kit.new("Frame", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(20, 20),
-		Size = UDim2.fromOffset(52, 52),
-		Parent = head,
-	})
-	titleLabel = Kit.text(
-		"",
-		28,
-		Theme.heavy,
-		Theme.ink,
-		{ Position = UDim2.fromOffset(88, 18), Size = UDim2.new(1, -170, 0, 32), Parent = head }
-	)
-	subLabel = Kit.text(
-		"",
-		16,
-		Theme.medium,
-		Theme.muted,
-		{ Position = UDim2.fromOffset(88, 50), Size = UDim2.new(1, -170, 0, 22), Parent = head }
-	)
-	local close = Kit.iconButton("×", function()
+	local close = Kit.iconButton("close", function()
 		App.go("openPanel", nil)
-	end, 44)
+	end, 44, Theme.navyCard, Theme.white)
 	close.AnchorPoint = Vector2.new(1, 0)
 	close.Position = UDim2.new(1, -20, 0, 24)
-	close.Parent = head
-	Kit.new("Frame", {
-		BackgroundColor3 = Theme.line,
-		Position = UDim2.fromOffset(0, 92),
-		Size = UDim2.new(1, 0, 0, 1),
-		Parent = root,
-	})
+	close.ZIndex = 2
+	close.Parent = root
 	body = Kit.scroller({
 		Position = UDim2.fromOffset(18, 106),
 		Size = UDim2.new(1, -36, 1, -116),

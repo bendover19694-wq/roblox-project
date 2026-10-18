@@ -1,10 +1,11 @@
 --!strict
 -- Small component kit. Every screen is built from these so the game looks like one system.
 
-local GuiService = game:GetService("GuiService")
-local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 
+local Icons = require(script.Parent.Icons)
+local Motion = require(script.Parent.Motion)
+local Sounds = require(script.Parent.Sounds)
 local Theme = require(script.Parent.Theme)
 
 local Kit = {}
@@ -39,8 +40,30 @@ function Kit.new(class: string, props: { [string]: any }?, children: { any }?): 
 	return inst
 end
 
-function Kit.corner(r: number?): any
-	return Kit.new("UICorner", { CornerRadius = UDim.new(0, r or Theme.radius.card) })
+-- Rounded corners. With `corners`, each side gets its own radius (a missing side uses r, or 0 when r is nil).
+function Kit.corner(r: number?, corners: { tl: number?, tr: number?, br: number?, bl: number? }?): any
+	local u = Kit.new("UICorner", { CornerRadius = UDim.new(0, r or Theme.radius.card) })
+	if corners then
+		local base = r or 0
+		u.TopLeftRadius = UDim.new(0, corners.tl or base)
+		u.TopRightRadius = UDim.new(0, corners.tr or base)
+		u.BottomRightRadius = UDim.new(0, corners.br or base)
+		u.BottomLeftRadius = UDim.new(0, corners.bl or base)
+	end
+	return u
+end
+
+-- Soft drop shadow behind a rounded GuiObject.
+function Kit.shadow(parent: Instance, depth: number?): any
+	return Kit.new("UIShadow", {
+		Color = Theme.shadow,
+		Transparency = 0.6,
+		Offset = UDim2.fromOffset(0, depth or 6),
+		BlurRadius = UDim.new(0, 14),
+		Mode = Enum.ApplyShadowMode.Shape,
+		ShowBehindParent = true,
+		Parent = parent,
+	})
 end
 
 function Kit.round(): any
@@ -106,17 +129,26 @@ function Kit.wrap(text: string, size: number?, color: Color3?): any
 	})
 end
 
--- White rounded card.
+-- White rounded card with a soft shadow. Pass props.NoShadow = true to skip the shadow.
 function Kit.card(props: { [string]: any }?, children: { any }?): any
 	local f = Kit.new("Frame", { BackgroundColor3 = Theme.white }, children)
 	Kit.corner().Parent = f
+	local shadow = true
 	for k, v in (props or {}) :: { [string]: any } do
-		(f :: any)[k] = v
+		if k == "NoShadow" then
+			shadow = not v
+		else
+			(f :: any)[k] = v
+		end
+	end
+	if shadow then
+		Kit.shadow(f)
 	end
 	return f
 end
 
-function Kit.chip(text: string, fg: Color3, bg: Color3, size: number?): any
+-- Small pill with optional leading icon.
+function Kit.chip(text: string, fg: Color3, bg: Color3, size: number?, icon: string?): any
 	local f = Kit.new("Frame", {
 		BackgroundColor3 = bg,
 		AutomaticSize = Enum.AutomaticSize.X,
@@ -125,11 +157,18 @@ function Kit.chip(text: string, fg: Color3, bg: Color3, size: number?): any
 		Kit.corner(8),
 		Kit.pad(8, 0),
 		Kit.text(text, size or 14, Theme.bold, fg, {
+			LayoutOrder = 2,
 			AutomaticSize = Enum.AutomaticSize.X,
 			Size = UDim2.fromScale(0, 1),
 			TextTruncate = Enum.TextTruncate.None,
 		}),
 	})
+	if icon then
+		Kit.list(5, true).Parent = f
+		local ic = Icons.make(icon, size or 14, fg)
+		ic.LayoutOrder = 1
+		ic.Parent = f
+	end
 	return f
 end
 
@@ -158,6 +197,7 @@ export type ButtonOpts = {
 	textSize: number?,
 	onClick: (() -> ())?,
 	disabled: boolean?,
+	icon: string?,
 }
 function Kit.button(o: ButtonOpts): any
 	local color = o.color or Theme.orange
@@ -188,17 +228,26 @@ function Kit.button(o: ButtonOpts): any
 		Rotation = 90,
 		Parent = face,
 	})
+	if o.icon then
+		-- icon sits just left of the centred text; padding keeps the pair centred
+		local isz = math.floor((o.textSize or 20) * 1.1)
+		local pad = isz + 8
+		Kit.new("UIPadding", { PaddingLeft = UDim.new(0, pad), Parent = face })
+		local ic = Icons.make(o.icon, isz, face.TextColor3)
+		ic.AnchorPoint = Vector2.new(0, 0.5)
+		ic.Parent = face
+		local function place()
+			-- TextBounds comes back in screen pixels (after every UIScale above); offsets are design pixels
+			local tb = face.TextBounds.X / Kit.totalScale(face)
+			ic.Position = UDim2.new(0.5, -(pad / 2 + tb / 2), 0.5, 0)
+		end
+		face:GetPropertyChangedSignal("TextBounds"):Connect(place)
+		place()
+	end
 	if not o.disabled then
-		face.MouseButton1Down:Connect(function()
-			face.Position = UDim2.fromOffset(0, 3)
-		end)
-		face.MouseButton1Up:Connect(function()
-			face.Position = UDim2.fromOffset(0, 0)
-		end)
-		face.MouseLeave:Connect(function()
-			face.Position = UDim2.fromOffset(0, 0)
-		end)
+		Motion.press(face, base)
 		face.Activated:Connect(function()
+			Sounds.play("tap")
 			if o.onClick then
 				o.onClick()
 			end
@@ -218,33 +267,58 @@ function Kit.ghost(text: string, onClick: () -> (), size: UDim2?): TextButton
 		TextSize = 18,
 		AutoButtonColor = true,
 	}, { Kit.corner(Theme.radius.button), Kit.stroke(Theme.line, 2) })
-	b.Activated:Connect(onClick)
+	Motion.press(b)
+	b.Activated:Connect(function()
+		Sounds.play("tap")
+		onClick()
+	end)
 	return b
 end
 
--- Small round icon button (close, settings…).
+-- Draws `glyph` centred in `parent`: a drawn icon when the name is one, else the text itself (old callers).
+local function centreGlyph(parent: GuiObject, glyph: string, size: number, color: Color3, textScale: number)
+	if Icons.has(glyph) then
+		local ic = Icons.make(glyph, math.floor(size * 0.55), color)
+		ic.AnchorPoint = Vector2.new(0.5, 0.5)
+		ic.Position = UDim2.fromScale(0.5, 0.5)
+		ic.Parent = parent
+	else
+		Kit.text(glyph, math.floor(size * textScale), Theme.bold, color, {
+			Size = UDim2.fromScale(1, 1),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Parent = parent,
+		})
+	end
+end
+
+-- Small round icon button (close, settings...). `glyph` is an Icons name.
 function Kit.iconButton(glyph: string, onClick: () -> (), size: number?, bg: Color3?, fg: Color3?): TextButton
+	local sz = size or 44
 	local b = Kit.new("TextButton", {
 		BackgroundTransparency = 0,
 		BackgroundColor3 = bg or Theme.soft,
-		Size = UDim2.fromOffset(size or 44, size or 44),
-		Text = glyph,
-		TextSize = math.floor((size or 44) * 0.45),
+		Size = UDim2.fromOffset(sz, sz),
+		Text = if Icons.has(glyph) then "" else glyph,
+		TextSize = math.floor(sz * 0.45),
 		FontFace = Theme.bold,
 		TextColor3 = fg or Theme.muted,
 	}, { Kit.round() })
-	b.Activated:Connect(onClick)
+	if Icons.has(glyph) then
+		centreGlyph(b, glyph, sz, fg or Theme.muted, 0.45)
+	end
+	Motion.press(b)
+	b.Activated:Connect(function()
+		Sounds.play("tap")
+		onClick()
+	end)
 	return b
 end
 
 function Kit.iconCircle(glyph: string, bg: Color3, size: number?, fg: Color3?): any
-	return Kit.new("Frame", { BackgroundColor3 = bg, Size = UDim2.fromOffset(size or 48, size or 48) }, {
-		Kit.corner(14),
-		Kit.text(glyph, math.floor((size or 48) * 0.5), Theme.bold, fg or Theme.white, {
-			Size = UDim2.fromScale(1, 1),
-			TextXAlignment = Enum.TextXAlignment.Center,
-		}),
-	})
+	local sz = size or 48
+	local f = Kit.new("Frame", { BackgroundColor3 = bg, Size = UDim2.fromOffset(sz, sz) }, { Kit.corner(14) })
+	centreGlyph(f, glyph, sz, fg or Theme.white, 0.5)
+	return f
 end
 
 -- Segmented control: options = { {id, title, sub} }. Returns frame and a setter.
@@ -319,6 +393,20 @@ function Kit.scroller(props: { [string]: any }?): any
 	return s
 end
 
+-- Product of every UIScale on `obj` and its ancestors: screen pixels per design pixel.
+function Kit.totalScale(obj: Instance): number
+	local total = 1
+	local node: Instance? = obj
+	while node do
+		local sc = node:FindFirstChildOfClass("UIScale")
+		if sc then
+			total *= sc.Scale
+		end
+		node = node.Parent
+	end
+	return math.max(total, 0.01)
+end
+
 -- Screen pixels per design pixel for anything inside the HUD canvas (its UIScale).
 function Kit.canvasScale(obj: Instance): number
 	local canvas = obj:FindFirstAncestor("Canvas") or obj
@@ -326,9 +414,9 @@ function Kit.canvasScale(obj: Instance): number
 	return if s then s.Scale else 1
 end
 
--- On if the player asked for it in our settings or in their device / Roblox settings.
+-- Aliases kept so older callers compile; the real versions live in Motion.
 function Kit.reducedMotion(): boolean
-	return GuiService.ReducedMotionEnabled or Players.LocalPlayer:GetAttribute("ReducedMotion") == true
+	return Motion.reduced()
 end
 
 function Kit.tween(
@@ -347,16 +435,62 @@ function Kit.tween(
 	return t
 end
 
--- Pop-in for modals/cards (scale 0.9→1 + fade). Needs a UIScale; reduced motion = instant.
 function Kit.popIn(obj: GuiObject)
-	local scale = obj:FindFirstChildOfClass("UIScale") or Kit.new("UIScale", { Parent = obj })
-	local rest: number = (obj:GetAttribute("FitScale") :: number?) or 1 -- modals shrink to fit short screens
-	if Kit.reducedMotion() then
-		scale.Scale = rest
-		return
+	Motion.pop(obj)
+end
+
+-- Faint horizontal scanlines over `parent` (a console readout texture). Call it before adding the parent's
+-- content so the lines sit underneath it.
+function Kit.grid(parent: GuiObject): Frame
+	local pts = { NumberSequenceKeypoint.new(0, 1) }
+	local lines = 6
+	for i = 1, lines do
+		local t = (i - 0.5) / lines
+		table.insert(pts, NumberSequenceKeypoint.new(t - 0.012, 1))
+		table.insert(pts, NumberSequenceKeypoint.new(t, 0.8))
+		table.insert(pts, NumberSequenceKeypoint.new(t + 0.012, 1))
 	end
-	scale.Scale = rest * 0.92
-	Kit.tween(scale, 0.25, { Scale = rest }, Enum.EasingStyle.Back)
+	table.insert(pts, NumberSequenceKeypoint.new(1, 1))
+	local g = Kit.new("Frame", {
+		Name = "Grid",
+		Active = false,
+		BackgroundColor3 = Theme.gridLine,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = parent.ZIndex,
+		Parent = parent,
+	}, { Kit.new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(pts) }) })
+	local pc = parent:FindFirstChildOfClass("UICorner")
+	if pc then
+		pc:Clone().Parent = g
+	end
+	return g
+end
+
+-- Console readout band for the top of a card or panel: cyan icon, white display title, mono subtitle.
+function Kit.header(icon: string, title: string, sub: string?): Frame
+	local f = Kit.new("Frame", {
+		Name = "Header",
+		BackgroundColor3 = Theme.navy3,
+		Size = UDim2.new(1, 0, 0, 92),
+	}, { Kit.corner(nil, { tl = 18, tr = 18 }) })
+	Kit.grid(f)
+	local ic = Icons.make(icon, 44, Theme.cyan)
+	ic.AnchorPoint = Vector2.new(0, 0.5)
+	ic.Position = UDim2.fromOffset(24, 46)
+	ic.Parent = f
+	Kit.text(title, 26, Theme.display, Theme.white, {
+		Position = UDim2.fromOffset(84, if sub then 16 else 29),
+		Size = UDim2.new(1, -150, 0, 34),
+		Parent = f,
+	})
+	if sub then
+		Kit.text(sub, 14, Theme.monoRegular, Theme.cyanSoft, {
+			Position = UDim2.fromOffset(84, 52),
+			Size = UDim2.new(1, -150, 0, 22),
+			Parent = f,
+		})
+	end
+	return f
 end
 
 return Kit

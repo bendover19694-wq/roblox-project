@@ -2,6 +2,28 @@
 
 Language: **Luau** (`--!strict` in every module).
 
+## 0. Run a Space Agency (current game; the sections below are the archived Fogbell design)
+The server is authoritative. Every client request goes through `Remotes.Act` in `AgencyService` (rate-limited by `Net.limiter(8, 12)`), is validated with `Net` helpers, and the server grants all value.
+
+**Modules added in the redesign (D-014)**
+- Pure shared (tested under Lune): `Contracts`, `Research`, `Gifts`, `Launch`, `Patches`, plus `Net.isInt` and the optional `speedMult` and `fx` parameters of `Economy.tripSeconds` and `Economy.trip`. `Economy.earn` credits cash. Tuning keys: `stageRewardMult`, `perfectLaunch`, `contracts`, `research`, `gifts`. `ProfileSchema` is v2.
+- Server: `Services/Progression.luau` owns research, contracts, gifts and Perfect Launch, and exposes `actions`, `tripMult`, `onTrip`, `onPlan`, `tick` and `view`. `AgencyService` merges its actions and view.
+- Client UI: `Icons` (34 drawn icons), `Motion` (8 patterns), `Sounds` (ids in `Config/Sounds.luau`), `Juice` (coin bursts, confetti, arrival ping), `Liftoff` (countdown and Perfect Launch bar), `Sections` (contracts, research lab, patches panels).
+- `src/first/Boot.client.luau`: the ReplicatedFirst bootup screen. It is self-contained and closes when the client sets the `ClientReady` attribute.
+
+**Act actions and validation**
+- `buyResearch(trackId)`: `Net.isEnum` on the track, then `Research.check` (unlock stage, max level, cash).
+- `claimContract(index)`: contracts are ensured for today, then `Net.isInt(index, 1, #list)`, then `Contracts.claim` (done and not claimed).
+- `claimGift()`: no arguments; `Gifts.claim` checks play time and tier order.
+- `perfectLaunch(missionId)`: string length check; the mission must be `launch == "pending"` with no trips; judged by `Launch.judge(workspace:GetServerTimeNow(), departAt)`. Returns true on a hit, false on a miss.
+- `setFlag(key, value)`: key is `reducedMotion` or `sound`; value must be a boolean.
+
+**Celebrate kinds:** `delivered {rocket, model}`, `stage {name, blurb, stage, unlocks, from}`, `arrival {dest, profit}`, `reward {amount, source}` (source is daily, goal, contract or gift).
+
+**View additions:** `research {engines, efficiency, comfort}`, `contracts {day, list, resetsAt}`, `gifts {next?, count, minutes?, reward?, remaining, at}`, `settings.sound`. Missions carry `launch` ("pending", "hit" or "miss").
+
+**Probes:** `scripts/probes/ftue.py` (first-session playthrough), `viewport.luau`, `icons.luau` (a grid of every icon).
+
 ## 1. Workflow: file-first code, Studio-first world
 **Decision (D-003, pending the owner's approval to install tools):**
 - **Code lives in files** synced by **Rojo** (7.7.0 installed; 7.7.1 is the latest release, from 2026-10-02). It is versioned in **git**, formatted by **StyLua** (2.6.0), and linted by **Selene** (0.32.0). **luau-lsp** (1.70.1) provides types. Tool versions are pinned in `aftman.toml`; Aftman was already installed, so we skipped Rokit. **Lune** (0.11.0) runs unit tests outside Studio.

@@ -1,5 +1,5 @@
 --!strict
--- Remote payload validation and rate limiting. Every client→server remote goes through here.
+-- Remote payload validation and rate limiting. Every client to server remote goes through here.
 -- Pure (clock is injectable) so tests run under Lune.
 
 local Net = {}
@@ -8,6 +8,11 @@ Net.MAX_STRING = 32
 
 function Net.isFinite(v: any): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
+end
+
+-- A whole number within [lo, hi].
+function Net.isInt(v: any, lo: number, hi: number): boolean
+	return Net.isFinite(v) and v == math.floor(v) and v >= lo and v <= hi
 end
 
 function Net.isEnum(v: any, set: { [string]: boolean }): boolean

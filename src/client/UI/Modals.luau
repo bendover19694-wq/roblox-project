@@ -11,8 +11,11 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Rockets = require(ReplicatedStorage.Shared.Config.Rockets)
 local Tuning = require(ReplicatedStorage.Shared.Config.Tuning)
 local App = require(script.Parent.Parent.App)
+local Icons = require(script.Parent.Icons)
 local Kit = require(script.Parent.Kit)
+local Motion = require(script.Parent.Motion)
 local RocketView = require(script.Parent.RocketView)
+local Sounds = require(script.Parent.Sounds)
 local Theme = require(script.Parent.Theme)
 
 local Modals = {}
@@ -27,17 +30,29 @@ local function agencyColor(): Color3
 	return Tuning.agencyColors[(App.view and App.view.agency.color) or 1] or Theme.orange
 end
 
+-- Slides the card out, then destroys it and starts the next queued modal. Reduced motion skips the slide.
 function Modals.close()
-	if current then
-		current:Destroy()
+	local card = current
+	local function finish()
+		if current ~= card then
+			return -- another modal took over while this one was leaving
+		end
+		if card then
+			card:Destroy()
+		end
 		current = nil
+		layer.Visible = false
+		Modals.anchors = {}
+		App.setUi("modal", nil)
+		local nextModal = table.remove(queue, 1)
+		if nextModal then
+			nextModal()
+		end
 	end
-	layer.Visible = false
-	Modals.anchors = {}
-	App.setUi("modal", nil)
-	local nextModal = table.remove(queue, 1)
-	if nextModal then
-		nextModal()
+	if card then
+		Motion.exit(card, "bottom", finish)
+	else
+		finish()
 	end
 end
 
@@ -71,7 +86,7 @@ local function shell(name: string, width: number, closable: boolean?): Frame
 	end)
 	Kit.popIn(card)
 	if closable ~= false then
-		local x = Kit.iconButton("×", Modals.close, 44)
+		local x = Kit.iconButton("close", Modals.close, 44)
 		x.AnchorPoint = Vector2.new(1, 0)
 		x.Position = UDim2.new(1, 8, 0, -8)
 		local holder = Kit.new(
@@ -123,7 +138,8 @@ local function buttonsRow(
 	onSecondary: (() -> ())?,
 	primary: string,
 	onPrimary: () -> (),
-	green: boolean?
+	green: boolean?,
+	icon: string?
 )
 	local row = Kit.new(
 		"Frame",
@@ -137,6 +153,7 @@ local function buttonsRow(
 		text = primary,
 		size = width,
 		onClick = onPrimary,
+		icon = icon,
 		color = if green then Theme.green else nil,
 		shade = if green then Theme.greenDark else nil,
 	})
@@ -220,7 +237,7 @@ function Modals.createAgency()
 		Theme.red,
 		{ LayoutOrder = 12, TextXAlignment = Enum.TextXAlignment.Center, Parent = card }
 	)
-	buttonsRow(card, 20, nil, nil, "🚀  LAUNCH MY AGENCY", function()
+	buttonsRow(card, 20, nil, nil, "LAUNCH MY AGENCY", function()
 		local name = box.Text:gsub("^%s+", ""):gsub("%s+$", "")
 		local ok, result, message = pcall(Remotes.Act.InvokeServer, Remotes.Act, "createAgency", name, chosen)
 		if ok and result then
@@ -228,7 +245,7 @@ function Modals.createAgency()
 		else
 			err.Text = if ok then (message or "Try another name") else "Connection hiccup, try again"
 		end
-	end)
+	end, nil, "rocket")
 	paint()
 end
 
@@ -271,7 +288,7 @@ function Modals.welcome(summary: any)
 			{ Position = UDim2.fromOffset(24, 46), Size = UDim2.new(1, -48, 0, 54), Parent = earned }
 		)
 		Kit.text(
-			`{Format.int(summary.trips)} trips · {Format.int(summary.passengers)} passengers & payloads`,
+			`{Format.int(summary.trips)} trips, {Format.int(summary.passengers)} passengers and payloads`,
 			16,
 			Theme.medium,
 			Theme.greenDark,
@@ -283,12 +300,13 @@ function Modals.welcome(summary: any)
 				10,
 				"LATER",
 				Modals.close,
-				`🎁  CLAIM DAY {v.daily.day} · +{Format.money(v.daily.reward)}`,
+				`CLAIM DAY {v.daily.day}, +{Format.money(v.daily.reward)}`,
 				function()
 					App.act("claimDaily")
 					Modals.close()
 				end,
-				true
+				true,
+				"gift"
 			)
 		else
 			buttonsRow(card, 10, nil, nil, "BACK TO MISSION CONTROL", Modals.close)
@@ -334,12 +352,14 @@ function Modals.daily()
 				TextXAlignment = Enum.TextXAlignment.Center,
 				Parent = cell,
 			})
-			Kit.text(if reached then "✓" else "💰", 26, Theme.heavy, Theme.greenDark, {
-				Position = UDim2.fromOffset(0, 32),
-				Size = UDim2.new(1, 0, 0, 32),
-				TextXAlignment = Enum.TextXAlignment.Center,
-				Parent = cell,
-			})
+			local mark = Icons.make(
+				if reached then "check" else "coin",
+				30,
+				if reached then Theme.greenDark else Theme.amber
+			)
+			mark.AnchorPoint = Vector2.new(0.5, 0)
+			mark.Position = UDim2.fromOffset(35, 32)
+			mark.Parent = cell
 			Kit.text(Format.money(amount), 14, Theme.heavy, Theme.ink, {
 				Position = UDim2.fromOffset(0, 70),
 				Size = UDim2.new(1, 0, 0, 20),
@@ -412,6 +432,7 @@ function Modals.catalog(classFilter: string?, selectedId: string?)
 		Position = UDim2.fromScale(1, 0),
 		Size = UDim2.fromScale(0.5, 1),
 		BackgroundColor3 = Theme.soft,
+		NoShadow = true,
 		Parent = split,
 	})
 	local inClass = {}
@@ -443,7 +464,7 @@ function Modals.catalog(classFilter: string?, selectedId: string?)
 			{ Position = UDim2.fromOffset(170, 14), Size = UDim2.new(1, -310, 0, 28), Parent = row }
 		)
 		Kit.text(
-			`{r.capacity} seats · range {r.range}`,
+			`{r.capacity} seats  |  range {r.range}`,
 			15,
 			Theme.medium,
 			Theme.muted,
@@ -456,7 +477,8 @@ function Modals.catalog(classFilter: string?, selectedId: string?)
 			Parent = row,
 		})
 		local price = Kit.button({
-			text = if locked then `🔒 STAGE {r.stage}` else Format.money(r.price),
+			text = if locked then `STAGE {r.stage}` else Format.money(r.price),
+			icon = if locked then "lock" else nil,
 			disabled = locked or v.cash < r.price,
 			color = Theme.green,
 			shade = Theme.greenDark,
@@ -512,17 +534,20 @@ function Modals.catalog(classFilter: string?, selectedId: string?)
 			end
 		end
 		local lines = {
-			`💺  <b>{r.capacity}</b> seats / payload slots`,
-			`🌍  Range <b>{r.range}</b>: {table.concat(reach, ", ")}`,
-			`⚡  Speed <b>×{r.speed}</b>`,
-			`⛽  Fuel <b>{Format.money(r.fuel)}</b> per distance unit`,
+			{ "seat", `<b>{r.capacity}</b> seats / payload slots` },
+			{ "planet", `Range <b>{r.range}</b>: {table.concat(reach, ", ")}` },
+			{ "bolt", `Speed <b>x{r.speed}</b>` },
+			{ "fuel", `Fuel <b>{Format.money(r.fuel)}</b> per distance unit` },
 		}
 		for i, line in lines do
-			Kit.text(line, 18, Theme.medium, Theme.ink, {
+			local row = Kit.new("Frame", {
+				BackgroundTransparency = 1,
 				Position = UDim2.fromOffset(24, 324 + (i - 1) * 34),
 				Size = UDim2.new(1, -48, 0, 26),
 				Parent = right,
-			})
+			}, { Kit.list(10, true) })
+			Icons.make(line[1], 22, Theme.blue).Parent = row
+			Kit.text(line[2], 18, Theme.medium, Theme.ink, { Size = UDim2.new(1, -32, 1, 0), Parent = row })
 		end
 		Kit.wrap(r.blurb, 16).Parent = Kit.new("Frame", {
 			BackgroundTransparency = 1,
@@ -552,13 +577,13 @@ function Modals.delivered(data: any)
 			{ LayoutOrder = 5, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), Parent = card },
 			{ Kit.list(10, true, Enum.HorizontalAlignment.Center) }
 		)
-		for _, t in { `{spec.capacity} SEATS`, `RANGE {spec.range}`, `SPEED ×{spec.speed}` } do
+		for _, t in { `{spec.capacity} SEATS`, `RANGE {spec.range}`, `SPEED x{spec.speed}` } do
 			Kit.chip(t, Theme.blue, Theme.blueSoft, 15).Parent = chips
 		end
-		buttonsRow(card, 10, "LATER", Modals.close, "🛰  PLAN A MISSION", function()
+		buttonsRow(card, 10, "LATER", Modals.close, "PLAN A MISSION", function()
 			Modals.close()
 			App.go("openWizard", nil, data.rocket)
-		end)
+		end, nil, "satellite")
 	end)
 end
 
@@ -572,13 +597,10 @@ function Modals.stage(data: any)
 			Size = UDim2.fromOffset(110, 110),
 			Parent = card,
 		}, { Kit.round(), Kit.stroke(Theme.amber, 5) })
-		Kit.text(
-			"🏆",
-			54,
-			Theme.bold,
-			Theme.amber,
-			{ Size = UDim2.fromScale(1, 1), TextXAlignment = Enum.TextXAlignment.Center, Parent = trophy }
-		)
+		local cup = Icons.make("trophy", 64, Theme.amber)
+		cup.AnchorPoint = Vector2.new(0.5, 0.5)
+		cup.Position = UDim2.fromScale(0.5, 0.5)
+		cup.Parent = trophy
 		heading(card, nil, string.upper(data.name), nil, 2)
 		Kit.text(
 			"ACHIEVED",
@@ -601,12 +623,19 @@ function Modals.stage(data: any)
 			}, { Kit.corner(16), Kit.pad(20), Kit.list(10) })
 			Kit.text("Unlocked", 16, Theme.bold, Theme.muted, { LayoutOrder = 0, Parent = box })
 			for i, u in data.unlocks do
+				local row = Kit.new("Frame", {
+					LayoutOrder = i,
+					BackgroundTransparency = 1,
+					Size = UDim2.new(1, 0, 0, 28),
+					Parent = box,
+				}, { Kit.list(10, true) })
+				Icons.make(if u.kind == "rocket" then "rocket" else "ringPlanet", 26, Theme.blue).Parent = row
 				Kit.text(
-					`{if u.kind == "rocket" then "🚀" else "🪐"}  <b>{u.name}</b>`,
+					`<b>{u.name}</b>`,
 					20,
 					Theme.medium,
 					Theme.ink,
-					{ LayoutOrder = i, Parent = box }
+					{ Size = UDim2.new(1, -36, 1, 0), Parent = row }
 				)
 			end
 		end
@@ -626,10 +655,17 @@ function Modals.settings()
 	local label = if device then "ON (device setting)" elseif on then "ON" else "OFF"
 	buttonsRow(card, 5, nil, nil, `Reduced motion: {label}`, function()
 		App.act("setFlag", "reducedMotion", not on)
+		Sounds.play("toggle")
 		Modals.settings()
 	end)
+	local soundOn = App.view.settings.sound ~= false
+	buttonsRow(card, 6, nil, nil, if soundOn then "Sound: ON" else "Sound: OFF", function()
+		App.act("setFlag", "sound", not soundOn)
+		Sounds.play("toggle")
+		Modals.settings()
+	end, nil, if soundOn then "soundOn" else "soundOff")
 	-- Roblox Player Support: reports reach Creator Hub with device info and a screenshot.
-	buttonsRow(card, 6, "Close", Modals.close, "Report a problem", function()
+	buttonsRow(card, 7, "Close", Modals.close, "Report a problem", function()
 		Modals.close()
 		local ok = pcall(function()
 			SocialService:PromptFeedbackSubmissionAsync({ FeedbackType = Enum.FeedbackType.PlayerSupport })
@@ -645,16 +681,27 @@ function Modals.help()
 	heading(card, nil, "How to play", nil, 1)
 	for i, line in
 		{
-			"🛰  Plan missions: pick a destination, a free rocket, and your pricing.",
-			"🚀  Rockets fly automatically and pay you every trip, even while you're away (up to 8h).",
-			"💺  Match rocket size to demand. Empty seats cost fuel and hurt your rating.",
-			"🏆  Finish career goals to unlock new rockets and destinations, from orbit to Titan.",
-			"🎁  Claim the daily operations reward. The streak grows to day 7.",
+			{ "satellite", "Plan missions: pick a destination, a free rocket, and your pricing." },
+			{
+				"rocket",
+				"Rockets fly automatically and pay you every trip, even while you're away (up to 8h).",
+			},
+			{ "seat", "Match rocket size to demand. Empty seats cost fuel and hurt your rating." },
+			{ "trophy", "Finish career goals to unlock new rockets and destinations, from orbit to Titan." },
+			{ "gift", "Claim the daily operations reward. The streak grows to day 7." },
 		}
 	do
-		local w = Kit.wrap(line, 18, Theme.ink)
-		w.LayoutOrder = 2 + i
-		w.Parent = card
+		local row = Kit.new("Frame", {
+			LayoutOrder = 2 + i,
+			BackgroundTransparency = 1,
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Size = UDim2.fromScale(1, 0),
+			Parent = card,
+		}, { Kit.list(12, true) })
+		Icons.make(line[1], 26, Theme.blue).Parent = row
+		local w = Kit.wrap(line[2], 18, Theme.ink)
+		w.Size = UDim2.new(1, -38, 0, 0)
+		w.Parent = row
 	end
 	buttonsRow(card, 20, nil, nil, "GOT IT", Modals.close)
 end

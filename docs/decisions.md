@@ -161,3 +161,26 @@ A smaller share is **feel and look**, where a human must judge: ship readability
 - The wide rocket catalog shrinks to fit on phones, so its text is smaller there.
 
 **Status:** accepted.
+
+## D-014 · 2026-10-17 · Redesign: drawn icons, motion system, bootup, retention systems
+**Source:** the owner's request to make the game feel less like a template: a Mission Control look, real motion and sound, a bootup, and reasons to come back each day, without pushy selling.
+
+**Built:**
+1. **No emoji or em dashes in the UI or in `src/`.** Player-facing text and comments are ASCII only (checked with `grep -rnP "[^\x00-\x7F]" src`). The title emoji in the docs and the game name is the only exception.
+2. **Icons are drawn in code** (`UI/Icons.luau`, 34 icons from Frames, UICorner, UIStroke and UIGradient). They scale with size and tint per use, and need no uploaded images.
+3. **UIShadow and per-corner UICorner are now in use** (`Kit.shadow`, `Kit.corner`). Cards get a soft shadow by default.
+4. **Motion system:** eight patterns in `UI/Motion.luau` (enter, exit, pop, press, countUp, flyTo, pulse, shake), all honouring reduced motion. Sounds are short and use the built-in ids in `Config/Sounds.luau`, with a Sound toggle in Settings.
+5. **Bootup** in ReplicatedFirst (`src/first/Boot.client.luau`), self-contained, skippable, held until the client sets `ClientReady`.
+6. **Profile v2:** adds `research`, `contracts`, `gifts` and `settings.sound`. The migration only fills defaults.
+7. **Retention systems:** Perfect Launch, Daily Contracts, Research, Playtime Gifts and Mission Patches. Pure logic lives in `Launch`, `Contracts`, `Research`, `Gifts` and `Patches` (tested); `Progression` wires them to the server.
+8. **Perfect Launch is judged by server receive time.** The client sends only the mission id, so a modified client cannot fake a hit. Grace is 0.3 s for latency.
+9. **Gifts are counted per UTC day, not per session**, so leaving and rejoining does not farm them.
+10. **Patches are derived, not stored.** They come from `stats.visited` and the career stage, so there is nothing to migrate or corrupt.
+11. **Ethical conversion touches:** a one-time "STARTER PACK" chip from stage 2, shop cards that show numbers computed from the player's own best mission, a Nova line saying everything in the shop is optional, and the shop never auto-opens. Still no paid random items, no selling Cash, no paid power.
+
+**Known limits:**
+- Sound ids are built-in placeholders; the owner picks Creator Store sounds later.
+- Visual checks (Studio, desktop and phone) and the thumbnail are pending with the lead. Nothing in this redesign has been run in Studio yet.
+- Contracts use UTC days, so the reset time varies by region.
+
+**Status:** accepted.

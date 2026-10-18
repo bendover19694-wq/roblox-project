@@ -53,6 +53,16 @@ Goal: make Roblox development with Claude Code (Opus 5.5) easier. Find the small
 - [ ] Later (from the skills review): badges for career stages, ConfigService for live tuning, experience-notification opt-in for "rockets are back", UIShadow polish
 - [ ] Rankings (career stage plus rating), agency news, rival agencies
 - [ ] Icon and thumbnails; name test ("Run a Space Agency" vs alternatives)
+- [x] Redesign T1: visual system (Theme, 34 drawn icons, Motion, Sounds, Kit) (D-014)
+- [x] Redesign T2: pure logic (Contracts, Research, Gifts, Launch, Patches), Tuning keys, ProfileSchema v2, tests
+- [x] Redesign T3: bootup screen in ReplicatedFirst
+- [x] Redesign T4: server wiring (Progression service, AgencyService, DataService, Celebrate kinds)
+- [x] Redesign T5: Toasts, Modals and Advisor swept and animated (Sound toggle in Settings)
+- [x] Redesign T6: Juice, Liftoff with Perfect Launch, Map, Wizard
+- [x] Redesign T7: Hud, Panels, Sections (contracts, research, patches), Shop conversion touches
+- [ ] Lead: Studio visual pass (desktop + iphone_14)
+- [ ] Lead: thumbnail + 512 icon
+- [ ] Owner: pick Creator Store sounds
 
 ## Archived — Fogbell Harbor
 - Code, tests and docs are in `archive/fogbell-harbor/` (D-011).

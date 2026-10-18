@@ -18,7 +18,7 @@ Run a Space Agency's playable first version is built and passes an automated fir
 ## Hard rules
 - **Never publish, spend Robux, install tools, or edit a live/production place.** Work only in the private test place. Checkpoint before broad edits.
 - **The server is authoritative** for currency, XP, rank, Logbook, cosmetics, Supplies, judgments, crates, net hits, randomness, purchases, and saves. The client requests and renders; it never grants value.
-- Every client-to-server remote is validated through `Net.validate`, rate-limited, and size-limited.
+- Every client-to-server remote is validated inside its Act handler with the `Net` helpers (`Net.isEnum`, `Net.isFinite`, `Net.isInt`, `Net.MAX_STRING`), rate-limited by `Net.limiter`, and size-limited.
 - Purchases: a single `ProcessReceipt`, made idempotent by receipt key `R_{UserId}_{PurchaseId}`. Grant, then save, then return `PurchaseGranted`. Never grant on `PromptProductPurchaseFinished`.
 - **No paid random items. No selling Coins/Supplies. No paid power or luck.** Timers must be truthful and never restart. Shop copy stays neutral, and the shop never auto-opens.
 - Content target is Mild maturity: cartoon slapstick only, no horror gore, no free-text user content.
@@ -26,10 +26,10 @@ Run a Space Agency's playable first version is built and passes an automated fir
 
 ## Code conventions
 - Luau with `--!strict` in every module. Modules are small; one service per file.
-- Layout: `src/shared` (Config, pure logic, Net), `src/server/Services`, `src/client/Controllers` + `UI`.
+- Layout: `src/shared` (Config, pure logic, Net), `src/server/Services`, `src/client` (App, Main) + `UI`, plus `src/first` (ReplicatedFirst boot screen).
 - Tuning values live in `src/shared/Config/*`, never inline.
-- Pure logic (RuleGrammar, Rng, Payout, migrations, validators) gets `tests/*.spec.luau`.
-- UI: build from `UI/Tokens.luau` and `UI/Motion.luau` (6 motion patterns only). Reduced motion must work.
+- Pure logic (Economy, Contracts, Research, Gifts, Launch, Patches, Receipts, ProfileSchema migrations, Net validators) gets `tests/*.spec.luau`.
+- UI: build from `UI/Theme.luau`, `UI/Icons.luau` (icons drawn in code, never emoji) and `UI/Motion.luau` (8 patterns). Reduced motion must work. No em dashes in player-facing text.
 - Format with StyLua and lint with Selene before calling work done (once S0.2 is installed).
 
 ## Workflow per slice
@@ -62,9 +62,9 @@ python scripts/studio_mcp.py call list_roblox_studios "{}"
 python scripts/sync_studio.py <studio_id>
 ```
 ```bash
-python scripts/studio_mcp.py luau <studio_id> Server scripts/probes/night_state.luau
+python scripts/probes/ftue.py <studio_id>
 ```
-`scripts/probes/` holds reusable probes for state, crates, prompts, rescue, and a full-night soak test (`watch_night.py`). Stop play mode before syncing.
+`scripts/probes/` holds `ftue.py` (automated first session with screenshots), `icons.luau`, `thumbnail.luau` and `viewport.luau`. Stop play mode before syncing. For phone tests, set `StudioDeviceSimulatorService:SetDeviceAsync("iphone_14")` in Edit mode.
 
 Live sync into Studio (requires the Rojo plugin):
 ```bash
@@ -72,5 +72,5 @@ rojo serve
 ```
 Build a standalone place file:
 ```bash
-rojo build -o FogbellHarbor.rbxlx
+rojo build -o SpaceAgency.rbxlx
 ```

@@ -6,7 +6,7 @@ local Tuning = require(script.Parent.Config.Tuning)
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 1
+ProfileSchema.VERSION = 2
 
 function ProfileSchema.default(): any
 	return {
@@ -24,12 +24,19 @@ function ProfileSchema.default(): any
 		lastSeen = 0,
 		tips = {},
 		funnel = 0,
-		settings = { reducedMotion = false },
+		research = { engines = 0, efficiency = 0, comfort = 0 }, -- upgrade levels
+		contracts = { day = 0, list = {} }, -- today's contracts, see Contracts.luau
+		gifts = { day = 0, played = 0, next = 1 }, -- playtime gifts, see Gifts.luau
+		settings = { reducedMotion = false, sound = true },
 		receipts = {},
 	}
 end
 
 local migrations: { (any) -> any } = {
+	function(data)
+		return data
+	end,
+	-- v2 only adds research, contracts, gifts and settings.sound; `fill` below supplies them with defaults.
 	function(data)
 		return data
 	end,

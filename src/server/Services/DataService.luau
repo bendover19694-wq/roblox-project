@@ -37,6 +37,9 @@ local function key(player: Player): string
 	return `Player_{player.UserId}` -- matches the RTBF deletion template
 end
 
+-- Studio with API access off: every DataStore call fails with this, so retrying only delays the first screen.
+local studioBlocked = false
+
 local function tryLoad(player: Player): Profile?
 	if not store then
 		return nil
@@ -59,6 +62,9 @@ local function tryLoad(player: Player): Profile?
 	end)
 	if not ok then
 		warn("[DataService] load failed: ", result)
+		if tostring(result):find("StudioAccessToApisNotAllowed", 1, true) then
+			studioBlocked = true
+		end
 		return nil
 	end
 	if blocked then
@@ -71,13 +77,14 @@ function DataService.load(player: Player)
 	local data: Profile? = nil
 	for _ = 1, 5 do
 		data = tryLoad(player)
-		if data or not player.Parent or not store then
+		if data or not player.Parent or not store or studioBlocked then
 			break -- no DataStores at all (unpublished place / outage): play unsaved right away
 		end
 		task.wait(3)
 	end
 	entries[player] = { data = data or ProfileSchema.default(), canSave = data ~= nil }
 	player:SetAttribute("ReducedMotion", entries[player].data.settings.reducedMotion)
+	player:SetAttribute("Sound", entries[player].data.settings.sound ~= false)
 	player:SetAttribute("CanSave", data ~= nil)
 	loadedSignal:Fire(player)
 end

@@ -1,7 +1,10 @@
 --!strict
 -- All remotes in one place. The server creates them; clients wait for them.
---   S→C: State(view) · Toast(text, kind) · Celebrate(kind, data) · Welcome(summary)
---   C→S: Act(action, ...) → (ok, message)   [RemoteFunction; every action validated in AgencyService]
+--   S to C: State(view), Toast(text, kind), Celebrate(kind, data), Welcome(summary)
+--     Celebrate kinds: delivered {rocket, model}, stage {name, blurb, stage, unlocks, from},
+--       arrival {dest, profit}, reward {amount, source}
+--   C to S: Act(action, ...) returns (ok, message)   [RemoteFunction; every action validated in
+--     AgencyService and Progression]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")

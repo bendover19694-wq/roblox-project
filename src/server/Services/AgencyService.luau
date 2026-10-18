@@ -1,6 +1,7 @@
 --!strict
 -- The whole game server: agency actions (validated), the mission clock, offline catch-up, career,
--- daily rewards, and passes. Server-authoritative: the client only sends requests through Remotes.Act.
+-- daily rewards, and passes. Retention systems live in Progression.luau. Server-authoritative:
+-- the client only sends requests through Remotes.Act.
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -14,9 +15,11 @@ local Format = require(ReplicatedStorage.Shared.Format)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Receipts = require(ReplicatedStorage.Shared.Receipts)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Research = require(ReplicatedStorage.Shared.Research)
 local Rockets = require(ReplicatedStorage.Shared.Config.Rockets)
 local Tuning = require(ReplicatedStorage.Shared.Config.Tuning)
 local DataService = require(script.Parent.DataService)
+local Progression = require(script.Parent.Progression)
 local Telemetry = require(script.Parent.Telemetry)
 
 local AgencyService = {}
@@ -30,7 +33,7 @@ local function now(): number
 end
 
 local function today(): number
-	return math.floor(os.time() / 86400)
+	return Progression.today()
 end
 
 local function cashMult(player: Player): number
@@ -77,7 +80,7 @@ local function view(player: Player, p: any)
 	local streakDay = if p.daily.lastDay == today() - 1 or p.daily.lastDay == today()
 		then p.daily.streak
 		else 0
-	return {
+	local out = {
 		agency = p.agency,
 		cash = p.cash,
 		lifetime = p.lifetimeEarned,
@@ -101,6 +104,10 @@ local function view(player: Player, p: any)
 		tips = p.tips,
 		settings = p.settings,
 	}
+	for k, v in Progression.view(p, now()) do
+		out[k] = v
+	end
+	return out
 end
 
 function AgencyService.push(player: Player)
@@ -114,13 +121,6 @@ local function toast(player: Player, text: string, kind: string?)
 	Remotes.Toast:FireClient(player, text, kind or "info")
 end
 
-local function earn(p: any, amount: number)
-	p.cash += amount
-	if amount > 0 then
-		p.lifetimeEarned += amount
-	end
-end
-
 -- Grants rewards for finished goals; promotes when the stage is complete. Returns true if anything changed.
 local function careerCheck(player: Player, p: any): boolean
 	local changed = false
@@ -129,9 +129,10 @@ local function careerCheck(player: Player, p: any): boolean
 	for _, g in goals do
 		if g.value >= g.goal.target and not p.career.claimed[g.key] then
 			p.career.claimed[g.key] = true
-			earn(p, g.goal.reward)
+			Economy.earn(p, g.goal.reward)
 			Telemetry.economy(player, true, "Cash", g.goal.reward, p.cash, "GoalReward")
-			toast(player, `Goal complete: {g.goal.label} · +{Format.money(g.goal.reward)}`, "goal")
+			toast(player, `Goal complete: {g.goal.label}, +{Format.money(g.goal.reward)}`, "goal")
+			Remotes.Celebrate:FireClient(player, "reward", { amount = g.goal.reward, source = "goal" })
 			Telemetry.funnel(player, 7, p)
 			changed = true
 		end
@@ -172,8 +173,16 @@ end
 -- One completed trip for a mission. Returns the trip result.
 local function completeTrip(player: Player, p: any, m: any): Economy.Trip
 	local rocket = findById(p.rockets, m.rocket)
-	local t = Economy.trip(rocket.model, m.dest, m.fare, m.service, cashMult(player))
-	earn(p, t.profit)
+	local firstVisit = not p.stats.visited[m.dest]
+	local t = Economy.trip(
+		rocket.model,
+		m.dest,
+		m.fare,
+		m.service,
+		cashMult(player) * Progression.tripMult(m),
+		Research.effects(p.research)
+	)
+	Economy.earn(p, t.profit)
 	Telemetry.accrue(player, "Trip", t.profit)
 	m.trips += 1
 	m.earned += t.profit
@@ -184,11 +193,12 @@ local function completeTrip(player: Player, p: any, m: any): Economy.Trip
 	p.stats.trips += 1
 	p.stats.passengers += t.filled
 	p.stats.visited[m.dest] = true
+	Progression.onTrip(player, p, m, t, firstVisit)
 	return t
 end
 
-local function schedule(player: Player, m: any, rocketModel: string, from: number)
-	local sec = Economy.tripSeconds(rocketModel, m.dest, fast(player))
+local function schedule(player: Player, p: any, m: any, rocketModel: string, from: number)
+	local sec = Economy.tripSeconds(rocketModel, m.dest, fast(player), Research.effects(p.research).speedMult)
 	m.departAt = from
 	m.arriveAt = from + sec
 end
@@ -202,7 +212,7 @@ function actions.createAgency(player, p, name, color)
 		return false, "Agency already exists"
 	end
 	if type(name) ~= "string" or #name < 3 or #name > 24 or not name:match("^[%w %.%-'&]+$") then
-		return false, "Use 3–24 letters, numbers or spaces"
+		return false, "Use 3 to 24 letters, numbers or spaces"
 	end
 	if type(color) ~= "number" or color ~= math.floor(color) or color < 1 or color > #Tuning.agencyColors then
 		return false, "Pick a colour"
@@ -289,12 +299,14 @@ function actions.planMission(player, p, destId, rocketId, fareId, serviceId)
 		lastLoad = 1,
 		departAt = 0,
 		arriveAt = 0,
+		launch = "pending",
 	}
 	p.nextMission += 1
-	schedule(player, m, rocket.model, now())
+	schedule(player, p, m, rocket.model, now())
 	rocket.mission = m.id
 	table.insert(p.missions, m)
 	p.stats.planned += 1
+	Progression.onPlan(p)
 	Telemetry.funnel(player, if p.stats.planned == 1 then 3 else 6, p)
 	return true, nil
 end
@@ -320,18 +332,19 @@ function actions.claimDaily(player, p)
 	p.daily.streak = if p.daily.lastDay == day - 1 then p.daily.streak + 1 else 1
 	p.daily.lastDay = day
 	local reward = Tuning.daily[((p.daily.streak - 1) % #Tuning.daily) + 1]
-	earn(p, reward)
+	Economy.earn(p, reward)
 	Telemetry.economy(player, true, "Cash", reward, p.cash, "DailyReward")
+	Remotes.Celebrate:FireClient(player, "reward", { amount = reward, source = "daily" })
 	toast(player, `Day {((p.daily.streak - 1) % #Tuning.daily) + 1} reward: +{Format.money(reward)}`, "money")
 	return true, nil
 end
 
 function actions.setFlag(player, p, key, value)
-	if not Net.isEnum(key, { reducedMotion = true }) or type(value) ~= "boolean" then
+	if not Net.isEnum(key, { reducedMotion = true, sound = true }) or type(value) ~= "boolean" then
 		return false, "Bad setting"
 	end
-	p.settings.reducedMotion = value
-	player:SetAttribute("ReducedMotion", value)
+	p.settings[key] = value
+	player:SetAttribute(if key == "sound" then "Sound" else "ReducedMotion", value)
 	return true, nil
 end
 
@@ -341,6 +354,10 @@ function actions.seenTip(_player, p, tipId)
 	end
 	p.tips[tipId] = true
 	return true, nil
+end
+
+for k, fn in Progression.actions do
+	actions[k] = fn
 end
 
 -- LIFECYCLE ----------------------------------------------------------------------------------------
@@ -367,7 +384,12 @@ local function catchUp(player: Player, p: any)
 	for _, m in p.missions do
 		local rocket = findById(p.rockets, m.rocket)
 		if rocket then
-			local sec = Economy.tripSeconds(rocket.model, m.dest, fast(player))
+			local sec = Economy.tripSeconds(
+				rocket.model,
+				m.dest,
+				fast(player),
+				Research.effects(p.research).speedMult
+			)
 			local n = Economy.tripsBetween(m.arriveAt, m.departAt, windowEnd, sec)
 			n = math.min(n, 2000)
 			for _ = 1, n do
@@ -376,7 +398,7 @@ local function catchUp(player: Player, p: any)
 				trips += 1
 				pax += r.filled
 			end
-			schedule(player, m, rocket.model, t)
+			schedule(player, p, m, rocket.model, t)
 		end
 	end
 	if p.lastSeen > 0 and away > 60 and #p.missions > 0 then
@@ -399,7 +421,7 @@ local function grantServerBoost(buyer: Player)
 	local from = math.max(now(), workspace:GetAttribute("BoostUntil") or 0)
 	workspace:SetAttribute("BoostUntil", from + minutes * 60)
 	for _, pl in Players:GetPlayers() do
-		toast(pl, `{buyer.DisplayName} started a Server Boost: 2× cash for {minutes} min!`, "milestone")
+		toast(pl, `{buyer.DisplayName} started a Server Boost: 2x cash for {minutes} min!`, "milestone")
 		AgencyService.push(pl)
 	end
 end
@@ -513,28 +535,37 @@ function AgencyService.start()
 	end)
 
 	-- Mission clock: arrivals pay out and the rocket turns around.
+	local lastTick = now()
 	task.spawn(function()
 		while true do
 			task.wait(0.25)
 			local t = now()
+			local dt = t - lastTick
+			lastTick = t
 			for player in ready do
 				local p = DataService.peek(player)
 				if p then
 					local changed = false
 					p.lastSeen = t
+					Progression.tick(p, dt)
 					for _, m in p.missions do
 						if t >= m.arriveAt then
 							local rocket = findById(p.rockets, m.rocket)
 							if rocket then
 								local r = completeTrip(player, p, m)
-								schedule(player, m, rocket.model, m.arriveAt + Tuning.turnaroundSeconds)
+								schedule(player, p, m, rocket.model, m.arriveAt + Tuning.turnaroundSeconds)
 								if p.stats.trips == 1 then
 									Telemetry.funnel(player, 4, p)
 								end
 								Remotes.Toast:FireClient(
 									player,
-									`{Destinations.byId[m.dest].code} arrival · +{Format.money(r.profit)}`,
+									`{Destinations.byId[m.dest].code} arrival, +{Format.money(r.profit)}`,
 									"arrival"
+								)
+								Remotes.Celebrate:FireClient(
+									player,
+									"arrival",
+									{ dest = m.dest, profit = r.profit }
 								)
 								if p.stats.trips % 100 == 0 then
 									toast(

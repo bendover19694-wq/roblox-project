@@ -1,5 +1,5 @@
 --!strict
--- Global economy tuning (docs/game-design-document.md §Economy).
+-- Global economy tuning (docs/game-design-document.md Economy section).
 
 return {
 	startCash = 60000,
@@ -50,6 +50,54 @@ return {
 			blurb = "Space-hotel treatment. Best rating.",
 		},
 	},
+	stageRewardMult = { 1, 2, 4, 8, 16, 32 },
+	perfectLaunch = { opensAfter = 2.6, windowSeconds = 0.5, graceSeconds = 0.3, bonus = 0.25 },
+	contracts = {
+		count = 3,
+		templates = {
+			{ kind = "trips", targets = { 5, 10, 20 }, reward = 6000 },
+			{ kind = "tripsTo", targets = { 3, 6, 10 }, reward = 7000 },
+			{ kind = "passengers", targets = { 60, 150, 300 }, reward = 6000, scales = true },
+			{ kind = "earned", targets = { 20000, 60000, 150000 }, reward = 8000, scales = true },
+			{ kind = "planned", targets = { 1, 2, 3 }, reward = 5000 },
+		},
+	},
+	research = {
+		unlockStage = 2,
+		maxLevel = 5,
+		tracks = {
+			{
+				id = "engines",
+				name = "Engines",
+				base = 80000,
+				growth = 2.2,
+				step = 0.06,
+				blurb = "Faster trips. +6% speed per level.",
+			},
+			{
+				id = "efficiency",
+				name = "Efficiency",
+				base = 60000,
+				growth = 2.2,
+				step = 0.08,
+				blurb = "Cheaper fuel. 8% less per level.",
+			},
+			{
+				id = "comfort",
+				name = "Comfort",
+				base = 70000,
+				growth = 2.2,
+				step = 0.04,
+				blurb = "More takers. +4% demand per level.",
+			},
+		},
+	},
+	gifts = {
+		{ minutes = 5, cash = 4000 },
+		{ minutes = 10, cash = 8000 },
+		{ minutes = 20, cash = 15000 },
+		{ minutes = 40, cash = 30000 },
+	},
 	daily = { 10000, 15000, 20000, 30000, 40000, 60000, 100000 },
 	agencyColors = {
 		Color3.fromHex("FF6B2C"),
@@ -65,7 +113,7 @@ return {
 	passes = {
 		doubleCash = {
 			id = 0,
-			name = "2× Cash",
+			name = "2x Cash",
 			price = 199,
 			blurb = "Earn double cash from every profitable trip.",
 		},
@@ -88,7 +136,7 @@ return {
 			name = "Server Boost",
 			price = 49,
 			minutes = 15,
-			blurb = "2× cash for everyone here for 15 minutes.",
+			blurb = "2x cash for everyone here for 15 minutes.",
 		},
 	},
 }

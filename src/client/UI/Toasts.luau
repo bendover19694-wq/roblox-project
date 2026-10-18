@@ -5,6 +5,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Kit = require(script.Parent.Kit)
+local Motion = require(script.Parent.Motion)
+local Sounds = require(script.Parent.Sounds)
 local Theme = require(script.Parent.Theme)
 
 local Toasts = {}
@@ -14,16 +16,24 @@ local lastArrival = 0
 local arrivalPill: Frame? = nil
 
 local STYLE: { [string]: { any } } = {
-	milestone = { "🎉", Theme.navyCard, Theme.amber },
-	goal = { "🏆", Theme.navyCard, Color3.fromHex("FFD36B") },
-	money = { "💰", Theme.navyCard, Theme.green },
-	error = { "⚠", Theme.red, Theme.white },
-	info = { "ℹ", Theme.navyCard, Theme.white },
+	milestone = { "star", Theme.navyCard, Theme.amber },
+	goal = { "trophy", Theme.navyCard, Color3.fromHex("FFD36B") },
+	money = { "coin", Theme.navyCard, Theme.green },
+	error = { "warning", Theme.red, Theme.white },
+	info = { "info", Theme.navyCard, Theme.white },
 }
 
-local function remove(f: Frame, after: number)
+-- Cards sit in a holder (a list layout would override their Position), so they can slide out.
+local function remove(f: Frame, after: number, holder: Frame?)
 	task.delay(after, function()
-		if f.Parent then
+		if not f.Parent then
+			return
+		end
+		if holder then
+			Motion.exit(f, "top", function()
+				holder:Destroy()
+			end)
+		else
 			Kit.tween(f, 0.2, { BackgroundTransparency = 1 })
 			task.wait(0.2)
 			f:Destroy()
@@ -58,19 +68,34 @@ function Toasts.show(text: string, kind: string?)
 				Parent = pill,
 			})
 			arrivalPill = pill
+			Sounds.play("arrival")
 			remove(pill, 2.2)
 		end
 		lastArrival = now
 		return
 	end
 	local s = STYLE[kind :: string] or STYLE.info
-	local f = Kit.new("Frame", {
+	local holder = Kit.new("Frame", {
 		LayoutOrder = math.floor(os.clock() * 10),
-		BackgroundColor3 = s[2],
+		BackgroundTransparency = 1,
 		AutomaticSize = Enum.AutomaticSize.X,
 		Size = UDim2.fromOffset(0, 74),
 		Parent = stack,
-	}, { Kit.corner(20), Kit.pad(18, 0), Kit.list(14, true) })
+	})
+	local f = Kit.new("Frame", {
+		BackgroundColor3 = s[2],
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 74),
+		Parent = holder,
+	}, {
+		Kit.corner(
+			nil,
+			{ tl = Theme.radius.toast, tr = Theme.radius.toast, br = Theme.radius.toast, bl = 4 }
+		),
+		Kit.pad(18, 0),
+		Kit.list(14, true),
+	})
+	Kit.shadow(f, 4)
 	local ic = Kit.iconCircle(s[1], s[3], 48, Theme.navyCard)
 	ic.LayoutOrder = 1
 	ic.Parent = f
@@ -81,8 +106,11 @@ function Toasts.show(text: string, kind: string?)
 		TextTruncate = Enum.TextTruncate.None,
 		Parent = f,
 	})
-	Kit.popIn(f)
-	remove(f, if kind == "error" then 3 else 3.5)
+	Motion.enter(f, "top")
+	if kind == "money" then
+		Sounds.play("coin")
+	end
+	remove(f, if kind == "error" then 3 else 3.5, holder)
 end
 
 function Toasts.start(canvas: Frame)

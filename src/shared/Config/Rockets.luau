@@ -1,6 +1,6 @@
 --!strict
 -- Rocket catalog. Original bird names (no real-world trademarks). Tuning lives here.
--- capacity = passengers/units per trip · range = max destination distance · fuel = cost per distance unit
+-- capacity = passengers/units per trip, range = max destination distance, fuel = cost per distance unit
 
 export type Rocket = {
 	id: string,

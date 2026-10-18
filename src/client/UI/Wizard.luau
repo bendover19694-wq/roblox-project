@@ -1,16 +1,20 @@
 --!strict
--- Plan Mission: pick a destination on the map, then a 3-step wizard (Destination → Rocket → Pricing).
+-- Plan Mission: pick a destination on the map, then a 3-step wizard (Destination, Rocket, Pricing).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Destinations = require(ReplicatedStorage.Shared.Config.Destinations)
 local Economy = require(ReplicatedStorage.Shared.Economy)
 local Format = require(ReplicatedStorage.Shared.Format)
+local Research = require(ReplicatedStorage.Shared.Research)
 local Rockets = require(ReplicatedStorage.Shared.Config.Rockets)
 local Tuning = require(ReplicatedStorage.Shared.Config.Tuning)
 local App = require(script.Parent.Parent.App)
+local Icons = require(script.Parent.Icons)
 local Kit = require(script.Parent.Kit)
+local Liftoff = require(script.Parent.Liftoff)
 local Map = require(script.Parent.Map)
+local Motion = require(script.Parent.Motion)
 local RocketView = require(script.Parent.RocketView)
 local Theme = require(script.Parent.Theme)
 
@@ -52,7 +56,7 @@ local function rocketOf(id: string?): any
 end
 
 local function close()
-	root.Visible = false
+	Motion.exit(root, "right")
 	App.setUi("wizard", false)
 end
 
@@ -104,13 +108,18 @@ local function paintSteps()
 			Size = UDim2.fromOffset(32, 32),
 			Parent = steps,
 		}, { Kit.round() })
-		Kit.text(
-			if done then "✓" else tostring(i),
-			16,
-			Theme.heavy,
-			if done or cur then Theme.white else Theme.muted,
-			{ Size = UDim2.fromScale(1, 1), TextXAlignment = Enum.TextXAlignment.Center, Parent = dot }
-		)
+		if done then
+			local tick = Icons.make("check", 18, Theme.white)
+			tick.AnchorPoint = Vector2.new(0.5, 0.5)
+			tick.Position = UDim2.fromScale(0.5, 0.5)
+			tick.Parent = dot
+		else
+			Kit.text(tostring(i), 16, Theme.heavy, if cur then Theme.white else Theme.muted, {
+				Size = UDim2.fromScale(1, 1),
+				TextXAlignment = Enum.TextXAlignment.Center,
+				Parent = dot,
+			})
+		end
 		Kit.text(name, 17, Theme.bold, if cur then Theme.ink else Theme.muted, {
 			LayoutOrder = i * 2 + 1,
 			AutomaticSize = Enum.AutomaticSize.X,
@@ -128,7 +137,8 @@ local function setFooter(
 	enabled: boolean,
 	onPrimary: () -> (),
 	back: boolean,
-	green: boolean?
+	green: boolean?,
+	icon: string?
 )
 	footer:ClearAllChildren()
 	if back then
@@ -140,6 +150,7 @@ local function setFooter(
 	end
 	local btn = Kit.button({
 		text = primary,
+		icon = icon,
 		disabled = not enabled,
 		color = if green then Theme.green else Theme.orange,
 		shade = if green then Theme.greenDark else Theme.orangeDark,
@@ -160,19 +171,20 @@ local function stepDestination()
 		{ Kit.stroke(Theme.line, 1) }
 	)
 	Kit.text(
-		`Earth  →  {d.name}`,
+		`Earth to {d.name}`,
 		30,
 		Theme.heavy,
 		Theme.ink,
 		{ Position = UDim2.fromOffset(20, 16), Size = UDim2.new(1, -40, 0, 36), Parent = top }
 	)
 	Kit.text(
-		`EARTH → {d.code} · {d.kind}`,
+		`EARTH to {d.code}  |  {d.kind}`,
 		16,
 		Theme.medium,
 		Theme.muted,
 		{ Position = UDim2.fromOffset(20, 54), Size = UDim2.new(1, -40, 0, 20), Parent = top }
 	)
+	local fx = Research.effects(App.view.research)
 	local demand = Economy.demandLabel(d.id)
 	local chip = Kit.chip(`{string.upper(demand)} DEMAND`, Theme.greenDark, Theme.greenSoft, 14)
 	chip.Position = UDim2.fromOffset(20, 86)
@@ -199,7 +211,9 @@ local function stepDestination()
 		4,
 		"Trip time",
 		if Economy.canReach(sample, d.id)
-			then `~{Format.duration(Economy.tripSeconds(sample, d.id, App.view.passes.fastLaunch))}`
+			then `~{Format.duration(
+				Economy.tripSeconds(sample, d.id, App.view.passes.fastLaunch, fx.speedMult)
+			)}`
 			else "Needs bigger rocket"
 	)
 	local note = Kit.card(
@@ -216,19 +230,20 @@ local function stepDestination()
 	end, false)
 end
 
-local function fitTag(model: string, destId: string): (string, Color3, Color3, boolean)
+local function fitTag(model: string, destId: string): (string, Color3, Color3, boolean, string?)
 	if not Economy.canReach(model, destId) then
-		return "OUT OF RANGE", Theme.muted, Theme.soft, false
+		return "OUT OF RANGE", Theme.muted, Theme.soft, false, nil
 	end
-	local t = Economy.trip(model, destId, state.fare, state.service)
+	local fx = Research.effects(App.view.research)
+	local t = Economy.trip(model, destId, state.fare, state.service, 1, fx)
 	if t.profit <= 0 then
-		return "LOSES MONEY", Theme.red, Theme.redSoft, true
+		return "LOSES MONEY", Theme.red, Theme.redSoft, true, nil
 	elseif t.load >= 0.95 then
-		return "↑ SELLS OUT", Theme.blue, Theme.blueSoft, true
+		return "SELLS OUT", Theme.blue, Theme.blueSoft, true, "arrowUp"
 	elseif t.load >= 0.6 then
-		return "GOOD FIT", Theme.greenDark, Theme.greenSoft, true
+		return "GOOD FIT", Theme.greenDark, Theme.greenSoft, true, nil
 	end
-	return "TOO BIG · HALF EMPTY", Theme.amber, Theme.amberSoft, true
+	return "TOO BIG, HALF EMPTY", Theme.amber, Theme.amberSoft, true, nil
 end
 
 local function stepRocket()
@@ -267,7 +282,7 @@ local function stepRocket()
 	end
 	for i, r in idle do
 		local spec = Rockets.byId[r.model]
-		local tag, fg, bg, usable = fitTag(r.model, d.id)
+		local tag, fg, bg, usable, tagIcon = fitTag(r.model, d.id)
 		local selected = state.rocket == r.id
 		local row = Kit.new("TextButton", {
 			LayoutOrder = i,
@@ -285,20 +300,20 @@ local function stepRocket()
 		view.Position = UDim2.fromOffset(12, 16)
 		view.Parent = row
 		Kit.text(
-			`#{r.tail} · {spec.name}`,
+			`#{r.tail}  |  {spec.name}`,
 			20,
 			Theme.heavy,
 			Theme.ink,
 			{ Position = UDim2.fromOffset(196, 16), Size = UDim2.new(1, -210, 0, 26), Parent = row }
 		)
 		Kit.text(
-			`{spec.capacity} seats · range {spec.range}`,
+			`{spec.capacity} seats  |  range {spec.range}`,
 			15,
 			Theme.medium,
 			Theme.muted,
 			{ Position = UDim2.fromOffset(196, 44), Size = UDim2.new(1, -210, 0, 20), Parent = row }
 		)
-		local chip = Kit.chip(tag, fg, bg, 13)
+		local chip = Kit.chip(tag, fg, bg, 13, tagIcon)
 		chip.Position = UDim2.fromOffset(196, 76)
 		chip.Parent = row
 		if usable then
@@ -373,9 +388,16 @@ local function stepPricing()
 	serviceBlurb.LayoutOrder = 3
 	serviceBlurb.Parent = serviceCard
 
-	local trip =
-		Economy.trip(r.model, d.id, state.fare, state.service, if App.view.passes.doubleCash then 2 else 1)
-	local secs = Economy.tripSeconds(r.model, d.id, App.view.passes.fastLaunch)
+	local fx = Research.effects(App.view.research)
+	local trip = Economy.trip(
+		r.model,
+		d.id,
+		state.fare,
+		state.service,
+		if App.view.passes.doubleCash then 2 else 1,
+		fx
+	)
+	local secs = Economy.tripSeconds(r.model, d.id, App.view.passes.fastLaunch, fx.speedMult)
 	local good = trip.profit > 0
 	local exp = Kit.new("Frame", {
 		LayoutOrder = if App.compact then 0 else 3, -- phones: the result first, above the fold
@@ -408,7 +430,7 @@ local function stepPricing()
 		{ LayoutOrder = 4, Parent = exp }
 	)
 	Kit.text(
-		`Trip time   <b>~{Format.duration(secs)}</b>   ·   about <b>{Format.money(
+		`Trip time   <b>~{Format.duration(secs)}</b>  |  about <b>{Format.money(
 			trip.profit * 60 / (secs + Tuning.turnaroundSeconds)
 		)}</b>/min`,
 		16,
@@ -417,19 +439,48 @@ local function stepPricing()
 		{ LayoutOrder = 5, Parent = exp }
 	)
 	Kit.text(
-		`{spec.name} #{r.tail} · fuel {Format.money(trip.fuel)} per trip`,
+		`{spec.name} #{r.tail}  |  fuel {Format.money(trip.fuel)} per trip`,
 		14,
 		Theme.regular,
 		Theme.muted,
 		{ LayoutOrder = 6, Parent = exp }
 	)
-	setFooter("🚀  LAUNCH MISSION", true, function()
-		if App.act("planMission", state.dest, state.rocket, state.fare, state.service) then
+	setFooter("LAUNCH MISSION", true, function()
+		local rocketId = state.rocket
+		if App.act("planMission", state.dest, rocketId, state.fare, state.service) then
 			close()
-			App.go("toast", `Mission to {d.name} launched!`, "milestone")
-			App.go("openPanel", "missions")
+			local function finishUp()
+				App.go("toast", `Mission to {d.name} launched!`, "milestone")
+				App.go("openPanel", "missions")
+			end
+			-- The new view may land just after the call returns, so wait briefly for the mission to show up.
+			task.spawn(function()
+				local m: any
+				for _ = 1, 20 do
+					for _, mm in App.view.missions do
+						if mm.rocket == rocketId and mm.departAt > 0 then
+							m = mm
+						end
+					end
+					if m then
+						break
+					end
+					task.wait(0.05)
+				end
+				if not m then
+					finishUp()
+					return
+				end
+				Liftoff.play({
+					missionId = m.id,
+					model = r.model,
+					color = Tuning.agencyColors[App.view.agency.color],
+					departAt = m.departAt,
+					destName = d.name,
+				}, finishUp)
+			end)
 		end
-	end, true, true)
+	end, true, true, "rocket")
 end
 
 function render()
@@ -462,8 +513,7 @@ local function openAt(destId: string)
 		end
 	end
 	App.go("openPanel", nil)
-	root.Visible = true
-	Kit.popIn(root)
+	Motion.enter(root, "right")
 	App.setUi("wizard", true)
 	render()
 end
@@ -529,28 +579,23 @@ function Wizard.start(canvas: Frame)
 		Visible = false,
 		Parent = canvas,
 	}, { Kit.stroke(Theme.line, 1) })
-	local head =
-		Kit.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 92), Parent = root })
-	local ic = Kit.iconCircle("🛰", Theme.amberSoft, 52, Theme.orange)
-	ic.Position = UDim2.fromOffset(20, 20)
-	ic.Parent = head
-	Kit.text(
-		"Plan Mission",
-		28,
-		Theme.heavy,
-		Theme.ink,
-		{ Position = UDim2.fromOffset(88, 18), Size = UDim2.new(1, -170, 0, 32), Parent = head }
-	)
-	local subtitle = Kit.text(
-		"Destination · Rocket · Pricing",
-		16,
-		Theme.medium,
-		Theme.muted,
-		{ Position = UDim2.fromOffset(88, 50), Size = UDim2.new(1, -170, 0, 22), Parent = head }
-	)
-	local x = Kit.iconButton("×", close, 44)
-	x.AnchorPoint = Vector2.new(1, 0)
-	x.Position = UDim2.new(1, -20, 0, 24)
+	local head = Kit.header("satellite", "Plan Mission", "Destination  |  Rocket  |  Pricing")
+	head.Parent = root
+	local headIcon: Frame, subtitle: TextLabel, title: TextLabel
+	for _, c in head:GetChildren() do
+		if c.Name == "Icon" then
+			headIcon = c :: Frame
+		elseif c:IsA("TextLabel") then
+			if c.Text == "Plan Mission" then
+				title = c
+			else
+				subtitle = c
+			end
+		end
+	end
+	local x = Kit.iconButton("close", close, 44, Theme.navyCard, Theme.white)
+	x.AnchorPoint = Vector2.new(1, 0.5)
+	x.Position = UDim2.new(1, -20, 0.5, 0)
 	x.Parent = head
 	steps = Kit.new("Frame", {
 		BackgroundTransparency = 1,
@@ -611,9 +656,12 @@ function Wizard.start(canvas: Frame)
 		end
 		-- compact: drop the subtitle and pull the steps up to give the body more height
 		subtitle.Visible = not compact
-		steps.Position = UDim2.fromOffset(22, if compact then 70 else 100)
-		body.Position = UDim2.fromOffset(18, if compact then 114 else 148)
-		body.Size = UDim2.new(1, -36, 1, if compact then -216 else -250)
+		head.Size = UDim2.new(1, 0, 0, if compact then 64 else 92)
+		headIcon.Position = UDim2.fromOffset(24, if compact then 32 else 46)
+		title.Position = UDim2.fromOffset(84, if compact then 15 elseif subtitle.Visible then 16 else 29)
+		steps.Position = UDim2.fromOffset(22, if compact then 72 else 100)
+		body.Position = UDim2.fromOffset(18, if compact then 116 else 148)
+		body.Size = UDim2.new(1, -36, 1, if compact then -218 else -250)
 		pickBar.AnchorPoint = if compact then Vector2.new(1, 1) else Vector2.new(0.5, 1)
 		pickBar.Position = if compact then UDim2.new(1, -16, 1, -16) else UDim2.new(0.5, 0, 1, -128)
 		pickBar.Size = UDim2.fromOffset(if compact then 560 else 620, 92)

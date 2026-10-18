@@ -30,12 +30,15 @@ function Economy.canReach(rocketId: string, destId: string): boolean
 	return r ~= nil and d ~= nil and d.distance <= r.range
 end
 
-function Economy.tripSeconds(rocketId: string, destId: string, fast: boolean?): number
+function Economy.tripSeconds(rocketId: string, destId: string, fast: boolean?, speedMult: number?): number
 	local r, d = Rockets.byId[rocketId], Destinations.byId[destId]
 	local t = Tuning.baseTripSeconds * d.distance / r.speed
 	t = math.clamp(t, Tuning.minTripSeconds, Tuning.maxTripSeconds)
 	if fast then
 		t /= 1.5
+	end
+	if speedMult then
+		t /= speedMult
 	end
 	return math.floor(t + 0.5)
 end
@@ -49,21 +52,29 @@ export type Trip = {
 	profit: number,
 }
 
--- One trip's outcome. `cashMult` covers 2× Cash and server boosts (applied to positive profit only).
+-- One trip's outcome. `cashMult` covers 2x Cash and server boosts (applied to positive profit only).
+-- `fx` carries research effects (fuelMult, demandMult).
 function Economy.trip(
 	rocketId: string,
 	destId: string,
 	fareId: string,
 	serviceId: string,
-	cashMult: number?
+	cashMult: number?,
+	fx: { fuelMult: number, demandMult: number }?
 ): Trip
 	local r, d = Rockets.byId[rocketId], Destinations.byId[destId]
 	local fare, service = Economy.fare(fareId), Economy.service(serviceId)
 	local wanting = d.demand * (1 - d.competition) * fare.demandMult * service.demandMult
+	if fx then
+		wanting *= fx.demandMult
+	end
 	local filled = math.min(r.capacity, math.floor(wanting))
 	local price = d.fare * fare.fareMult
 	local revenue = filled * price
 	local fuel = r.fuel * d.distance
+	if fx then
+		fuel *= fx.fuelMult
+	end
 	local serviceCost = filled * price * service.costShare
 	local profit = math.floor(revenue - fuel - serviceCost)
 	if profit > 0 and cashMult then
@@ -77,6 +88,14 @@ function Economy.trip(
 		serviceCost = math.floor(serviceCost),
 		profit = profit,
 	}
+end
+
+-- Credit cash; positive amounts also count toward lifetime earnings (career goals).
+function Economy.earn(p: any, amount: number)
+	p.cash += amount
+	if amount > 0 then
+		p.lifetimeEarned += amount
+	end
 end
 
 -- Map/route tag for a destination, relative to a rocket's capacity.

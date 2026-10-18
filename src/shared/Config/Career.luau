@@ -1,8 +1,8 @@
 --!strict
--- Career stages and goals. Goal kinds are evaluated in Economy.goalProgress.
---   planned: missions planned ever · rockets: rockets owned · earned: lifetime cash
---   served: distinct destinations with an active mission · trips: trips completed
---   rating: agency rating · visited:<dest>: any trip completed there · passengers: total carried
+-- Career stages and goals. Goal kinds are evaluated in Economy.goalValue.
+--   planned: missions planned ever, rockets: rockets owned, earned: lifetime cash
+--   served: distinct destinations with an active mission, trips: trips completed
+--   rating: agency rating, visited:<dest>: any trip completed there, passengers: total carried
 
 export type Goal = { kind: string, target: number, reward: number, label: string, jump: string }
 export type Stage = { name: string, blurb: string, goals: { Goal } }
@@ -39,7 +39,7 @@ local stages: { Stage } = {
 				kind = "rating",
 				target = 3.5,
 				reward = 50000,
-				label = "Reach a 3.5★ rating",
+				label = "Reach a 3.5 star rating",
 				jump = "missions",
 			},
 		},

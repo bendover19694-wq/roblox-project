@@ -1,6 +1,7 @@
 --!strict
 -- Client entry point: builds the UI and wires routes. The client renders and requests; it never grants value.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 
@@ -8,6 +9,7 @@ local App = require(script.Parent.App)
 local UI = script.Parent.UI
 local Advisor = require(UI.Advisor)
 local Hud = require(UI.Hud)
+local Juice = require(UI.Juice)
 local Map = require(UI.Map)
 local Modals = require(UI.Modals)
 local Panels = require(UI.Panels)
@@ -33,6 +35,7 @@ Wizard.start(canvas)
 Toasts.start(canvas)
 Modals.start(canvas)
 Shop.start(canvas)
+Juice.start(canvas)
 
 App.routes.toast = Toasts.show
 App.routes.openPanel = function(id: string?)
@@ -65,4 +68,5 @@ App.changed.Event:Connect(function()
 		Modals.createAgency()
 	end
 	Advisor.start(canvas)
+	Players.LocalPlayer:SetAttribute("ClientReady", true)
 end)

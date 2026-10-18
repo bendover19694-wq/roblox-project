@@ -8,7 +8,7 @@ local Format = shared("Format")
 test("starter rocket profits on its starter routes", function()
 	for _, dest in { "leo", "station" } do
 		local t = Economy.trip("sparrow", dest, "standard", "comfort")
-		assert(t.profit > 0, `sparrow → {dest} loses money: {t.profit}`)
+		assert(t.profit > 0, `sparrow to {dest} loses money: {t.profit}`)
 		assert(t.load > 0 and t.load <= 1, "load out of range")
 	end
 end)
@@ -27,7 +27,7 @@ test("every rocket profits on the farthest stage-appropriate destination it can 
 		end
 		assert(best, `{r.id} reaches nothing`)
 		local t = Economy.trip(r.id, best.id, "standard", "comfort")
-		assert(t.profit > 0, `{r.id} → {best.id} profit {t.profit}`)
+		assert(t.profit > 0, `{r.id} to {best.id} profit {t.profit}`)
 	end
 end)
 
@@ -118,4 +118,38 @@ test("profile migration fills new fields and keeps values", function()
 	local a, b = ProfileSchema.default(), ProfileSchema.default()
 	a.stats.visited.x = true
 	assert(b.stats.visited.x == nil, "shared table")
+end)
+
+test("research speedMult shortens trips", function()
+	local base = Economy.tripSeconds("kestrel", "moon")
+	local fast = Economy.tripSeconds("kestrel", "moon", false, 1.3)
+	assert(fast < base, `{fast} vs {base}`)
+	assert(Economy.tripSeconds("kestrel", "moon", false, nil) == base, "nil speedMult is neutral")
+end)
+
+test("research fuelMult lowers fuel and raises profit", function()
+	local a = Economy.trip("kestrel", "leo", "standard", "comfort")
+	local b = Economy.trip("kestrel", "leo", "standard", "comfort", nil, { fuelMult = 0.6, demandMult = 1 })
+	assert(b.fuel < a.fuel and b.profit > a.profit, `fuel {b.fuel}/{a.fuel} profit {b.profit}/{a.profit}`)
+end)
+
+test("research demandMult never fills past capacity", function()
+	local fx = { fuelMult = 1, demandMult = 50 }
+	for _, r in Rockets.list do
+		for _, d in Destinations.list do
+			local t = Economy.trip(r.id, d.id, "budget", "luxury", nil, fx)
+			assert(t.filled <= r.capacity and t.load <= 1, `{r.id}->{d.id} filled {t.filled}`)
+		end
+	end
+	local lo = Economy.trip("sparrow", "leo", "standard", "basic")
+	local hi = Economy.trip("sparrow", "leo", "standard", "basic", nil, { fuelMult = 1, demandMult = 1.2 })
+	assert(hi.filled >= lo.filled, "more demand never fills fewer seats")
+end)
+
+test("Economy.earn counts only positive amounts as lifetime earnings", function()
+	local p = { cash = 100, lifetimeEarned = 0 }
+	Economy.earn(p, 50)
+	assert(p.cash == 150 and p.lifetimeEarned == 50, "gain")
+	Economy.earn(p, -30)
+	assert(p.cash == 120 and p.lifetimeEarned == 50, "loss")
 end)

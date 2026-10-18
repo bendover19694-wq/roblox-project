@@ -84,6 +84,46 @@ Each stage has 3–4 goals that pay rewards. Finishing all of them promotes the 
 - The single-player idle loop has no player-vs-player fairness to protect. Rankings, if added, use career stage and rating, not cash.
 - Product IDs need a published place; until then the shop shows the products without buy buttons wired.
 
+## Perfect Launch
+Every new mission opens a liftoff card with a countdown (3, 2, 1, LIFTOFF) and a timing bar.
+- **Window:** it opens 2.6 s after `departAt` and lasts 0.5 s, plus 0.3 s of grace for network delay (`Tuning.perfectLaunch`).
+- **Reward:** a hit pays +25% on that mission's first trip only. A miss changes nothing else; it is never a penalty.
+- **Judged on the server** with its own receive time (`Launch.judge`). The client only sends `perfectLaunch(missionId)`; it never sends a time.
+- Skippable at any time. Under reduced motion the needle and countdown still run, because they carry the timing.
+
+## Daily Contracts
+- **Three contracts per UTC day**, rolled from the day number (Park-Miller RNG), so a rejoin never re-rolls. Kinds are distinct: trips, trips to one destination, passengers, earned from trips, missions planned.
+- **Difficulty** `i` is 1 to 3. `target = targets[i]` (x `stageRewardMult[stage]` for passengers and earned). `reward = template.reward * i * stageRewardMult[stage]`.
+- Base rewards: trips $6K (5, 10, 20), trips to X $7K (3, 6, 10), passengers $6K (60, 150, 300), earned $8K ($20K, $60K, $150K), planned $5K (1, 2, 3).
+- `stageRewardMult = { 1, 2, 4, 8, 16, 32 }`. A "trips to" destination is always one unlocked at the player's stage.
+- Collect with `claimContract(index)`. The Hud "Next move" banner offers COLLECT for a finished contract.
+
+## Research
+- **Research lab** unlocks at career stage 2. Three tracks, 5 levels each: Engines (+6% speed per level), Efficiency (8% less fuel per level), Comfort (+4% demand per level).
+- **Cost** of the next level = `round(base * 2.2^level, to $1K)`. Bases: Engines $80K, Efficiency $60K, Comfort $70K. Cash is the only currency.
+- Effects flow through `Economy.tripSeconds(..., speedMult)` and `Economy.trip(..., fx)`; the mission wizard previews them. Nothing is sold for Robux.
+
+## Playtime Gifts
+- Play time is counted per UTC day, not per session, so rejoining does not farm gifts.
+- Tiers open in order at 5, 10, 20 and 40 minutes of play for $4K, $8K, $15K and $30K, times `stageRewardMult[stage]`. After the fourth, the pill is hidden until tomorrow.
+- The Hud pill shows "Free gift in m:ss", then an OPEN GIFT button. Nothing opens by itself.
+
+## Mission Patches
+A collection derived from visits and career stage (nothing extra is saved): one patch per destination (earned when a trip has reached it) and one per career stage (earned at that stage). Unearned patches show as "???". The collection lives under More, Mission patches.
+
+## Money and conversion notes
+New cash sources: contract rewards, playtime gifts and the Perfect Launch bonus. New sink: research. All three sources scale with `stageRewardMult` so they stay meaningful at every stage.
+- **Honest examples:** each shop card shows a number computed from the player's own best mission ("+$A to +$2A per trip", "<duration> to <duration> per trip"), never an inflated one.
+- A "STARTER PACK" chip appears on the Next-move banner from stage 2 and only once; tapping it opens the shop. Nothing auto-opens, timers are truthful, and the first shop visit has a Nova note that everything is optional.
+
+## Look and feel
+- **Mission Control identity:** light cards stay readable; the character comes from navy console bands (`Kit.header`) with faint scanlines, cyan accents, mono numerals, soft shadows (UIShadow) and per-corner radii.
+- **Drawn icons:** 34 icons are built in code from Frames, strokes and gradients (`UI/Icons.luau`), tinted per use. No emoji, no em dashes and no symbol glyphs in the UI.
+- **Eight motion patterns** (`UI/Motion.luau`): enter, exit, pop, press, countUp, flyTo, pulse, shake. All jump to their end state under reduced motion.
+- **Sounds:** short UI and event sounds (`UI/Sounds.luau`, ids in `Config/Sounds.luau`, built-in placeholders). More, Settings has a Sound toggle (saved in the profile).
+- **Bootup:** a ReplicatedFirst screen with warp streaks, the title and a rising rocket, about 3 s, skippable, held until the client reports ready.
+- **Liftoff:** the countdown card with the rocket, smoke and the Perfect Launch bar shown when a mission is launched.
+
 ## Data
 One profile per player (`ProfileSchema`), saved through `DataService` (session-locked). Missions are stored as timestamps (`nextArrival`), so the server simulates nothing per frame and offline progress is exact.
 

@@ -1,5 +1,6 @@
 --!strict
--- Design tokens: light cards over a deep-space map (research/run-an-airline-study.md → our own palette).
+-- Design tokens. Mission Control look: light cards for readability, navy readout bands, cyan accents,
+-- mono numerals, soft shadows and per-corner radii.
 
 local function hex(h: string): Color3
 	return Color3.fromHex(h)
@@ -7,6 +8,10 @@ end
 
 local function font(weight: Enum.FontWeight): Font
 	return Font.new("rbxasset://fonts/families/BuilderSans.json", weight)
+end
+
+local function family(name: string, weight: Enum.FontWeight): Font
+	return Font.new("rbxasset://fonts/families/" .. name .. ".json", weight)
 end
 
 return {
@@ -31,9 +36,19 @@ return {
 	navy = hex("0B1026"),
 	navy2 = hex("1E1650"),
 	navyCard = hex("141A3A"),
+	navy3 = hex("0F1733"), -- readout band
+	cyan = hex("2EE6D6"),
+	cyanDark = hex("13A89C"),
+	cyanSoft = hex("DDFBF8"),
+	gridLine = hex("2A3566"),
+	shadow = hex("050816"),
 	regular = font(Enum.FontWeight.Regular),
 	medium = font(Enum.FontWeight.Medium),
 	bold = font(Enum.FontWeight.Bold),
 	heavy = font(Enum.FontWeight.Heavy),
-	radius = { card = 18, button = 14, chip = 10 },
+	display = family("BuilderExtended", Enum.FontWeight.Heavy),
+	displayBold = family("BuilderExtended", Enum.FontWeight.Bold),
+	mono = family("BuilderMono", Enum.FontWeight.Bold),
+	monoRegular = family("BuilderMono", Enum.FontWeight.Regular),
+	radius = { card = 18, button = 14, chip = 10, tab = 12, toast = 16, readout = 12 },
 }
