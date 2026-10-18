@@ -89,8 +89,8 @@ function Juice.confetti()
 	end
 end
 
--- Text that pops at `screen` (true screen pixels), rises and fades.
-function Juice.float(screen: Vector2, text: string, color: Color3, size: number?)
+-- Text that pops at `screen` (true screen pixels), stays `hold` seconds, then rises and fades.
+function Juice.float(screen: Vector2, text: string, color: Color3, size: number?, hold: number?)
 	local at = toLocal(screen) - layer.AbsolutePosition
 	local px = size or 20
 	local label = Kit.new("TextLabel", {
@@ -107,20 +107,23 @@ function Juice.float(screen: Vector2, text: string, color: Color3, size: number?
 		Parent = layer,
 	})
 	if Motion.reduced() then
-		task.delay(0.9, function()
+		task.delay(0.9 + (hold or 0), function()
 			label:Destroy()
 		end)
 		return
 	end
 	Motion.pop(label)
-	Kit.tween(label, 1.1, {
-		Position = UDim2.fromOffset(at.X, at.Y - 10 - px * 2.4),
-		TextTransparency = 1,
-		TextStrokeTransparency = 1,
-	}, Enum.EasingStyle.Quad, Enum.EasingDirection.In).Completed
-		:Connect(function()
+	-- `hold` keeps big moments (jackpots) on screen before they drift away
+	task.delay(hold or 0, function()
+		local rise = Kit.tween(label, 1.1, {
+			Position = UDim2.fromOffset(at.X, at.Y - 10 - px * 2.4),
+			TextTransparency = 1,
+			TextStrokeTransparency = 1,
+		}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		rise.Completed:Connect(function()
 			label:Destroy()
 		end)
+	end)
 end
 
 -- Small smoke puffs that burst out of `screen` and fade.
@@ -206,7 +209,7 @@ function Juice.start(canvas: Frame)
 			local profit = if type(data.profit) == "number" then data.profit else 0
 			if from and jackpot > 0 then
 				-- the lucky trip: big gold pop, a fat coin burst, a flash of confetti
-				Juice.float(from, `JACKPOT +{Format.money(profit + jackpot)}`, Theme.amber, 30)
+				Juice.float(from, `JACKPOT +{Format.money(profit + jackpot)}`, Theme.amber, 34, 0.7)
 				Juice.coins(from, 14)
 				Sounds.play("jackpot")
 				Juice.confetti()

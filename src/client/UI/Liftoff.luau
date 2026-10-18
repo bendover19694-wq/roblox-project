@@ -45,7 +45,7 @@ function Liftoff.play(o: Options, onDone: () -> ())
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(460, 560),
 		BackgroundColor3 = Theme.navy,
-		BackgroundTransparency = 0.1,
+		BackgroundTransparency = 0, -- opaque: toasts fired during liftoff must not show through
 		Parent = gui,
 	}, { Kit.corner(Theme.radius.card), Kit.stroke(Theme.gridLine, 2), Kit.new("UIScale", { Scale = fit }) })
 	Kit.text(`Cleared for {o.destName}`, 24, Theme.display, Theme.white, {

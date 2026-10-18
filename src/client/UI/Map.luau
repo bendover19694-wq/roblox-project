@@ -31,10 +31,29 @@ local function S(): number
 	return math.clamp(workspace.CurrentCamera.ViewportSize.Y / 1080, 0.45, 1.4)
 end
 
+-- Compact layout keeps the HUD in a left column (card, Next move, Nova, nav), which would hide Earth and the
+-- first destinations. Squeeze the map into the space right of that column; 0 on wide screens.
+local HUD_COLUMN = 16 + 410 + 8 -- design px: margin + widest left card (Nova) + a little air
+local function insetLeft(): number
+	if not App.compact then
+		return 0
+	end
+	local hud = Players.LocalPlayer.PlayerGui:FindFirstChild("Hud")
+	local canvas = hud and hud:FindFirstChild("Canvas")
+	local sc = canvas and canvas:FindFirstChildOfClass("UIScale")
+	if not sc then
+		return 0
+	end
+	return math.min(0.45, HUD_COLUMN * sc.Scale / workspace.CurrentCamera.ViewportSize.X)
+end
+
 local function screenPos(scalePos: Vector2): Vector2
 	local v = workspace.CurrentCamera.ViewportSize
-	return Vector2.new(scalePos.X * v.X, scalePos.Y * v.Y)
+	local left = insetLeft()
+	return Vector2.new((left + scalePos.X * (1 - left)) * v.X, scalePos.Y * v.Y)
 end
+
+local orbits: { Frame } = {}
 
 local function agencyColor(): Color3
 	local v = App.view
@@ -60,6 +79,15 @@ local function body(size: number, a: Color3, b: Color3): Frame
 	return f
 end
 
+-- Compact (phone) maps are squeezed, so labels show just the code ("MOON"); wide screens add the name.
+-- While picking a destination the full names come back, since that is when players read them.
+local function labelText(code: string, name: string): string
+	if App.compact and not pickCallback then
+		return `<b>{code}</b>`
+	end
+	return `<b>{code}</b> <font color="#6B7488">  |  {name}</font>`
+end
+
 local function label(code: string, name: string): TextButton
 	return Kit.new("TextButton", {
 		AnchorPoint = Vector2.new(0.5, 0),
@@ -72,7 +100,7 @@ local function label(code: string, name: string): TextButton
 		Kit.corner(15),
 		Kit.pad(12, 0),
 		Kit.list(6, true),
-		Kit.text(`<b>{code}</b> <font color="#6B7488">  |  {name}</font>`, 15, Theme.medium, Theme.ink, {
+		Kit.text(labelText(code, name), 15, Theme.medium, Theme.ink, {
 			Name = "Name",
 			AutomaticSize = Enum.AutomaticSize.X,
 			Size = UDim2.fromScale(0, 1),
@@ -98,11 +126,19 @@ end
 
 local function layout()
 	local s = S()
+	local hubAt = screenPos(Destinations.hub.pos)
+	for _, o in orbits do
+		o.Position = UDim2.fromOffset(hubAt.X, hubAt.Y)
+	end
 	for _, node in nodes do
 		local p = screenPos(node.pos)
 		node.root.Position = UDim2.fromOffset(p.X, p.Y)
 		node.root.Size = UDim2.fromOffset(node.size * s, node.size * s)
 		node.label.Position = UDim2.new(0.5, 0, 1, 6 * s)
+		if node.code then
+			local nameLabel = node.label:FindFirstChild("Name") :: TextLabel
+			nameLabel.Text = labelText(node.code, node.name)
+		end
 		local scale = node.label:FindFirstChildOfClass("UIScale")
 			or Kit.new("UIScale", { Parent = node.label })
 		-- phones: the HUD's compact layout; keep planet names readable rather than true-to-scale
@@ -162,7 +198,16 @@ local function makeNode(
 	root.Activated:Connect(onClick)
 	-- the name label sits below the planet; it is clickable too (playtest: players click names)
 	lab.Activated:Connect(onClick)
-	nodes[id] = { root = root, body = bodyFrame, label = lab, pos = pos, size = size, pickRing = pickRing }
+	nodes[id] = {
+		root = root,
+		body = bodyFrame,
+		label = lab,
+		pos = pos,
+		size = size,
+		pickRing = pickRing,
+		code = if id == "earth" then nil else code, -- Earth's label shows the agency name (refreshTags)
+		name = name,
+	}
 end
 
 local function bezier(a: Vector2, b: Vector2, t: number): (Vector2, Vector2)
@@ -260,8 +305,7 @@ local function refreshTags()
 		end
 	end
 	local earthLabel = nodes.earth.label:FindFirstChild("Name")
-	earthLabel.Text =
-		`<b>EARTH</b> <font color="#6B7488">  |  {v.agency.name ~= "" and v.agency.name or "Your spaceport"}</font>`
+	earthLabel.Text = labelText("EARTH", if v.agency.name ~= "" then v.agency.name else "Your spaceport")
 end
 
 -- Pick mode: highlight `ids` (green rings), dim the rest. Pass nil to exit.
@@ -275,6 +319,12 @@ function Map.setPick(ids: { string }?, onPick: ((string) -> ())?)
 		node.pickRing.Visible = pickable[id] == true
 		if ids and id ~= "earth" then
 			node.body.BackgroundTransparency = if pickable[id] then 0 else 0.6
+		end
+	end
+	for _, node in nodes do
+		if node.code then
+			local nameLabel = node.label:FindFirstChild("Name") :: TextLabel
+			nameLabel.Text = labelText(node.code, node.name)
 		end
 	end
 	if not ids then
@@ -371,7 +421,7 @@ function Map.start()
 	-- orbit rings around Earth
 	local hub = Destinations.hub
 	for i, k in { 0.14, 0.28, 0.46 } do
-		Kit.new("Frame", {
+		orbits[i] = Kit.new("Frame", {
 			Name = `Orbit{i}`,
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(hub.pos.X, hub.pos.Y),
@@ -411,7 +461,10 @@ function Map.start()
 		makeNode(d.id, d.pos, d.size, d.color, d.color2, d.code, d.name, d.ring)
 	end
 	layout()
-	App.layoutChanged.Event:Connect(layout)
+	App.layoutChanged.Event:Connect(function()
+		layout()
+		drawMissions()
+	end)
 	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
 		layout()
 		drawMissions()
