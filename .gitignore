@@ -1,0 +1,10 @@
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+sourcemap.json
+roblox.yml
+FogbellHarbor.rbxlx
+.types/
+captures/
+SpaceAgency.rbxlx
