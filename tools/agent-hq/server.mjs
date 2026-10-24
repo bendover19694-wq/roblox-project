@@ -263,7 +263,7 @@ export async function startServer({ root, port = 4317, stateDir, dbFile, runner,
   const clean = (t) => { if (t && 'taskToken' in t) { const { taskToken, ...r } = t; return r; } return t; };
   // a missing vault or skill file must not break claiming a task (the token would be lost)
   const briefFor = (task, taskToken) => {
-    try { return buildBrief({ task, role: task.role, root, db, taskToken }); } catch (e) {
+    try { return buildBrief({ task, role: task.role, root, db, taskToken, memoryDir }); } catch (e) {
       // Degraded brief: keep the hard rules and the reporting credentials so the agent stays safe and can still report.
       return `Full brief unavailable (${e.message}). Read CLAUDE.md first and follow it.
 
@@ -1108,7 +1108,7 @@ ${task.body}`;
   });
   boundPort = server.address().port;
 
-  rn = runnerOwned ? runner({ db, root, emit: hookedEmit, port: boundPort, token }) : (runner ?? null);
+  rn = runnerOwned ? runner({ db, root, emit: hookedEmit, port: boundPort, token, memoryDir }) : (runner ?? null);
   if (runnerOwned) rn.start?.();
 
   return {

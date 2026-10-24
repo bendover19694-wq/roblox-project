@@ -39,10 +39,10 @@ export function parseVault(root) {
   return out.map(({ n, title, lines }) => ({ n, title, text: lines.join('\n').trim() }));
 }
 
-/** Newest `n` lessons of a role, from tools/agent-hq/memory/<role>.md (lines "- YYYY-MM-DD: text"). */
-export function readLessons(root, roleId, n = 15) {
+/** Newest `n` lessons of a role, from <memoryDir>/<role>.md (default tools/agent-hq/memory; lines "- YYYY-MM-DD: text"). */
+export function readLessons(root, roleId, n = 15, memoryDir = path.join(root, 'tools/agent-hq/memory')) {
   try {
-    const file = path.join(root, 'tools/agent-hq/memory', `${roleId}.md`);
+    const file = path.join(memoryDir, `${roleId}.md`);
     return fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((l) => l.startsWith('- ')).slice(-n);
   } catch {
     return [];
@@ -127,14 +127,14 @@ function skillsSection(r, engine) {
  * conversation, task, definition of done, reporting, then engine and lead extras.
  * Pass `db` to include the role's recent conversation.
  */
-export function buildBrief({ task, role, root, db, taskToken }) {
+export function buildBrief({ task, role, root, db, taskToken, memoryDir }) {
   const roles = loadRoles();
   const r = typeof role === 'string' ? roles.find((x) => x.id === role) : role;
   if (!r) throw new Error(`unknown role: ${role}`);
   const engine = task.engine || r.engine;
   const vault = parseVault(root);
   const chapters = r.chapters.map((n) => vault.find((c) => c.n === n)?.text).filter(Boolean);
-  const lessons = readLessons(root, r.id);
+  const lessons = readLessons(root, r.id, 15, memoryDir);
   const convo = recentConversation(db, r.id);
 
   const parts = [

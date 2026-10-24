@@ -13,6 +13,11 @@ function readOwnerToken() {
   try { return localStorage.getItem('hq-owner') || ''; } catch { return ''; }
 }
 export const token = readOwnerToken();
+// A signed-in link opened in an existing tab only changes the fragment (no reload), so catch it here too.
+window.addEventListener('hashchange', () => {
+  const m = location.hash.match(/(?:^#|&)owner=([0-9a-f]{64})/);
+  if (m && m[1] !== token) { readOwnerToken(); location.reload(); }
+});
 export function signOut() { try { localStorage.removeItem('hq-owner'); } catch { /* nothing stored */ } location.reload(); }
 
 export const store = {
