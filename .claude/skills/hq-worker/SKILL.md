@@ -11,7 +11,7 @@ Work from the repo root `C:\Users\aryam\Downloads\Roblox Project\.claude\worktre
 
 If the `hq_*` MCP tools are missing in this session, use `node tools/agent-hq/hqctl.mjs` from the repo root for every step instead (`gate app`, `next app`, `note`, `complete`, `learn`; see `--help`). It prints JSON.
 
-0a. **HQ up?** Check `GET http://127.0.0.1:4317/api/health` (`curl -s` or `node -e "fetch('http://127.0.0.1:4317/api/health').then(r=>r.text()).then(console.log)"`). If it is down, start it detached so it outlives this session: PowerShell `Start-Process -FilePath node -ArgumentList 'tools/agent-hq/server.mjs' -WorkingDirectory '<repo root>' -WindowStyle Hidden`, then wait up to 10 s for health. If it is still down, report that and stop.
+0a. **HQ up?** Check `GET http://127.0.0.1:4317/api/health` (`curl -s` or `node -e "fetch('http://127.0.0.1:4317/api/health').then(r=>r.text()).then(console.log)"`). If it is down, start it detached so it outlives this session: run `wscript.exe "<repo root>\scripts\agent-hq-hidden.vbs"` (starts the keep-alive hidden; it restarts HQ if it crashes and does nothing if HQ is already up), then wait up to 10 s for health. If it is still down, report that and stop.
 0. **Gate.** Decide `manual`: true when a person asked in chat to work the queue; false when the prompt says it is the scheduled HQ worker. Call `hq_lane_gate {engine: "app", manual}`. If `run` is false, reply with one line containing the `reason` and stop; do nothing else. Otherwise use the returned `maxTasks` as this run's cap.
 1. **Tools.** If the `agent-hq` tools and `hqctl` both fail even though HQ is up, report that and stop.
 2. **Claim.** Call `hq_next_task {engine: "app"}`. If it returns `Queue empty for app.`, say "Queue empty" and stop.

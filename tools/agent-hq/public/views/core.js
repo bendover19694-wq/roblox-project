@@ -1,7 +1,7 @@
 // Shared store, API helper, SSE, DOM helpers, overlays.
 import { svg } from '../icons.js';
 
-// Owner sign-in: scripts/hq.ps1 opens #owner=<token>. The fragment never reaches the server; keep it in this
+// Owner sign-in: scripts/Agent HQ.bat opens #owner=<token>. The fragment never reaches the server; keep it in this
 // browser's storage and strip it from the address bar so it does not linger in history or screenshots.
 function readOwnerToken() {
   const m = location.hash.match(/(?:^#|&)owner=([0-9a-f]{64})/);

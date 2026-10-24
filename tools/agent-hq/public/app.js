@@ -133,7 +133,7 @@ if (!token) {
   document.getElementById('side').replaceChildren();
   main.replaceChildren(h('div', { class: 'empty' },
     h('h2', {}, 'Sign in to Agent HQ'),
-    h('p', {}, 'Open the dashboard with scripts/hq.ps1 from the project folder. It opens a signed-in link for this browser.')));
+    h('p', {}, 'Open the dashboard with the Agent HQ shortcut on your desktop (or scripts/Agent HQ.bat in the project folder). It opens a signed-in link for this browser.')));
 } else {
   renderAll();
   startEvents();

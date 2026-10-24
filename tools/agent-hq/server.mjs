@@ -1129,7 +1129,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const { createRunner } = await import('./runner.mjs');
   const port = Number(process.env.HQ_PORT) || 4317;
   const s = await startServer({ root: path.resolve(HERE, '../..'), port, runner: (ctx) => createRunner(ctx) });
-  console.log(`Agent HQ on http://127.0.0.1:${s.port} (open it with scripts/hq.ps1 to sign in as the owner)`);
+  console.log(`Agent HQ on http://127.0.0.1:${s.port} (open it with scripts/Agent HQ.bat or the desktop shortcut to sign in as the owner)`);
   const stop = async () => { await s.close(); process.exit(0); };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
