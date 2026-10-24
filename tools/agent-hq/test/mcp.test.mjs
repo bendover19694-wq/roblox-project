@@ -260,6 +260,11 @@ test('every task-scoped call carries taskId, and none works without one', async 
   assert.equal(calls.at(-1)[0], 'ask');
   assert.equal(calls.at(-1)[1].taskId, 't_1');
   assert.equal(calls.at(-1)[1].mediaPath, 'assets/marketing/icon_draft.png');
+  // hq_add_media only attaches real media files, never HQ state, git internals or arbitrary repo files
+  for (const p of ['.agent-hq/owner-token', '.agent-hq/token', 'CLAUDE.md', '.git/config', 'tools/agent-hq/server.mjs']) {
+    const r = await ide.call('hq_add_media', { taskId: 't_1', path: p, ask: 'leak?' });
+    assert.equal(r.result.isError, true, p);
+  }
   await ide.call('hq_note', { taskId: 't_1', text: 'hi' });
   assert.equal(messages.at(-1).taskId, 't_1');
 

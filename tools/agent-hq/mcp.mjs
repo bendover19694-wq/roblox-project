@@ -5,6 +5,7 @@ import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
+const MEDIA_EXT = /\.(png|jpe?g|gif|webp|mp3|ogg|wav|mp4)$/i; // keep in step with MEDIA_INLINE in server.mjs
 const HQ_URL = process.env.HQ_URL || 'http://127.0.0.1:4317';
 const HQ_TASK = process.env.HQ_TASK || '';
 const HQ_ROLE = process.env.HQ_ROLE || '';
@@ -158,12 +159,16 @@ export const handlers = {
   async hq_add_media(a) {
     const taskId = taskIdOf(a);
     const taskToken = tokenOf(a);
-    const src = path.resolve(ROOT, need(a.path, 'path'));
-    const rel = path.relative(ROOT, src);
+    // Resolve symlinks first so a link cannot smuggle out a file from elsewhere, then allow only real media files
+    // outside HQ state and git internals (the owner token lives in .agent-hq/).
+    const src = fs.realpathSync(path.resolve(ROOT, need(a.path, 'path')));
+    const rel = path.relative(fs.realpathSync(ROOT), src);
     if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('path must be inside the repo');
+    const relPosix = rel.split(path.sep).join('/');
+    if (/^(\.agent-hq|\.git)(\/|$)/.test(relPosix)) throw new Error('files under .agent-hq/ or .git/ cannot be attached');
+    if (!MEDIA_EXT.test(relPosix)) throw new Error('only image, audio or video files (png, jpg, gif, webp, mp3, ogg, wav, mp4) can be attached');
     if (!fs.statSync(src).isFile()) throw new Error('path is not a file');
     // Files already under assets/ are served in place (and keep a real repo path for follow-up tasks); anything else is copied.
-    const relPosix = rel.split(path.sep).join('/');
     let mediaPath = relPosix;
     if (!relPosix.startsWith('assets/')) {
       mediaPath = `${Date.now()}-${path.basename(src).replace(/[^\w.-]/g, '_')}`;

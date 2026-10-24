@@ -1031,6 +1031,8 @@ ${task.body}`;
   }
 
   function serveMedia(res, rel) {
+    // Media only: anything else (tokens, logs, code) never leaves through this unauthenticated route.
+    if (!MEDIA_INLINE.has(path.extname(rel).toLowerCase())) throw new HttpError(404, 'not found');
     const tries = [[path.join(stateDir, 'media'), rel]];
     if (rel.startsWith('assets/')) tries.push([path.join(root, 'assets'), rel.slice(7)]);
     tries.push([path.join(root, 'assets'), rel]);

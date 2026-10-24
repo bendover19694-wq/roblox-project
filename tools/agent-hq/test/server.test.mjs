@@ -94,6 +94,11 @@ test('media path traversal and bad host are refused', async () => {
   const { s } = await boot();
   assert.equal(await raw(s.port, '/media/../CLAUDE.md'), 404);
   assert.equal(await raw(s.port, '/media/..%2FCLAUDE.md'), 404);
+  // only media extensions are ever served from /media, so state files cannot leak through it
+  for (const name of ['owner-token', 'token', 'hq.db', 'notes.md']) {
+    fs.writeFileSync(path.join(s.stateDir, 'media', name), 'secret');
+    assert.equal(await raw(s.port, '/media/' + name), 404, name);
+  }
   assert.equal(await raw(s.port, '/static/../server.mjs'), 404);
   assert.equal(await raw(s.port, '/api/health', { host: 'evil.example' }), 403);
   await s.close();
