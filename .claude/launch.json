@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "agent-hq",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/agent-hq/server.mjs"],
+      "port": 4317
+    }
+  ]
+}

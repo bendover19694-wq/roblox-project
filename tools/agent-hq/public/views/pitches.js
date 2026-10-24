@@ -1,0 +1,189 @@
+// Pitches: decision cards, compare side by side, owner ideas.
+import { h, store, api, act, btn, field, empty, pageHead, ago, upsert, openModal, notify, toast } from './core.js';
+import { chip, tile, segmented, num } from './games.js';
+
+let tab = 'needs';
+const picked = new Set();
+
+const state = (p) => (p.state === 'rejected' ? 'declined' : p.state);
+const TABS = [
+  ['needs', 'Needs your decision', (p) => state(p) === 'proposed'],
+  ['waiting', 'Waiting on Scout', (p) => ['evaluating', 'changes'].includes(state(p))],
+  ['yours', 'Your ideas', (p) => p.origin === 'owner'],
+  ['history', 'History', (p) => ['approved', 'declined', 'withdrawn'].includes(state(p))],
+];
+
+const arr = (x) => (Array.isArray(x) ? x : x ? [x] : []);
+const text = (x) => (x == null ? '' : typeof x === 'string' ? x : JSON.stringify(x));
+const pct = (v) => (v == null ? null : (v <= 1 ? Math.round(v * 100) : Math.round(v)) + '%');
+const g = (p) => (p.game && typeof p.game === 'object' ? p.game : {});
+const ev = (p) => (p.evidence && typeof p.evidence === 'object' ? p.evidence : { summary: text(p.evidence), links: [] });
+const bld = (p) => (p.building && typeof p.building === 'object' ? p.building : {});
+const best = (list, key) => list.map((c) => c[key]).filter((v) => v != null && !Number.isNaN(Number(v))).reduce((a, v) => (a == null || v > a ? v : a), null);
+
+function decide(p, body, okMsg) {
+  return act(async () => {
+    const r = await api('POST', `/api/pitches/${encodeURIComponent(p.id)}/decide`, body);
+    if (r && r.id) upsert(store.pitches, r);
+    else if (r && r.pitch && r.pitch.id) upsert(store.pitches, r.pitch);
+    else p.state = body.state;
+    notify();
+  }, okMsg);
+}
+
+function askNote(title, label, cta, onSubmit) {
+  const note = h('textarea', { class: 'pg-input', rows: 4, maxlength: 2000, placeholder: label });
+  let close;
+  const form = h('form', { class: 'pg-form', onsubmit: async (e) => {
+    e.preventDefault();
+    if (!note.value.trim()) { toast('Write a short note first', 'error'); return; }
+    if (await onSubmit(note.value.trim())) close();
+  } }, note, h('div', { class: 'row gap end' }, btn(cta, null, { kind: 'primary' })));
+  form.querySelector('button').type = 'submit';
+  close = openModal(title, form);
+  note.focus();
+}
+
+function editApprove(p) {
+  const gm = g(p);
+  const F = [
+    ['title', 'Title', p.title, 200, false], ['oneLiner', 'One-liner', p.oneLiner, 300, false], ['edge', 'How we are different', p.edge, 600, true],
+    ['howItPlays', 'How it plays', gm.howItPlays, 2000, true], ['first60s', 'First 60 seconds', gm.first60s, 2000, true],
+    ['goal10to15', 'Goal at 10 to 15 minutes', gm.goal10to15, 2000, true], ['monetization', 'How it makes money', gm.monetization, 2000, true],
+    ['clipMoment', 'The clip moment', gm.clipMoment, 2000, true], ['iconIdea', 'Icon idea', gm.iconIdea, 2000, true],
+  ];
+  const inputs = F.map(([k, label, v, max, multi]) => [k, multi ? h('textarea', { class: 'pg-input', rows: 3, maxlength: max, value: v || '' }) : h('input', { class: 'pg-input', maxlength: max, value: v || '' })]);
+  let close;
+  const form = h('form', { class: 'pg-form', onsubmit: async (e) => {
+    e.preventDefault();
+    const edits = {}; const game = { ...gm };
+    inputs.forEach(([k, el]) => {
+      const v = el.value.trim();
+      if (['title', 'oneLiner', 'edge'].includes(k)) { if (v !== (p[k] || '')) edits[k] = v; } else if (v !== (gm[k] || '')) game[k] = v;
+    });
+    if (JSON.stringify(game) !== JSON.stringify(gm)) edits.game = game;
+    if (!(edits.title ?? p.title)) { toast('A pitch needs a title', 'error'); return; }
+    if (await decide(p, { state: 'approved', edits }, 'Approved with your edits, the Lead will plan it')) close();
+  } },
+  F.map(([k, label], i) => field(label, inputs[i][1])),
+  h('div', { class: 'row gap end' }, btn('Approve with these edits', null, { kind: 'primary', icon: 'check' })));
+  form.querySelector('button').type = 'submit';
+  close = openModal('Edit and approve', form);
+}
+
+const openSecs = new Set(); // keeps sections open across re-renders
+function section(pid, label, count, ...kids) {
+  const key = pid + ':' + label;
+  return h('details', { open: openSecs.has(key), ontoggle: (e) => { if (e.target.open) openSecs.add(key); else openSecs.delete(key); } },
+    h('summary', {}, label, count != null ? h('span', { class: 'pg-count' }, count) : null), h('div', { class: 'body' }, kids));
+}
+const kv = (label, v) => (v ? h('div', { class: 'pg-kv' }, h('h4', {}, label), h('p', { class: 'pre' }, text(v))) : null);
+const linkOrText = (u) => (/^https?:\/\//i.test(u) ? h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, u.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60)) : h('span', {}, u));
+
+function card(p) {
+  const gm = g(p); const e = ev(p); const b = bld(p); const comps = arr(p.competitors); const cmp = arr(p.comparables); const risks = arr(p.risks);
+  const links = arr(e.links);
+  const evCount = (e.summary ? 1 : 0) + links.length;
+  const bCount = arr(b.gaps).length + (b.assetNotes ? 1 : 0) + (b.experience ? 1 : 0);
+  const st = state(p);
+  const open = st === 'proposed';
+  const lk = best(cmp, 'likeRatio');
+  const toneW = { early: 'ok', mid: 'warn', late: 'err' }[p.window];
+  const checked = picked.has(p.id);
+  return h('article', { class: 'pg-card pg-pitch', 'data-id': p.id },
+    h('div', { class: 'head' },
+      p.window ? chip(p.window + ' window', toneW) : null,
+      p.format ? chip(p.format) : null,
+      p.origin === 'owner' ? chip('your idea', 'accent') : p.origin === 'scout' ? chip('rising format') : null,
+      chip(st, st === 'approved' ? 'ok' : st === 'declined' || st === 'withdrawn' ? 'err' : st === 'proposed' ? 'warn' : null),
+      h('span', { class: 'muted push' }, ago(p.createdAt) + (ago(p.createdAt) === 'just now' ? '' : ' ago'))),
+    h('h3', { class: 'title' }, p.title),
+    p.oneLiner ? h('p', { class: 'one' }, p.oneLiner) : null,
+    p.edge || comps.length ? h('div', { class: 'pg-kv' }, h('h4', {}, 'How we are different'),
+      p.edge ? h('p', {}, p.edge) : null,
+      comps.length ? h('div', { class: 'row gap wrap', style: 'margin-top:6px' }, comps.slice(0, 4).map((c) => chip('vs ' + c.name))) : null) : null,
+    cmp.length || p.money || p.saturationCount != null ? h('div', { class: 'pg-tiles' },
+      tile('Top earning rank', p.money?.topEarningRank != null ? '#' + num(p.money.topEarningRank) : null),
+      tile('Top comparable playing', best(cmp, 'playing') != null ? num(best(cmp, 'playing')) : null),
+      tile('Its likes', lk != null ? pct(lk) : null, '80% and up gets recommended', lk != null ? (lk >= (lk <= 1 ? 0.8 : 80) ? 'ok' : 'warn') : null),
+      tile('Upvotes per day', best(cmp, 'upvotesPerDay') != null ? num(best(cmp, 'upvotesPerDay')) : null),
+      tile('Similar games on the charts', p.saturationCount != null ? num(p.saturationCount) : null)) : null,
+    p.money?.verdict ? h('div', { class: 'pg-money' }, h('strong', {}, 'Money verdict. '), p.money.verdict, p.money.comparable ? h('span', { class: 'muted' }, ' Comparable: ' + p.money.comparable) : null) : null,
+    section(p.id, 'The game', null,
+      kv('How it plays', gm.howItPlays || p.coreLoop), kv('First 60 seconds', gm.first60s), kv('Goal at 10 to 15 minutes', gm.goal10to15), kv('Minutes 10 to 20', gm.minutes10to20),
+      kv('How it makes money', gm.monetization), kv('The clip moment', gm.clipMoment), kv('Icon idea', gm.iconIdea),
+      arr(gm.modules).length ? h('div', { class: 'pg-kv' }, h('h4', {}, 'Template modules'), h('div', { class: 'row gap wrap' }, arr(gm.modules).map((m) => chip(m)))) : null,
+      !(gm.howItPlays || p.coreLoop) ? h('p', { class: 'muted' }, 'The Scout has not filled this in yet.') : null),
+    section(p.id, 'Competition', comps.length + cmp.length,
+      comps.map((c) => h('div', { class: 'pg-kv' }, h('h4', {}, c.name), c.whatItIs ? h('p', {}, c.whatItIs) : null, c.gap ? h('p', { class: 'muted' }, 'Gap: ' + c.gap) : null)),
+      cmp.length ? h('div', { class: 'pg-scroll' }, h('table', { class: 'pg-tbl' },
+        h('thead', {}, h('tr', {}, ['Comparable', 'Playing', 'Likes', 'Upvotes/day', 'Rank climb'].map((c, i) => h('th', { class: i ? 'num' : '' }, c)))),
+        h('tbody', {}, cmp.map((c) => h('tr', {}, h('td', { class: 'wrapc' }, c.name, c.note ? h('div', { class: 'muted' }, c.note) : null),
+          h('td', { class: 'num' }, num(c.playing)), h('td', { class: 'num' }, pct(c.likeRatio) || 'n/a'), h('td', { class: 'num' }, num(c.upvotesPerDay)), h('td', { class: 'num' }, c.rankClimb ?? 'n/a')))))) : null,
+      !comps.length && !cmp.length ? h('p', { class: 'muted' }, 'No competitors listed yet.') : null),
+    section(p.id, 'Evidence', evCount, e.summary ? h('p', { class: 'pre' }, e.summary) : null,
+      links.length ? h('ul', { class: 'pg-list' }, links.map((u) => h('li', {}, linkOrText(String(u))))) : null,
+      !evCount ? h('p', { class: 'muted' }, 'No evidence attached.') : null),
+    section(p.id, 'Building it', bCount, kv('Gaps to fill', arr(b.gaps).join('\n')), kv('Asset notes', b.assetNotes), kv('Experience', b.experience), !bCount ? h('p', { class: 'muted' }, 'Nothing listed yet.') : null),
+    section(p.id, 'Risks', risks.length, risks.length ? h('ul', { class: 'pg-bullets' }, risks.map((r) => h('li', {}, text(r)))) : h('p', { class: 'muted' }, 'No risks listed.')),
+    p.note && ['changes', 'declined'].includes(st) ? h('p', { class: 'pg-note' }, 'Your note: ' + p.note) : null,
+    h('div', { class: 'pg-actions' },
+      h('label', { class: 'sel' }, h('input', { type: 'checkbox', checked, onchange: (ev2) => {
+        if (ev2.target.checked) { if (picked.size >= 3) { ev2.target.checked = false; toast('Compare up to 3 pitches', 'error'); return; } picked.add(p.id); } else picked.delete(p.id);
+        notify();
+      } }), 'Compare'),
+      open ? [
+        btn('Decline', () => askNote('Decline this pitch', 'Why? (optional context for the Scout)', 'Decline', async (n) => decide(p, { state: 'declined', note: n }, 'Declined')), { kind: 'sm' }),
+        btn('Request changes', () => askNote('Request changes', 'What should the Scout change or look into?', 'Send to Scout', async (n) => decide(p, { state: 'changes', note: n }, 'The Scout will revise it')), { kind: 'sm' }),
+        btn('Edit and approve', () => editApprove(p), { kind: 'sm' }),
+        btn('Approve', () => decide(p, { state: 'approved' }, 'Approved, the Lead will plan it'), { kind: 'primary', icon: 'check' }),
+      ] : null));
+}
+
+function openCompare(list) {
+  const rows = [
+    ['Format', (p) => p.format], ['Window', (p) => p.window], ['How we are different', (p) => p.edge], ['Top earning rank', (p) => (p.money?.topEarningRank != null ? '#' + p.money.topEarningRank : null)],
+    ['Top comparable playing', (p) => (best(arr(p.comparables), 'playing') != null ? num(best(arr(p.comparables), 'playing')) : null)],
+    ['Its likes', (p) => pct(best(arr(p.comparables), 'likeRatio'))], ['Upvotes per day', (p) => (best(arr(p.comparables), 'upvotesPerDay') != null ? num(best(arr(p.comparables), 'upvotesPerDay')) : null)],
+    ['Similar games on the charts', (p) => (p.saturationCount != null ? num(p.saturationCount) : null)], ['Money verdict', (p) => p.money?.verdict],
+    ['How it plays', (p) => g(p).howItPlays || p.coreLoop], ['Goal at 10 to 15 minutes', (p) => g(p).goal10to15], ['How it makes money', (p) => g(p).monetization],
+    ['Risks', (p) => arr(p.risks).map(text).join('; ')],
+  ];
+  const grid = h('div', { class: 'pg-compare', style: `--cols:${list.length}` },
+    list.map((p) => h('div', { class: 'colh' }, p.title)),
+    rows.flatMap(([label, f]) => list.map((p) => h('div', { class: 'cell' }, h('div', { class: 'lab' }, label), h('div', { class: 'pre' }, f(p) || 'n/a')))));
+  openModal('Compare side by side', grid);
+}
+
+function newIdea() {
+  const title = h('input', { class: 'pg-input', maxlength: 120, placeholder: 'Working title' });
+  const idea = h('textarea', { class: 'pg-input', rows: 5, maxlength: 4000, placeholder: 'What is the game? What would a player do in the first minute?' });
+  let close;
+  const form = h('form', { class: 'pg-form', onsubmit: async (e) => {
+    e.preventDefault();
+    if (!title.value.trim() || !idea.value.trim()) { toast('Add a title and a few lines about the idea', 'error'); return; }
+    const r = await act(() => api('POST', '/api/pitches/ideas', { title: title.value.trim(), idea: idea.value.trim() }), 'Sent to the Scout to evaluate');
+    if (r) { if (r.id) upsert(store.pitches, r); tab = 'yours'; close(); notify(); }
+  } },
+  field('Title', title), field('Your idea', idea, 'The Scout checks it against the charts and comes back with evidence, competitors and risks.'),
+  h('div', { class: 'row gap end' }, btn('Send to Scout', null, { kind: 'primary' })));
+  form.querySelector('button').type = 'submit';
+  close = openModal('New game idea', form);
+  title.focus();
+}
+
+export function render() {
+  const all = [...store.pitches].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const counts = Object.fromEntries(TABS.map(([id, , f]) => [id, all.filter(f).length]));
+  const cur = TABS.find((t) => t[0] === tab) || TABS[0];
+  const list = all.filter(cur[2]);
+  for (const id of [...picked]) if (!all.some((p) => p.id === id)) picked.delete(id);
+  const chosen = all.filter((p) => picked.has(p.id));
+  return h('div', { class: 'page' },
+    pageHead('Pitches', 'Game ideas with the evidence behind them. Approving one withdraws the other open pitches and asks the Lead to plan it.',
+      btn(`Compare side by side${chosen.length ? ' (' + chosen.length + ')' : ''}`, () => (chosen.length >= 2 ? openCompare(chosen) : toast('Tick Compare on 2 or 3 pitches first', 'error'))),
+      btn('New game idea', newIdea, { kind: 'primary', icon: 'plus' })),
+    segmented(TABS.map(([id, l]) => [id, l]), tab, (id) => { tab = id; notify(); }, counts),
+    list.length ? h('div', { class: 'pg-pitches' }, list.map(card))
+      : empty(tab === 'needs' ? 'Nothing to decide. Ask the Scout for ideas from the Market page, or add your own.' : tab === 'waiting' ? 'The Scout is not working on anything for you right now.' : tab === 'yours' ? 'No ideas from you yet. Use New game idea.' : 'No decided pitches yet.'));
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "id": "space-agency-icon-draft",
+    "name": "Space Agency icon draft",
+    "kind": "icon",
+    "scope": "game:space-agency",
+    "tags": ["draft", "marketing", "icon"],
+    "file": "assets/marketing/icon_draft.png",
+    "robloxId": null
+  },
+  {
+    "id": "space-agency-thumbnail-draft",
+    "name": "Space Agency thumbnail draft",
+    "kind": "thumbnail",
+    "scope": "game:space-agency",
+    "tags": ["draft", "marketing", "thumbnail"],
+    "file": "assets/marketing/thumbnail_draft.png",
+    "robloxId": null
+  }
+]

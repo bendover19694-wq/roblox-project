@@ -194,3 +194,16 @@ A smaller share is **feel and look**, where a human must judge: ship readability
   - Uncapped tapping, which would turn the game into a clicker and break the trip-time economy.
 - **Status:** accepted. Studio check pending in this session.
 
+
+## D-016 · 2026-10-23 · Agent HQ: a local control room for the agent team
+- **Owner direction:** run the 16-role agent team from one dashboard instead of juggling chats, without using the `claude` or `agy` command lines.
+- **What it is:** `tools/agent-hq/`, a local web app (`127.0.0.1:4317`, no npm dependencies) with a Teams-style chat per role, a task board, an owner inbox ("Needs you"), pitches, a market view and a library.
+- **Two lanes, no CLIs:** the Claude desktop app does all code, docs and testing work through `/hq-worker`; Antigravity does UI concept and store art only, under its own art rules. Both reach HQ through one MCP server (`hq_next_task` and friends). A `claude-cli` engine exists but is optional and never the default.
+- **Quality gates:** when a role finishes, HQ queues its checkers (for example Reviewer and Playtester for a Builder task). A FAIL goes back to the role with the feedback, up to 3 attempts, then it becomes an owner decision.
+- **Memory and skills:** each role has its own skills loadout and a `memory/<role>.md` of lessons that every later brief includes.
+- **Cadence:** outside schedulers fire at a fixed rate; HQ's lane gate decides from Settings whether a worker runs, so the owner changes cadence in HQ.
+- **Owner approves everything that matters:** agents never publish, spend Robux or install tools (hard rules). Image output and anything marked `NEEDS OWNER:` waits in "Needs you". Nothing is enabled automatically; the owner turns on the Antigravity automation and the Claude app scheduled task.
+- **Rejected:**
+  - Spawning `claude -p` and `agy -p` as the default workers, since the owner does not use the CLIs.
+  - Letting agents merge on their own report with no review gate.
+- **Status:** accepted. Built in the worktree `video-skills-plugins`; owner testing pending.

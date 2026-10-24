@@ -1,0 +1,126 @@
+import { h, store, api, act, btn, pageHead, selectEl, field, notify, toast, LANES, lastSeen, laneFresh, laneCfg, fmtTime } from './core.js';
+
+let draft = null; // schedules being edited
+const rid = () => 's_' + Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, '0')).join('');
+
+function schedules() {
+  if (!draft) draft = structuredClone(store.settings.schedules || []);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(store.settings.schedules || []);
+  const rows = draft.map((s, i) => h('div', { class: 'sched card' },
+    h('div', { class: 'row gap wrap' },
+      field('Role', selectEl(store.roles.map((r) => ({ value: r.id, label: r.label })), s.role, (v) => { s.role = v; })),
+      field('Every (minutes)', h('input', { class: 'input num-in', type: 'number', min: 5, max: 10080, value: s.everyMinutes, oninput: (e) => { s.everyMinutes = Number(e.target.value); } })),
+      h('label', { class: 'check push' }, h('input', { type: 'checkbox', checked: !!s.enabled, onchange: (e) => { s.enabled = e.target.checked; } }), h('span', {}, 'Enabled')),
+      btn('Remove', () => { draft.splice(i, 1); notify(); }, { kind: 'ghost', icon: 'trash' })),
+    field('Title', h('input', { class: 'input', type: 'text', maxlength: 200, value: s.title, oninput: (e) => { s.title = e.target.value; } })),
+    field('Brief', (() => { const t = h('textarea', { class: 'textarea', rows: 3, maxlength: 20000, oninput: (e) => { s.body = e.target.value; } }); t.value = s.body || ''; return t; })()),
+    s.lastRunAt ? h('p', { class: 'hint' }, 'Last run ' + new Date(s.lastRunAt).toLocaleString()) : null));
+  return h('section', { class: 'card stack' },
+    h('h2', { class: 'section-title' }, 'Schedules'),
+    h('p', { class: 'muted' }, 'Run roles on a schedule or on events, not all day. Always-on agents burn your plan usage.'),
+    rows.length ? rows : h('p', { class: 'muted' }, 'No schedules'),
+    h('div', { class: 'row gap' },
+      btn('Add schedule', () => { draft.push({ id: rid(), role: store.roles[0]?.id || 'lead', title: '', body: '', everyMinutes: 1440, enabled: false, lastRunAt: null }); notify(); }, { icon: 'plus' }),
+      btn('Save schedules', async () => {
+        if (draft.some((s) => !s.title.trim() || !(s.everyMinutes >= 5))) { toast('Each schedule needs a title and at least 5 minutes', 'error'); return; }
+        if (await act(() => api('POST', '/api/settings', { key: 'schedules', value: draft }), 'Schedules saved')) {
+          store.settings = { ...store.settings, schedules: structuredClone(draft) };
+          notify();
+        }
+      }, { kind: 'primary', disabled: !dirty }),
+      dirty ? btn('Discard', () => { draft = null; notify(); }, { kind: 'ghost' }) : null));
+}
+
+// ---- lanes: cadence controls bound to settings.laneSchedules[engine] ----
+const EVERY = {
+  app: [60, 120, 180, 240, 360, 480, 720, 1440],
+  antigravity: [20, 40, 60, 120, 240, 1440],
+};
+const everyLabel = (m) => (m % 60 === 0 && m >= 60 ? `${m / 60} hour${m === 60 ? '' : 's'}` : `${m} minutes`);
+const laneDrafts = {};
+const pick = (c) => ({ enabled: !!c.enabled, everyMinutes: Number(c.everyMinutes), activeFrom: c.activeFrom, activeTo: c.activeTo, maxTasks: Number(c.maxTasks) });
+
+function nextEligible(id) {
+  const cfg = laneCfg(id);
+  if (!cfg.enabled) return 'paused in HQ';
+  const last = store.lanes?.[id]?.lastRunAt;
+  if (!last) return 'on next fire';
+  const t = new Date(last).getTime() + cfg.everyMinutes * 60000;
+  return t <= Date.now() ? 'on next fire' : fmtTime(new Date(t).toISOString());
+}
+
+function laneControls(l) {
+  const saved = pick(laneCfg(l.id));
+  const d = (laneDrafts[l.id] ||= { ...saved });
+  const dirty = JSON.stringify(pick(d)) !== JSON.stringify(saved);
+  const opts = [...new Set([...EVERY[l.id], d.everyMinutes])].sort((x, y) => x - y).map((m) => ({ value: String(m), label: everyLabel(m) }));
+  const allDay = d.activeFrom === '00:00' && d.activeTo === '24:00';
+  const time = (key) => h('input', { class: 'input', type: 'time', value: d[key] === '24:00' ? '00:00' : d[key], 'aria-label': key === 'activeFrom' ? 'Active from' : 'Active until',
+    onchange: (e) => { d[key] = e.target.value || d[key]; notify(); } });
+  const lastRun = store.lanes?.[l.id]?.lastRunAt;
+  return h('div', { class: 'lane-card stack sm' },
+    h('div', { class: 'row gap between' },
+      h('div', {}, h('strong', {}, l.name), h('p', { class: 'hint' }, 'Last seen ' + lastSeen(l.id))),
+      h('div', { class: 'row gap' }, h('span', { class: 'muted small' }, d.enabled ? 'Enabled' : 'Paused'),
+        h('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': String(!!d.enabled), 'aria-label': l.name + ' enabled',
+          onclick: () => { d.enabled = !d.enabled; notify(); } }, h('span', { class: 'knob' })))),
+    h('p', { class: 'hint' }, l.how),
+    h('div', { class: 'lane-grid' },
+      field('Work every', selectEl(opts, String(d.everyMinutes), (v) => { d.everyMinutes = Number(v); notify(); })),
+      field('Max tasks per run', h('input', { class: 'input', type: 'number', min: 1, max: 20, step: 1, value: d.maxTasks, oninput: (e) => { d.maxTasks = Number(e.target.value); } }))),
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: allDay, onchange: (e) => {
+      if (e.target.checked) { d.activeFrom = '00:00'; d.activeTo = '24:00'; } else { d.activeFrom = '08:00'; d.activeTo = '22:00'; }
+      notify();
+    } }), h('span', {}, 'Active all day')),
+    allDay ? null : h('div', { class: 'lane-grid' }, field('Active from', time('activeFrom')), field('Until', time('activeTo'), 'Overnight windows allowed, for example 22:00 to 06:00. Server local time.')),
+    h('dl', { class: 'meta' },
+      h('dt', {}, 'Last run'), h('dd', {}, lastRun ? fmtTime(lastRun) : 'never'),
+      h('dt', {}, 'Next eligible'), h('dd', {}, nextEligible(l.id))),
+    h('div', { class: 'row gap' },
+      btn('Save', async () => {
+        const n = pick(d);
+        if (!Number.isInteger(n.maxTasks) || n.maxTasks < 1 || n.maxTasks > 20) { toast('Max tasks must be 1 to 20', 'error'); return; }
+        const value = {};
+        for (const x of LANES) value[x.id] = x.id === l.id ? n : pick(laneCfg(x.id));
+        if (await act(() => api('POST', '/api/settings', { key: 'laneSchedules', value }), l.name + ' saved')) {
+          store.settings = { ...store.settings, laneSchedules: value };
+          laneDrafts[l.id] = null;
+          notify();
+        }
+      }, { kind: 'primary', disabled: !dirty }),
+      dirty ? btn('Discard', () => { laneDrafts[l.id] = null; notify(); }, { kind: 'ghost' }) : null));
+}
+
+function lanesCard() {
+  return h('section', { class: 'card stack' },
+    h('h2', { class: 'section-title' }, 'Lanes'),
+    h('p', { class: 'muted' }, 'Work waits in the queue until a worker in one of these apps picks it up.'),
+    LANES.map(laneControls),
+    h('p', { class: 'hint' }, 'The Claude app checks in every hour and Antigravity every 20 minutes; HQ decides from these settings whether they work.'));
+}
+
+export function render() {
+  const budget = store.settings.budget ?? 2;
+  const paused = !!store.settings.paused;
+  return h('div', { class: 'page narrow' },
+    pageHead('Settings', 'Control how many agents run at once and when.'),
+    h('div', { class: 'stack' },
+      h('section', { class: 'card stack sm' },
+        h('h2', { class: 'section-title' }, 'Run control'),
+        h('div', { class: 'row gap between' },
+          h('div', {}, h('strong', {}, 'Parallel agents'), h('p', { class: 'muted' }, 'How many tasks may run at the same time.')),
+          h('div', { class: 'seg', role: 'group', 'aria-label': 'Parallel agents' }, [1, 2, 3, 4].map((n) => h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(n === budget),
+            onclick: async () => { store.settings = { ...store.settings, budget: n }; notify(); await act(() => api('POST', '/api/settings', { key: 'budget', value: n })); } }, String(n))))),
+        h('div', { class: 'row gap between' },
+          h('div', {}, h('strong', {}, paused ? 'Paused' : 'Running'), h('p', { class: 'muted' }, paused ? 'Nothing new will start.' : 'Queued tasks start automatically.')),
+          btn(paused ? 'Resume' : 'Pause', () => act(() => api('POST', paused ? '/api/resume' : '/api/pause')), { icon: paused ? 'play' : 'pause', kind: paused ? 'primary' : '' }))),
+      h('section', { class: 'card stack sm' },
+        h('h2', { class: 'section-title' }, 'You'),
+        field('Your name', h('input', { class: 'input', type: 'text', maxlength: 40, value: store.settings.ownerName || '', placeholder: 'Shown in the greeting on Home', 'aria-label': 'Your name',
+          onchange: async (e) => {
+            const v = e.target.value.trim().slice(0, 40);
+            if (await act(() => api('POST', '/api/settings', { key: 'ownerName', value: v }), 'Saved')) { store.settings = { ...store.settings, ownerName: v }; notify(); }
+          } }))),
+      lanesCard(),
+      schedules()));
+}

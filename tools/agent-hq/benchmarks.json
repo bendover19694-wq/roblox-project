@@ -1,0 +1,132 @@
+[
+  {
+    "id": "first-action",
+    "benchmark": "First meaningful action",
+    "target": "Within 15 s of joining",
+    "measuredBy": "Onboarding funnel (steps 1 to 10 in Telemetry) and the timing in scripts/probes/ftue.py",
+    "tier": "gate",
+    "failureMeaning": "Players bounce before the game starts. First-play bounce is a top negative ranking signal.",
+    "source": "research/video-notes/rasdev-algorithm.md section 4; research/video-notes/takeaways.md constraint 2",
+    "label": "Documented signal (bounce under 60 s and 61 to 180 s); the 15 s number is a creator target"
+  },
+  {
+    "id": "first-reward",
+    "benchmark": "First core reward",
+    "target": "Within 90 s of joining",
+    "measuredBy": "Onboarding funnel step for the first reward, plus the FTUE probe",
+    "tier": "gate",
+    "failureMeaning": "The core loop does not pay off fast enough to hold a new player.",
+    "source": "research/video-notes/tizzy-3-viral-games.md section 1 (first ~90 seconds); research/ui-motion-audit.md (reference games showed a first reward at about 1:20 and 3:00)",
+    "label": "Creator claim plus Observed in two reference games"
+  },
+  {
+    "id": "onboarding-grasp",
+    "benchmark": "Onboarding grasp",
+    "target": "At least 80% of new players launch their first mission within 30 s of the first prompt",
+    "measuredBy": "Closed test with 20 to 30 players, plus the funnel step timestamps",
+    "tier": "gate",
+    "failureMeaning": "The first-session flow is unclear. Iterate the Advisor steps before adding features.",
+    "source": "research/concepts.md (closed-test thresholds, adapted from the archived concept to this game)",
+    "label": "Team target"
+  },
+  {
+    "id": "second-goal",
+    "benchmark": "Second goal visible",
+    "target": "A second reason to keep playing is on screen before 3 minutes",
+    "measuredBy": "Funnel step after the first reward, and the kid-tester report",
+    "tier": "health",
+    "failureMeaning": "Players finish one loop and leave in the 61 to 180 s bounce window.",
+    "source": "research/video-notes/takeaways.md constraint 2; research/video-notes/tizzy-3-viral-games.md section 1",
+    "label": "Documented window (bounce segments); the target is a team target"
+  },
+  {
+    "id": "session-length",
+    "benchmark": "Average session length",
+    "target": "At least 10 min on average; design sessions of 20 to 40 min with a reason to return",
+    "measuredBy": "Creator Analytics average session time",
+    "tier": "health",
+    "failureMeaning": "Playtime is the second main return signal. Playtime beyond 60 min per player per day earns no extra credit.",
+    "source": "research/video-notes/rasdev-algorithm.md section 5; research/sources.md (Creator Hub Discovery, 60 min cap)",
+    "label": "Documented (60 min cap); the 10 and 20 to 40 min figures are creator claims"
+  },
+  {
+    "id": "d1",
+    "benchmark": "Day-1 retention",
+    "target": "12 to 15% (stretch 16%); in a closed test, at least 25% return within 48 h",
+    "measuredBy": "Creator Analytics D1 retention; closed-test return rate before launch",
+    "tier": "gate",
+    "failureMeaning": "The first session does not create a reason to come back. Organic Home players decide ranking.",
+    "source": "research/video-notes/tizzy-3-viral-games.md (D1 about 6 to 8% rising to about 16% after a progression overhaul); research/concepts.md (25% within 48 h proxy)",
+    "label": "Creator claim, Unverified"
+  },
+  {
+    "id": "d7",
+    "benchmark": "Day-7 retention",
+    "target": "2 to 3% as a first working target",
+    "measuredBy": "Creator Analytics D2 to 7 retention window",
+    "tier": "health",
+    "failureMeaning": "Progression, offline growth and daily rewards are not pulling players back across a week.",
+    "source": "research/video-notes/rasdev-algorithm.md section 1 (D1, D2 to 7 and D8 to 28 windows are Documented; weights are not published). No published number was found in the research.",
+    "label": "Team target; replace with the Creator Analytics baseline after launch"
+  },
+  {
+    "id": "like-ratio",
+    "benchmark": "Like ratio",
+    "target": "At least 80% likes",
+    "measuredBy": "Votes from the games API (Market page, Games live numbers)",
+    "tier": "gate",
+    "failureMeaning": "Players who try it do not rate it well, which hurts recommendations.",
+    "source": "research/market-snapshot.md section 2 (16 reference games all sit between 85% and 97% like ratio, observed 2026-10-17)",
+    "label": "Observed (API) for the reference range; the 80% floor is a team target"
+  },
+  {
+    "id": "play-through",
+    "benchmark": "Play-through rate (icon and thumbnail click-through)",
+    "target": "Test at least 3 icon and thumbnail variants and keep the best; no public number exists",
+    "measuredBy": "Creator Analytics impressions to plays, per icon and thumbnail variant",
+    "tier": "gate",
+    "failureMeaning": "Players judge the icon and name only. A weak one stops Roblox expanding the game past a small Home audience.",
+    "source": "research/video-notes/rasdev-algorithm.md section 3; research/video-notes/instagram-ai-roblox.md; research/video-notes/roblox-art-direction-sources.md",
+    "label": "Documented signal (PTR is a top-tier signal); no number is published"
+  },
+  {
+    "id": "paying-share",
+    "benchmark": "Paying players",
+    "target": "About 2% of players as a planning assumption",
+    "measuredBy": "Payers divided by players in Creator Analytics",
+    "tier": "watch",
+    "failureMeaning": "Revenue plans built on the assumption are too high. Plan from cohort data instead.",
+    "source": "research/monetization-tactics.md (2 to 3% payer conversion for simulator-type games, profitable.app; stated there as assumptions, not data)",
+    "label": "Unverified (third-party model)"
+  },
+  {
+    "id": "arpdau",
+    "benchmark": "ARPDAU",
+    "target": "No fixed target until D7 cohort data exists; plan from cohort ARPDAU times realistic DAU with decay",
+    "measuredBy": "Creator Analytics revenue per daily active user, by cohort",
+    "tier": "watch",
+    "failureMeaning": "Planning from a weekend peak overstates revenue and hides the decay curve.",
+    "source": "research/video-notes/takeaways.md constraint 13; research/video-notes/tizzy-3-viral-games.md (ARPDAU about 0.9 to 1.0 rising to about 2.0, units not stated)",
+    "label": "Creator claim (units unstated)"
+  },
+  {
+    "id": "error-rate",
+    "benchmark": "Crash and error rate",
+    "target": "No script errors on the first-session path; under 1% of sessions with any client error",
+    "measuredBy": "ScriptContext.Error counts by script name (server) and Telemetry.Client error counts, plus the playtester console check",
+    "tier": "gate",
+    "failureMeaning": "Players hit broken screens or lose progress. Fix before any promotion.",
+    "source": "docs/technical-architecture.md section 9 (observability); docs/qa-and-security-plan.md",
+    "label": "Team target"
+  },
+  {
+    "id": "performance",
+    "benchmark": "Client frame rate and memory",
+    "target": "60 FPS on a mid PC, 30+ FPS on a low-end phone, under 600 MB on mobile",
+    "measuredBy": "MicroProfiler and the Developer Console on a phone each milestone",
+    "tier": "health",
+    "failureMeaning": "Low-end phones stutter or crash, and the phone layout loses most of its audience.",
+    "source": "docs/technical-architecture.md section 8 (performance targets)",
+    "label": "Team target"
+  }
+]

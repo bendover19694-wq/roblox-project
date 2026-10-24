@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+// Command-line fallback for the hq_* MCP tools, for sessions where the agent-hq MCP server is not loaded.
+// It reuses the MCP handlers, so validation and behaviour are identical. Prints JSON.
+// Talks to HQ_URL (default http://127.0.0.1:4317) with the token from .agent-hq/token.
+
+import fs from 'node:fs';
+
+const USAGE = `Agent HQ command line (same actions as the hq_* MCP tools). Run from the repo root.
+Every command that touches a task (note, ask, media, complete, learn, pitch, stage, asset, metric) also needs the task token from your brief:
+  add  --token <taskToken>  to the command, or set the HQ_TASK_TOKEN environment variable. Never share it or use another task's token.
+
+  node tools/agent-hq/hqctl.mjs gate <engine> [--manual]                    should this lane work now? (engine: app | antigravity)
+  node tools/agent-hq/hqctl.mjs next <engine>                              take the oldest queued task, prints {task, brief}
+  node tools/agent-hq/hqctl.mjs note <taskId> <text>                       progress note to the role thread
+  node tools/agent-hq/hqctl.mjs ask <taskId> <kind> <title> <why>          ask the owner (kind: decision | try | approve | review)
+  node tools/agent-hq/hqctl.mjs media <taskId> <path> <ask>                attach an image from the repo for review
+  node tools/agent-hq/hqctl.mjs complete <taskId> <summary> [--state review|done|failed]
+  node tools/agent-hq/hqctl.mjs learn <taskId> <lesson>                    record a reusable lesson for the task's role
+  node tools/agent-hq/hqctl.mjs pitch '<json>' | <file.json> --task <taskId>   the full pitch schema (see hq_pitch)
+  node tools/agent-hq/hqctl.mjs stage <game> <toStage> <evidence> --task <taskId>      producer and lead: request the next stage
+  node tools/agent-hq/hqctl.mjs asset <name> <kind> <scope> <file> --task <taskId> [--tags a,b]   librarian: add an asset to the index
+  node tools/agent-hq/hqctl.mjs metric <game> <key> <value> --task <taskId> [--date YYYY-MM-DD]   live ops: record a measured number
+  node tools/agent-hq/hqctl.mjs market                                     latest Roblox charts snapshot
+  node tools/agent-hq/hqctl.mjs --help
+`;
+
+const argv = process.argv.slice(2);
+const flags = new Set();
+const pos = [];
+const opt = {}; // --state, --task, --tags, --date
+for (let i = 0; i < argv.length; i++) {
+  if (['--state', '--task', '--tags', '--date', '--token'].includes(argv[i])) opt[argv[i].slice(2)] = argv[++i];
+  else if (argv[i] === '--manual') flags.add('manual');
+  else if (argv[i] === '--help' || argv[i] === '-h') flags.add('help');
+  else pos.push(argv[i]);
+}
+
+// writeSync so a large brief is never cut off. After a network call we let the process end by itself:
+// process.exit() with live fetch sockets can crash node on Windows.
+const out = (o, code = 0, exit = true) => { fs.writeSync(1, JSON.stringify(o, null, 2) + '\n'); process.exitCode = code; if (exit) process.exit(code); };
+const fail = (msg, exit = true) => out({ error: msg }, 1, exit);
+
+if (flags.has('help') || pos.length === 0) {
+  console.log(USAGE);
+  process.exit(flags.has('help') ? 0 : 1);
+}
+
+// Explicit arguments only: never inherit a task or role from the environment.
+delete process.env.HQ_TASK;
+delete process.env.HQ_ROLE;
+// The task token comes from --token, else from HQ_TASK_TOKEN. mcp.mjs reads the environment when it loads.
+if (opt.token) process.env.HQ_TASK_TOKEN = opt.token;
+const { handlers, api } = await import('./mcp.mjs');
+
+const [cmd, ...a] = pos;
+const arity = { gate: 1, next: 1, note: 2, ask: 4, media: 3, complete: 2, learn: 2, pitch: 1, market: 0, stage: 3, asset: 4, metric: 3 };
+if (!(cmd in arity)) fail(`unknown command "${cmd}". Run with --help.`);
+const TASK_COMMANDS = ['note', 'ask', 'media', 'complete', 'learn', 'pitch', 'stage', 'asset', 'metric'];
+if (TASK_COMMANDS.includes(cmd) && !process.env.HQ_TASK_TOKEN) fail(`"${cmd}" needs your task token: add --token <taskToken> (it is in your brief) or set HQ_TASK_TOKEN.`);
+if (['stage', 'asset', 'metric', 'pitch'].includes(cmd) && !opt.task) fail(`"${cmd}" needs --task <taskId> (the working task of the role that may do this).`);
+if (a.length !== arity[cmd]) fail(`"${cmd}" takes ${arity[cmd]} argument(s), got ${a.length}. Run with --help.`);
+
+try {
+  let res;
+  if (cmd === 'gate') res = await handlers.hq_lane_gate({ engine: a[0], manual: flags.has('manual') });
+  else if (cmd === 'next') res = await handlers.hq_next_task({ engine: a[0] });
+  else if (cmd === 'note') res = await handlers.hq_note({ taskId: a[0], text: a[1] });
+  else if (cmd === 'ask') res = await handlers.hq_ask_owner({ taskId: a[0], kind: a[1], title: a[2], why: a[3] });
+  else if (cmd === 'media') res = await handlers.hq_add_media({ taskId: a[0], path: a[1], ask: a[2] });
+  else if (cmd === 'complete') res = await handlers.hq_complete({ taskId: a[0], summary: a[1], ...(opt.state ? { state: opt.state } : {}) });
+  else if (cmd === 'learn') res = await handlers.hq_learn({ taskId: a[0], lesson: a[1] });
+  else if (cmd === 'pitch') {
+    let p; try { p = JSON.parse(fs.existsSync(a[0]) ? fs.readFileSync(a[0], 'utf8') : a[0]); } catch { fail('pitch needs a JSON object or a path to a JSON file'); }
+    res = await handlers.hq_pitch({ ...p, taskId: opt.task });
+  } else if (cmd === 'stage') {
+    res = await handlers.hq_stage_request({ taskId: opt.task, game: a[0], toStage: a[1], evidence: a[2] });
+  } else if (cmd === 'asset') {
+    res = await handlers.hq_asset_add({ taskId: opt.task, name: a[0], kind: a[1], scope: a[2], file: a[3], tags: opt.tags ? opt.tags.split(',').map((t) => t.trim()).filter(Boolean) : [] });
+  } else if (cmd === 'metric') {
+    res = await handlers.hq_metric({ taskId: opt.task, game: a[0], key: a[1], value: Number(a[2]), ...(opt.date ? { date: opt.date } : {}) });
+  } else res = await api('GET', '/api/market');
+  out(typeof res === 'string' ? { task: null, message: res } : res, 0, false);
+} catch (e) {
+  fail(String(e.message ?? e), false);
+}

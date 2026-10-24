@@ -1,0 +1,27 @@
+---
+name: hq-worker
+description: Use when asked to work the Agent HQ queue, or when the scheduled HQ worker runs.
+---
+
+# HQ worker (Claude desktop app)
+
+Works the "app" lane of Agent HQ: claims queued tasks, runs each as a specialist subagent, reports back. The hard rules in `CLAUDE.md` apply: never publish, spend Robux or install tools.
+
+Work from the repo root `C:\Users\aryam\Downloads\Roblox Project\.claude\worktrees\video-skills-plugins-8346b5` (use absolute paths; a scheduled run may start in another folder).
+
+If the `hq_*` MCP tools are missing in this session, use `node tools/agent-hq/hqctl.mjs` from the repo root for every step instead (`gate app`, `next app`, `note`, `complete`, `learn`; see `--help`). It prints JSON.
+
+0a. **HQ up?** Check `GET http://127.0.0.1:4317/api/health` (`curl -s` or `node -e "fetch('http://127.0.0.1:4317/api/health').then(r=>r.text()).then(console.log)"`). If it is down, start it detached so it outlives this session: PowerShell `Start-Process -FilePath node -ArgumentList 'tools/agent-hq/server.mjs' -WorkingDirectory '<repo root>' -WindowStyle Hidden`, then wait up to 10 s for health. If it is still down, report that and stop.
+0. **Gate.** Decide `manual`: true when a person asked in chat to work the queue; false when the prompt says it is the scheduled HQ worker. Call `hq_lane_gate {engine: "app", manual}`. If `run` is false, reply with one line containing the `reason` and stop; do nothing else. Otherwise use the returned `maxTasks` as this run's cap.
+1. **Tools.** If the `agent-hq` tools and `hqctl` both fail even though HQ is up, report that and stop.
+2. **Claim.** Call `hq_next_task {engine: "app"}`. If it returns `Queue empty for app.`, say "Queue empty" and stop.
+3. **Run.** For each claimed task, read its role in `tools/agent-hq/roles.json` and spawn a subagent with the Agent tool:
+   - `subagent_type` = the role's `agentType`; `model` = the role's `model`.
+   - prompt = the returned `brief`, verbatim (it has the task id, the task's `taskToken`, the skills to use, the lessons and the definition of done). Each brief goes to its own subagent only: never put several briefs or tokens into one subagent, and never show a task's token to another task's subagent.
+   - At most 2 subagents at a time. Never run two at once whose roles' `files` overlap (two writers on the same files), and never two `needsStudio` tasks at once (Studio is shared).
+4. **Close.** When a subagent ends:
+   - If its task is still `working` (it did not call `hq_complete`), call `hq_complete {taskId, taskToken, summary, state: "review"}`, passing that task's own `taskToken` (printed in its brief), with the summary from its report (files changed, checks run, any `NEEDS OWNER:` line). HQ then queues the role's gate tasks (reviewer, playtester, ...) by itself.
+   - If it recorded no lesson with `hq_learn` but its report contains a reusable one, call `hq_learn {taskId, taskToken, lesson}` once.
+5. **Loop.** Claim again until the queue is empty or `maxTasks` tasks are done this run. Then give a short report: tasks finished, anything waiting under "Needs you" in HQ.
+
+Design tasks (roles `designer`, `thumbnails`) belong to the Antigravity lane; never claim them here.

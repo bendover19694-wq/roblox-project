@@ -1,0 +1,9 @@
+{
+  "name": "agent-hq",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs && node test/smoke.mjs"
+  }
+}

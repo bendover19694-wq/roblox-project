@@ -1,0 +1,1134 @@
+// Agent HQ server: HTTP API, SSE, static files. Zero dependencies.
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import * as D from './db.mjs';
+import { loadRoles, parseVault, buildBrief } from './briefs.mjs';
+import { fetchCharts as realFetchCharts, velocity, computeBreakouts, fetchGameDetails, fetchIcons, fetchThumbnails, loadBenchmarks } from './market.mjs';
+import { normalizePitch } from './pitches.mjs';
+import { listAssets as listAssetIndex, addAsset, readSystems, KINDS as ASSET_KINDS } from './assets.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const MAX_BODY = 1024 * 1024;
+const SLUG = /^[a-z0-9][a-z0-9-]{1,39}$/;
+const UPLOAD_PATH = /^uploads\/[0-9a-f]{12}\.(?:png|jpg|webp)$/;
+const UPLOAD_MAX = 5 * 1024 * 1024;
+const METRICS = { d1: 100, d7: 100, payingPct: 100, firstMinute: 100, avgSessionMin: 1440 };
+const TARGETS = {
+  likeRatio: { label: '>80 %', min: 0.8 }, d1: { label: '12 to 15 %', min: 12, max: 15 }, d7: { label: '2 to 3 %', min: 2, max: 3 },
+  avgSessionMin: { label: '>10 min', min: 10 }, payingPct: { label: '~2 %', min: 2 }, firstMinute: { label: 'players act in the first minute' },
+};
+const ENGINES = ['app', 'antigravity', 'claude-cli', 'echo'];
+const LANES = ['app', 'antigravity'];
+const TASK_STATES = ['queued', 'working', 'review', 'done', 'failed', 'canceled'];
+const TASK_ID = /^t_[0-9a-f]{12}$/;
+const ASK_ID = /^a_[0-9a-f]{12}$/;
+const PITCH_ID = /^p_[0-9a-f]{12}$/;
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+  '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.mp4': 'video/mp4', '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8', '.ico': 'image/x-icon',
+};
+const MEDIA_INLINE = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp3', '.ogg', '.wav', '.mp4']);
+const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'";
+
+// ---- event bus (SSE) ----
+const clients = new Set();
+export function emit(type, payload) {
+  const msg = `event: ${type}\ndata: ${JSON.stringify(payload ?? null)}\n\n`;
+  for (const res of clients) res.write(msg);
+}
+
+// ---- validation ----
+class HttpError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
+}
+const bad = (m) => new HttpError(400, m);
+const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+function str(v, name, { max, min = 0, required = false } = {}) {
+  if (v === undefined || v === null) {
+    if (required) throw bad(`${name} is required`);
+    return undefined;
+  }
+  if (typeof v !== 'string') throw bad(`${name} must be a string`);
+  const s = v.trim();
+  if (s.length < Math.max(min, required ? 1 : 0)) throw bad(`${name} is too short`);
+  if (s.length > max) throw bad(`${name} is too long (max ${max})`);
+  return s;
+}
+function oneOf(v, name, list, { required = false } = {}) {
+  if (v === undefined || v === null) {
+    if (required) throw bad(`${name} is required`);
+    return undefined;
+  }
+  if (!list.includes(v)) throw bad(`${name} must be one of ${list.join(', ')}`);
+  return v;
+}
+function intIn(v, name, lo, hi) {
+  if (!Number.isInteger(v) || v < lo || v > hi) throw bad(`${name} must be an integer ${lo}..${hi}`);
+  return v;
+}
+const firstLine = (s, max = 200) => (s.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, max) || 'Untitled';
+const safeRel = (s) => !s.includes('\0') && !s.split(/[\\/]/).includes('..') && !path.isAbsolute(s);
+
+function parseOptions(v) {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.length > 12) throw bad('options must be an array of up to 12');
+  return v.map((o) => {
+    if (!isObj(o)) throw bad('option must be an object');
+    const out = { id: str(o.id, 'option.id', { max: 64, required: true }), label: str(o.label, 'option.label', { max: 200, required: true }) };
+    if (o.recommended) out.recommended = true;
+    return out;
+  });
+}
+
+const DEFAULT_LANE_SCHEDULES = {
+  app: { enabled: true, everyMinutes: 60, activeFrom: '00:00', activeTo: '24:00', maxTasks: 8 },
+  antigravity: { enabled: true, everyMinutes: 20, activeFrom: '00:00', activeTo: '24:00', maxTasks: 6 },
+};
+const DEFAULT_SETTINGS = { paused: false, budget: 2, roleEngines: {}, schedules: [], laneSchedules: DEFAULT_LANE_SCHEDULES, ownerName: '', studioLanes: 1 };
+const HHMM = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/;
+const toMin = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+const mergeLaneSchedules = (v) => Object.fromEntries(LANES.map((k) => [k, { ...DEFAULT_LANE_SCHEDULES[k], ...(v?.[k] ?? {}) }]));
+function validateSetting(key, value, roleIds) {
+  switch (key) {
+    case 'paused':
+      if (typeof value !== 'boolean') throw bad('paused must be a boolean');
+      return value;
+    case 'budget':
+      return intIn(value, 'budget', 1, 4);
+    case 'roleEngines': {
+      if (!isObj(value)) throw bad('roleEngines must be an object');
+      const out = {};
+      for (const [r, v] of Object.entries(value)) {
+        if (!roleIds.includes(r)) throw bad(`unknown role ${r}`);
+        if (!isObj(v)) throw bad('roleEngines entries must be objects');
+        out[r] = { engine: oneOf(D.migrateEngine(v.engine), 'engine', ENGINES, { required: true }), model: str(v.model, 'model', { max: 100 }) ?? null };
+      }
+      return out;
+    }
+    case 'schedules': {
+      if (!Array.isArray(value) || value.length > 50) throw bad('schedules must be an array of up to 50');
+      return value.map((s) => {
+        if (!isObj(s)) throw bad('schedule must be an object');
+        return {
+          id: str(s.id, 'schedule.id', { max: 64 }) ?? `s_${crypto.randomBytes(6).toString('hex')}`,
+          role: oneOf(s.role, 'schedule.role', roleIds, { required: true }),
+          title: str(s.title, 'schedule.title', { max: 200, required: true }),
+          body: str(s.body, 'schedule.body', { max: 20000 }) ?? '',
+          everyMinutes: intIn(s.everyMinutes, 'everyMinutes', 1, 525600),
+          enabled: !!s.enabled,
+          lastRunAt: typeof s.lastRunAt === 'string' ? s.lastRunAt.slice(0, 40) : null,
+        };
+      });
+    }
+    case 'ownerName': {
+      if (typeof value !== 'string') throw bad('ownerName must be a string');
+      const v = value.trim();
+      if (v.length > 40) throw bad('ownerName is too long (max 40)');
+      return v;
+    }
+    case 'studioLanes':
+      if (value === 0 || value === 1 || value === 2 || value === 'all') return value;
+      throw bad('studioLanes must be 0, 1, 2 or "all"');
+    case 'laneSchedules': {
+      if (!isObj(value)) throw bad('laneSchedules must be an object');
+      const out = {};
+      for (const k of LANES) {
+        const v = { ...DEFAULT_LANE_SCHEDULES[k], ...(value[k] ?? {}) };
+        if (typeof v.enabled !== 'boolean') throw bad(`${k}.enabled must be a boolean`);
+        for (const f of ['activeFrom', 'activeTo']) if (typeof v[f] !== 'string' || !HHMM.test(v[f])) throw bad(`${k}.${f} must be HH:MM (00:00..24:00)`);
+        out[k] = { enabled: v.enabled, everyMinutes: intIn(v.everyMinutes, `${k}.everyMinutes`, 20, 1440), activeFrom: v.activeFrom, activeTo: v.activeTo, maxTasks: intIn(v.maxTasks, `${k}.maxTasks`, 1, 20) };
+      }
+      return out;
+    }
+    default:
+      throw bad(`unknown setting ${key}`);
+  }
+}
+
+// ---- file helpers ----
+function within(base, target) {
+  const b = path.resolve(base);
+  const t = path.resolve(target);
+  return t === b || t.startsWith(b + path.sep) ? t : null;
+}
+function readFileIn(base, rel) {
+  if (!safeRel(rel)) return null;
+  const full = within(base, path.join(base, rel));
+  if (!full) return null;
+  try { return fs.statSync(full).isFile() ? full : null; } catch { return null; }
+}
+function frontmatter(text) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  const out = {};
+  if (m) for (const l of m[1].split(/\r?\n/)) { const k = /^([\w-]+):\s*(.*)$/.exec(l); if (k) out[k[1]] = k[2].trim(); }
+  return out;
+}
+function listAssets(dir, depth = 0, prefix = '', acc = []) {
+  if (depth > 3 || acc.length >= 2000) return acc;
+  let ents = [];
+  try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
+  for (const e of ents) {
+    if (e.isDirectory()) listAssets(path.join(dir, e.name), depth + 1, `${prefix}${e.name}/`, acc);
+    else if (e.isFile() && depth <= 3) acc.push(`${prefix}${e.name}`);
+  }
+  return acc;
+}
+function tailLines(file, n) {
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  return text.split('\n').filter(Boolean).slice(-n);
+}
+
+// public Roblox numbers for one universe (no key needed; only works once the game is public)
+async function realFetchLive(universeId) {
+  const id = encodeURIComponent(universeId);
+  const get = async (u) => {
+    const r = await fetch(u, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  };
+  const [g, v] = await Promise.all([get(`https://games.roblox.com/v1/games?universeIds=${id}`), get(`https://games.roblox.com/v1/games/votes?universeIds=${id}`)]);
+  const gd = g.data?.[0];
+  if (!gd) throw new Error('game not found on Roblox (is it public?)');
+  return { playing: gd.playing ?? null, visits: gd.visits ?? null, favorites: gd.favoritedCount ?? null, up: v.data?.[0]?.upVotes ?? null, down: v.data?.[0]?.downVotes ?? null };
+}
+
+// ---- server ----
+/**
+ * startServer({root, port=4317, stateDir, dbFile, runner, fetchCharts}) -> Promise<{server, db, token (agent), ownerToken, port, close}>
+ * runner: an object, or a factory ({db, root, emit, port, token}) => runner (started/stopped by the server).
+ */
+export async function startServer({ root, port = 4317, stateDir, dbFile, runner, fetchCharts = realFetchCharts, now = Date.now, roles: rolesOpt, memoryDir, fetchLive = realFetchLive, fetchers: fetchersOpt = {} } = {}) {
+  const fetchers = { details: fetchGameDetails, icons: fetchIcons, thumbnails: fetchThumbnails, ...fetchersOpt };
+  root = path.resolve(root ?? path.resolve(HERE, '../..'));
+  stateDir = path.resolve(stateDir ?? path.join(root, '.agent-hq'));
+  fs.mkdirSync(path.join(stateDir, 'logs'), { recursive: true });
+  fs.mkdirSync(path.join(stateDir, 'media'), { recursive: true });
+
+  const tokenFile = path.join(stateDir, 'token');
+  let token;
+  try { token = fs.readFileSync(tokenFile, 'utf8').trim(); } catch { /* create below */ }
+  if (!token) {
+    token = crypto.randomBytes(32).toString('hex');
+    fs.writeFileSync(tokenFile, token, { mode: 0o600 });
+  }
+  // Two credentials: `token` is the AGENT token (MCP and hqctl read it); `ownerToken` goes into index.html for the dashboard.
+  const ownerFile = path.join(stateDir, 'owner-token');
+  let ownerToken;
+  try { ownerToken = fs.readFileSync(ownerFile, 'utf8').trim(); } catch { /* create below */ }
+  if (!ownerToken) {
+    ownerToken = crypto.randomBytes(32).toString('hex');
+    fs.writeFileSync(ownerFile, ownerToken, { mode: 0o600 });
+  }
+  const same = (a, b) => typeof a === 'string' && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  // -> 'owner' | 'agent' | null
+  const whoIs = (t) => (same(t, ownerToken) ? 'owner' : same(t, token) ? 'agent' : null);
+
+  const db = D.openDb(dbFile ?? path.join(stateDir, 'hq.db'));
+  const roles = rolesOpt ?? loadRoles();
+  memoryDir = path.resolve(memoryDir ?? path.join(HERE, 'memory'));
+  const nowIso = () => new Date(now()).toISOString();
+  const roleIds = roles.map((r) => r.id);
+  const gameSlugs = () => D.listGames(db).map((g) => g.slug);
+  const publicDir = path.join(HERE, 'public');
+
+  let boundPort = port;
+  const runnerOwned = typeof runner === 'function';
+  let rn = null;
+  const stub = { cancel() {}, running: () => [], studioHolder: () => null, engines: () => ({ 'claude-cli': false, echo: true }) };
+  const R = () => rn ?? stub;
+
+  const settingsAll = () => {
+    const out = Object.fromEntries(Object.entries(DEFAULT_SETTINGS).map(([k, v]) => [k, D.getSetting(db, k, v)]));
+    out.laneSchedules = mergeLaneSchedules(out.laneSchedules);
+    out.roleEngines = Object.fromEntries(Object.entries(out.roleEngines).map(([r, v]) => [r, { ...v, engine: D.migrateEngine(v.engine) }]));
+    return out;
+  };
+  const lanesAll = () => {
+    const l = D.getSetting(db, 'lanes', {});
+    return Object.fromEntries(LANES.map((k) => [k, { lastSeenAt: l?.[k]?.lastSeenAt ?? null, lastRunAt: l?.[k]?.lastRunAt ?? null }]));
+  };
+  const touchLane = (engine, patch) => {
+    const all = D.getSetting(db, 'lanes', {});
+    D.setSetting(db, 'lanes', { ...all, [engine]: { ...(all[engine] ?? {}), lastSeenAt: nowIso(), ...patch } });
+    emit('settings', { key: 'lanes', value: lanesAll() });
+  };
+  const roleOf = (id) => roles.find((r) => r.id === id);
+  const clean = (t) => { if (t && 'taskToken' in t) { const { taskToken, ...r } = t; return r; } return t; };
+  // a missing vault or skill file must not break claiming a task (the token would be lost)
+  const briefFor = (task, taskToken) => {
+    try { return buildBrief({ task, role: task.role, root, db, taskToken }); } catch (e) {
+      // Degraded brief: keep the hard rules and the reporting credentials so the agent stays safe and can still report.
+      return `Full brief unavailable (${e.message}). Read CLAUDE.md first and follow it.
+
+Hard rules: never publish, spend Robux, install tools, or edit a live place. Never read .agent-hq/owner-token. The server is authoritative for value. Stay inside the ${task.role} role's files.
+Your HQ task id: ${task.id}.${taskToken ? ` Your HQ task token: ${taskToken}. Pass it as taskToken (with taskId) to every hq_* tool.` : ''}
+Report with hq_note, hq_ask_owner and hq_complete (or node tools/agent-hq/hqctl.mjs).
+
+Task: ${task.title}
+
+${task.body}`;
+    }
+  };
+  const pubTask = (t) => { emit('task', clean(t)); processTask(clean(t)); return clean(t); };
+  const hookedEmit = (type, payload) => { emit(type, type === 'task' ? clean(payload) : payload); if (type === 'task') processTask(clean(payload)); };
+
+  // ---- review gates: reviewer/tester tasks after a role finishes; FAIL sends work back (max 3 attempts) ----
+  const GATE_ENGINES = new Set(['app', 'claude-cli', 'echo']);
+  const evaluated = new Set();
+  const isFail = (t) => /^\s*fail/i.test(t.summary ?? '');
+  const bare = (title) => title.replace(/^(?:Fix|Check): /, '');
+  function processTask(t) {
+    if (!t) return;
+    if (t.gateFor) return evalGate(t);
+    if (t.state !== 'review' || !GATE_ENGINES.has(t.engine)) return;
+    const gates = (roleOf(t.role)?.gates ?? []).filter((g) => roleOf(g));
+    if (!gates.length || D.gateTasks(db, t.id, t.startedAt ?? '').length) return;
+    for (const g of gates) {
+      queueTask({
+        title: `Check: ${t.title}`.slice(0, 200), role: g, game: t.game, needsStudio: !!roleOf(g).needsStudio,
+        parentId: t.id, gateFor: t.id, createdBy: 'gate',
+        body: `Check the work of task ${t.id} (${roleOf(t.role)?.label ?? t.role}). Its report: ${t.summary ?? '(none)'}. Read the changed files it lists. Put PASS or FAIL as the first word of your hq_complete summary, then reasons. On FAIL, say exactly what must change.`,
+      });
+    }
+  }
+  function evalGate(g) {
+    if (!['review', 'done'].includes(g.state) || evaluated.has(g.id)) return;
+    evaluated.add(g.id);
+    const orig = D.getTask(db, g.gateFor);
+    if (g.state === 'review') g = pubTask(D.updateTask(db, g.id, { state: 'done' }));
+    if (!orig || orig.state !== 'review') return;
+    if (isFail(g)) {
+      let note;
+      if (orig.attempt < 3) {
+        const fix = queueTask({
+          title: `Fix: ${bare(orig.title)}`.slice(0, 200), role: orig.role, game: orig.game, engine: orig.engine,
+          needsStudio: orig.needsStudio, parentId: orig.id, attempt: orig.attempt + 1, createdBy: 'gate',
+          body: `${orig.body}\n\nReviewer feedback:\n${g.summary}`.slice(0, 20000),
+        });
+        note = `queued ${fix.title} (attempt ${fix.attempt})`;
+      } else {
+        const ask = D.createAsk(db, {
+          taskId: orig.id, role: orig.role, kind: 'decision', title: `Gate failed 3 times: ${bare(orig.title)}`.slice(0, 200),
+          why: (g.summary ?? '').slice(0, 20000), options: [{ id: 'retry', label: 'Retry', recommended: true }, { id: 'drop', label: 'Drop' }],
+        });
+        emit('ask', ask);
+        note = 'asked the owner';
+      }
+      pubTask(D.updateTask(db, orig.id, { state: 'failed', error: 'Failed a review gate' }));
+      postMessage({ role: orig.role, from: 'system', text: `Gate FAIL on "${orig.title}": ${note}.`, taskId: orig.id });
+      return;
+    }
+    const batch = D.gateTasks(db, orig.id, orig.startedAt ?? '');
+    if (batch.length && batch.every((x) => x.state === 'done' && !isFail(x))) {
+      pubTask(D.updateTask(db, orig.id, { state: 'done' }));
+      postMessage({ role: orig.role, from: 'system', text: `Passed review gates: ${orig.title}`, taskId: orig.id });
+    }
+  }
+  const needTask = (id) => {
+    if (!TASK_ID.test(id)) throw new HttpError(404, 'not found');
+    const t = D.getTask(db, id);
+    if (!t) throw new HttpError(404, 'task not found');
+    return t;
+  };
+  const queueTask = (f) => pubTask(D.createTask(db, f));
+  const postMessage = (f) => { const m = D.addMessage(db, f); emit('message', m); return m; };
+
+  const gameRow = (g) => ({ ...g, ...D.gameWork(db, g.slug) });
+  // Agent-token requests act as the role of a task that is currently working: they must name it (taskId),
+  // and body.role / body.createdBy are never trusted.
+  // The task is found by its secret (body.taskToken or the x-hq-task-token header), never by its id alone.
+  const agentTask = (body, roleList, headers) => {
+    const tok = isObj(body) && typeof body.taskToken === 'string' ? body.taskToken : headers?.['x-hq-task-token'];
+    let found = null;
+    if (typeof tok === 'string' && /^[0-9a-f]{64}$/.test(tok)) {
+      for (const r of D.workingTaskTokens(db)) if (same(tok, r.taskToken)) found = r.id; // compare all, no early exit
+    }
+    const t = found ? D.getTask(db, found) : null;
+    if (!t || t.state !== 'working') throw new HttpError(403, 'agents must send the task token of their working task (taskToken)');
+    if (isObj(body) && body.taskId !== undefined && body.taskId !== t.id) throw new HttpError(403, 'taskId does not match the task token');
+    if (roleList && !roleList.includes(t.role)) throw new HttpError(403, `the ${t.role} role cannot do this`);
+    return t;
+  };
+  // Routes only the owner token may call (the dashboard). Agents get 403.
+  const OWNER_ONLY = [
+    ['POST', /^\/api\/asks\/approve-all$/], ['POST', /^\/api\/asks\/[^/]+\/(?:answer|dismiss)$/],
+    ['POST', /^\/api\/pitches\/ideas$/], ['POST', /^\/api\/pitches\/[^/]+\/decide$/], ['POST', /^\/api\/stage-requests\/[^/]+\/decide$/],
+    ['POST', /^\/api\/games$/], ['PATCH', /^\/api\/games\/[^/]+$/], ['POST', /^\/api\/games\/[^/]+\/mark-live$/],
+    ['POST', /^\/api\/settings$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
+    ['POST', /^\/api\/messages\/[^/]+\/reset$/], ['POST', /^\/api\/threads\/[^/]+\/read$/],
+    ['POST', /^\/api\/market\/corpus$/], ['DELETE', /^\/api\/market\/corpus\/\d+$/], ['POST', /^\/api\/uploads$/],
+  ];
+  const pubGame = (g) => { const r = gameRow(g); emit('game', r); return r; };
+  const needGame = (slug) => {
+    const g = SLUG.test(slug) ? D.getGame(db, slug) : null;
+    if (!g) throw new HttpError(404, 'game not found');
+    return g;
+  };
+  // attachPaths: uploaded screenshots (see POST /api/uploads)
+  const parseAttach = (v) => {
+    if (v === undefined || v === null) return [];
+    if (!Array.isArray(v) || v.length > 8) throw bad('attachPaths must be an array of up to 8 uploads');
+    return v.map((x) => {
+      if (typeof x !== 'string' || !UPLOAD_PATH.test(x) || !fs.existsSync(path.join(stateDir, 'media', x))) throw bad('unknown upload path');
+      return x;
+    });
+  };
+
+  // ---- routes: [method, regex, handler({m, body, query})] ----
+  const routes = [];
+  const route = (method, re, fn, opts = {}) => routes.push([method, re, fn, opts]);
+
+  route('GET', /^\/api\/health$/, () => ({ ok: true }));
+
+  route('GET', /^\/api\/state$/, () => {
+    const asks = D.listAsks(db);
+    const open = asks.filter((a) => a.state === 'open');
+    const rest = asks.filter((a) => a.state !== 'open').slice(0, 100);
+    const eng = R().engines();
+    const locks = D.studioLocks(db);
+    return {
+      tasks: D.listTasks(db, { limit: 500 }), asks: [...open, ...rest], pitches: D.listPitches(db),
+      settings: settingsAll(), roles, running: R().running(),
+      studio: { lanes: D.getSetting(db, 'studioLanes', 1), locks, holder: locks[0]?.taskId ?? R().studioHolder() },
+      engines: { 'claude-cli': !!eng?.['claude-cli'], echo: true }, lanes: lanesAll(),
+      games: D.listGames(db).map(gameRow), stageRequests: D.listStageRequests(db, { state: 'open' }),
+    };
+  });
+
+  route('GET', /^\/api\/tasks$/, ({ query }) => {
+    const state = oneOf(query.get('state') ?? undefined, 'state', TASK_STATES);
+    const role = oneOf(query.get('role') ?? undefined, 'role', roleIds);
+    const limit = Math.min(Math.max(parseInt(query.get('limit') ?? '200', 10) || 200, 1), 500);
+    return D.listTasks(db, { state, role, limit });
+  });
+
+  route('POST', /^\/api\/tasks$/, ({ body, who, headers }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const maker = who === 'agent' ? agentTask(body, ['lead'], headers) : null; // only the Lead delegates
+    const role = oneOf(body.role, 'role', roleIds, { required: true });
+    const needs = body.needsStudio === undefined || body.needsStudio === null
+      ? !!roles.find((r) => r.id === role)?.needsStudio : !!body.needsStudio;
+    const parentId = str(body.parentId, 'parentId', { max: 20 });
+    if (parentId && !TASK_ID.test(parentId)) throw bad('parentId is not a task id');
+    const slugs = gameSlugs();
+    // With a single game there is nothing to choose: file the task under it so Games > Open work shows it.
+    const game = body.game === undefined || body.game === null || body.game === '' ? (slugs.length === 1 ? slugs[0] : null) : oneOf(body.game, 'game', slugs);
+    return queueTask({
+      title: str(body.title, 'title', { max: 200, required: true }),
+      body: str(body.body, 'body', { max: 20000 }) ?? '',
+      role, game, engine: oneOf(body.engine || undefined, 'engine', ENGINES),
+      model: str(body.model, 'model', { max: 100 }) || null, needsStudio: needs, parentId: parentId ?? maker?.id ?? null,
+      createdBy: maker ? 'lead' : oneOf(body.createdBy, 'createdBy', ['owner', 'lead', 'schedule', 'gate', ...roleIds]) ?? 'owner',
+      attachPaths: parseAttach(body.attachPaths),
+    });
+  });
+
+  route('GET', /^\/api\/tasks\/([^/]+)$/, ({ m }) => needTask(m[1]));
+
+  route('POST', /^\/api\/tasks\/([^/]+)\/cancel$/, ({ m }) => {
+    let t = needTask(m[1]);
+    if (!['queued', 'working', 'review'].includes(t.state)) throw new HttpError(409, `cannot cancel a ${t.state} task`);
+    if (t.state === 'working') R().cancel(t.id);
+    t = D.getTask(db, t.id);
+    if (t.state !== 'canceled') t = D.updateTask(db, t.id, { state: 'canceled' });
+    return pubTask(t);
+  });
+
+  route('POST', /^\/api\/tasks\/([^/]+)\/retry$/, ({ m }) => {
+    const t = needTask(m[1]);
+    if (['queued', 'working'].includes(t.state)) throw new HttpError(409, `task is already ${t.state}`);
+    return pubTask(D.updateTask(db, t.id, { state: 'queued' }));
+  });
+
+  route('POST', /^\/api\/tasks\/([^/]+)\/complete$/, ({ m, body, who, headers }) => {
+    const t = needTask(m[1]);
+    if (who === 'agent' && agentTask(body, undefined, headers).id !== t.id) throw new HttpError(403, 'the task token does not belong to this task');
+    if (!isObj(body)) throw bad('body must be an object');
+    const summary = str(body.summary, 'summary', { max: 20000, required: true });
+    const state = oneOf(body.state, 'state', ['done', 'review', 'failed']) ?? 'review';
+    if (['done', 'failed', 'canceled'].includes(t.state)) throw new HttpError(409, `task is already ${t.state}`);
+    return pubTask(D.updateTask(db, t.id, { state, summary, ...(state === 'failed' ? { error: summary.slice(0, 500) } : {}) }));
+  });
+
+  route('POST', /^\/api\/tasks\/next$/, ({ body }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const engine = oneOf(body.engine, 'engine', LANES, { required: true });
+    let roles;
+    if (body.roles !== undefined && body.roles !== null) {
+      if (!Array.isArray(body.roles) || body.roles.length > roleIds.length) throw bad('roles must be an array of role ids');
+      roles = body.roles.map((r) => oneOf(r, 'roles[]', roleIds, { required: true }));
+    }
+    touchLane(engine, {});
+    const claimed = D.claimNext(db, { engine, roles });
+    if (!claimed) return { task: null };
+    const { taskToken, ...task } = claimed; // the token goes only to the claimer, in this response and the brief
+    pubTask(task);
+    return { task, brief: briefFor(task, taskToken), taskToken };
+  });
+
+  // alias for older callers: claim one specific queued task for a lane
+  route('POST', /^\/api\/tasks\/([^/]+)\/claim$/, ({ m, body }) => {
+    const t = needTask(m[1]);
+    const engine = isObj(body) ? D.migrateEngine(body.engine) : null;
+    if (!LANES.includes(engine)) throw bad('engine must be "app" or "antigravity"');
+    if (t.state !== 'queued') throw new HttpError(409, `task is ${t.state}, not queued`);
+    const task = pubTask(D.updateTask(db, t.id, { state: 'working', engine }));
+    const taskToken = D.issueTaskToken(db, t.id);
+    return { task, brief: briefFor(task, taskToken), taskToken };
+  });
+
+  route('GET', /^\/api\/tasks\/([^/]+)\/brief$/, ({ m }) => {
+    const t = needTask(m[1]);
+    return { brief: briefFor(t) };
+  });
+
+  route('GET', /^\/api\/tasks\/([^/]+)\/log$/, ({ m }) => {
+    const t = needTask(m[1]);
+    return { lines: tailLines(path.join(stateDir, 'logs', `${t.id}.ndjson`), 500) };
+  });
+
+  // asks
+  route('GET', /^\/api\/asks$/, ({ query }) => D.listAsks(db, {
+    state: oneOf(query.get('state') ?? undefined, 'state', ['open', 'answered', 'dismissed']),
+    verdict: oneOf(query.get('verdict') ?? undefined, 'verdict', ['approved', 'changes', 'rejected']),
+    includeSuperseded: query.get('includeSuperseded') === '1',
+  }));
+
+  route('POST', /^\/api\/asks$/, ({ body, who, headers }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const agent = who === 'agent' ? agentTask(body, undefined, headers) : null;
+    const taskId = agent ? agent.id : str(body.taskId, 'taskId', { max: 20 }) ?? null;
+    if (taskId && !TASK_ID.test(taskId)) throw bad('taskId is not a task id');
+    const mediaPath = str(body.mediaPath, 'mediaPath', { max: 500 }) ?? null;
+    if (mediaPath && !safeRel(mediaPath)) throw bad('mediaPath must be relative');
+    const ask = D.createAsk(db, {
+      taskId, role: agent ? agent.role : oneOf(body.role, 'role', roleIds, { required: true }),
+      kind: oneOf(body.kind, 'kind', ['decision', 'try', 'approve', 'review'], { required: true }),
+      title: str(body.title, 'title', { max: 200, required: true }), why: str(body.why, 'why', { max: 20000 }) ?? '',
+      options: parseOptions(body.options), mediaPath,
+    });
+    emit('ask', ask);
+    return ask;
+  });
+
+  const needAsk = (id) => {
+    const a = ASK_ID.test(id) ? D.getAsk(db, id) : null;
+    if (!a) throw new HttpError(404, 'ask not found');
+    if (a.state !== 'open') throw new HttpError(409, `ask is already ${a.state}`);
+    return a;
+  };
+
+  // Apply an owner answer to an open ask and run its side effects.
+  function applyAnswer(a, answer) {
+    let verdict = null;
+    if (a.kind === 'review') {
+      if (answer === 'approve') verdict = 'approved';
+      else if (answer === 'reject') verdict = 'rejected';
+      else if (answer.startsWith('changes:') && answer.slice(8).trim()) verdict = 'changes';
+      else throw bad('review answers are "approve", "reject" or "changes:<what to change>"');
+    }
+    const done = D.answerAsk(db, a.id, { answer, verdict });
+    emit('ask', done);
+    const task = a.taskId ? D.getTask(db, a.taskId) : null;
+    if (a.kind === 'decision') {
+      const opt = a.options.find((o) => o.id === answer);
+      if (opt) postMessage({ role: a.role, from: 'owner', text: `Decision on "${a.title}": ${opt.label}`, taskId: a.taskId });
+      if (task && a.title.startsWith('Gate failed') && task.state === 'failed') {
+        if (answer === 'retry') pubTask(D.updateTask(db, task.id, { state: 'queued', attempt: 1 }));
+        else if (answer === 'drop') pubTask(D.updateTask(db, task.id, { state: 'canceled' }));
+      }
+    } else if (verdict === 'approved') {
+      postMessage({ role: a.role, from: 'owner', text: `Approved: ${a.title}`, taskId: a.taskId });
+      if (task?.state === 'review') pubTask(D.updateTask(db, task.id, { state: 'done' }));
+      if (task?.role === 'designer') {
+        queueTask({
+          title: `Build approved concept: ${task.title}`.slice(0, 200), role: 'ui', engine: 'app', parentId: task.id, createdBy: 'owner',
+          game: task.game,
+          body: `Rebuild the approved concept image at ${a.mediaPath ?? '(see the review ask)'} as real Luau UI. Use the roblox-concept-art-ui skill, sections 2 to 4. The image is a reference only and is never shipped.`,
+        });
+      }
+    } else if (verdict === 'rejected') {
+      postMessage({ role: a.role, from: 'owner', text: `Rejected: ${a.title}`, taskId: a.taskId });
+      if (task?.state === 'review') pubTask(D.updateTask(db, task.id, { state: 'canceled' }));
+    } else if (verdict === 'changes') {
+      const text = answer.slice(8).trim();
+      postMessage({ role: a.role, from: 'owner', text: `Changes requested on "${a.title}": ${text}`, taskId: a.taskId });
+      queueTask({
+        title: `Changes: ${task?.title ?? a.title}`.slice(0, 200), body: text, role: a.role, game: task?.game ?? null,
+        needsStudio: task?.needsStudio ?? 0, parentId: task?.id ?? null, createdBy: 'owner',
+      });
+      if (task?.state === 'review') pubTask(D.updateTask(db, task.id, { state: 'done' }));
+    }
+    return done;
+  }
+
+  route('POST', /^\/api\/asks\/([^/]+)\/answer$/, ({ m, body }) => {
+    const a = needAsk(m[1]);
+    if (!isObj(body)) throw bad('body must be an object');
+    return applyAnswer(a, str(body.answer, 'answer', { max: 20000, required: true }));
+  });
+
+  // "Clear the queue": approve many open review asks at once
+  route('POST', /^\/api\/asks\/approve-all$/, ({ body }) => {
+    if (!isObj(body) || !Array.isArray(body.ids) || body.ids.length > 200) throw bad('ids must be an array of up to 200 ask ids');
+    const approved = []; const skipped = [];
+    for (const id of body.ids) {
+      const a = typeof id === 'string' && ASK_ID.test(id) ? D.getAsk(db, id) : null;
+      if (a && a.state === 'open' && a.kind === 'review') { applyAnswer(a, 'approve'); approved.push(id); } else skipped.push(id);
+    }
+    return { approved, skipped };
+  });
+
+  route('POST', /^\/api\/asks\/([^/]+)\/dismiss$/, ({ m }) => {
+    const done = D.answerAsk(db, needAsk(m[1]).id, { answer: null, state: 'dismissed' });
+    emit('ask', done);
+    return done;
+  });
+
+  // messages
+  route('GET', /^\/api\/messages$/, ({ query }) => D.listMessages(db, { role: oneOf(query.get('role') ?? undefined, 'role', roleIds) }));
+
+  route('POST', /^\/api\/messages$/, ({ body, who, headers }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const agent = who === 'agent' ? agentTask(body, undefined, headers) : null; // agent notes always go to the task's own thread
+    const role = agent ? agent.role : oneOf(body.role, 'role', roleIds, { required: true });
+    const text = str(body.text, 'text', { max: 20000, required: true });
+    const taskId = agent ? agent.id : str(body.taskId, 'taskId', { max: 20 }) ?? null;
+    if (taskId && !TASK_ID.test(taskId)) throw bad('taskId is not a task id');
+    const attachPaths = parseAttach(body.attachPaths);
+    const msg = postMessage({ role, from: agent ? 'agent' : 'owner', text, taskId, attachPaths });
+    if (msg.from === 'owner') queueTask({ title: firstLine(text, 100), body: text, role, createdBy: 'owner', threadMessageId: msg.id, attachPaths });
+    return msg;
+  });
+
+  route('POST', /^\/api\/messages\/([^/]+)\/reset$/, ({ m }) => {
+    const role = oneOf(m[1], 'role', roleIds, { required: true });
+    return postMessage({ role, from: 'system', text: 'New conversation' });
+  });
+
+  route('GET', /^\/api\/threads$/, () => {
+    const reads = D.getSetting(db, 'threadReads', {});
+    return roleIds.map((role) => ({ role, last: D.lastMessage(db, role), unread: D.countUnread(db, role, reads[role] ?? null), lastReadAt: reads[role] ?? null }));
+  });
+
+  route('POST', /^\/api\/threads\/([^/]+)\/read$/, ({ m }) => {
+    const role = oneOf(m[1], 'role', roleIds, { required: true });
+    const reads = { ...D.getSetting(db, 'threadReads', {}), [role]: nowIso() };
+    D.setSetting(db, 'threadReads', reads);
+    emit('settings', { key: 'threadReads', value: reads });
+    return { role, lastReadAt: reads[role] };
+  });
+
+  // role memory: committed markdown lessons
+  const memFile = (role) => path.join(memoryDir, `${role}.md`);
+  const readLessons = (role) => {
+    let text = '';
+    try { text = fs.readFileSync(memFile(role), 'utf8'); } catch { /* none yet */ }
+    return text.split('\n').map((l) => /^- (\d{4}-\d{2}-\d{2}): (.+)$/.exec(l.trim())).filter(Boolean).map((x) => ({ date: x[1], text: x[2] }));
+  };
+  route('GET', /^\/api\/memory\/([^/]+)$/, ({ m }) => ({ lessons: readLessons(oneOf(m[1], 'role', roleIds, { required: true })) }));
+  route('POST', /^\/api\/memory\/([^/]+)$/, ({ m, body, who, headers }) => {
+    const pathRole = oneOf(m[1], 'role', roleIds, { required: true });
+    if (!isObj(body)) throw bad('body must be an object');
+    const role = who === 'agent' ? agentTask(body, undefined, headers).role : pathRole; // an agent only writes its own role's memory
+    const lesson = str(body.lesson, 'lesson', { max: 300, required: true }).replace(/\s*\n\s*/g, ' ');
+    let lessons = readLessons(role);
+    const added = !lessons.some((l) => l.text === lesson);
+    if (added) {
+      lessons = [...lessons, { date: nowIso().slice(0, 10), text: lesson }].slice(-60);
+      fs.mkdirSync(memoryDir, { recursive: true });
+      fs.writeFileSync(memFile(role), lessons.map((l) => `- ${l.date}: ${l.text}`).join('\n') + '\n');
+    }
+    return { lessons, added, role };
+  });
+
+  // lane gate: should this worker run now? The outside schedulers fire at a fixed rate; HQ decides.
+  route('POST', /^\/api\/lanes\/([^/]+)\/gate$/, ({ m, body }) => {
+    const engine = oneOf(m[1], 'engine', LANES, { required: true });
+    const manual = isObj(body) && body.manual === true;
+    const cfg = settingsAll().laneSchedules[engine];
+    const queued = D.countQueued(db, engine);
+    const out = (run, reason) => ({ run, reason, maxTasks: cfg.maxTasks, queued });
+    const lastRunAt = lanesAll()[engine].lastRunAt;
+    const decide = () => {
+      if (!cfg.enabled) return out(false, 'lane paused in HQ');
+      if (D.getSetting(db, 'paused', false)) return out(false, 'HQ is paused');
+      if (!queued) return out(false, 'queue empty');
+      if (!manual) {
+        const d = new Date(now());
+        const mins = d.getHours() * 60 + d.getMinutes();
+        const from = toMin(cfg.activeFrom); const to = toMin(cfg.activeTo);
+        const inside = from === to ? true : from < to ? mins >= from && mins < to : mins >= from || mins < to;
+        if (!inside) return out(false, 'outside active hours');
+        if (lastRunAt && now() - Date.parse(lastRunAt) < (cfg.everyMinutes - 2) * 60000) {
+          const due = new Date(Date.parse(lastRunAt) + cfg.everyMinutes * 60000);
+          return out(false, `not due until ${String(due.getHours()).padStart(2, '0')}:${String(due.getMinutes()).padStart(2, '0')}`);
+        }
+      }
+      return null;
+    };
+    const blocked = decide();
+    if (blocked) { touchLane(engine, {}); return blocked; }
+    touchLane(engine, { lastRunAt: nowIso() });
+    return out(true, 'ok');
+  });
+
+  // ---- games, stages, live numbers ----
+  route('GET', /^\/api\/games$/, () => D.listGames(db).map(gameRow));
+
+  route('POST', /^\/api\/games$/, ({ body }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const slug = str(body.slug, 'slug', { max: 40, required: true });
+    if (!SLUG.test(slug)) throw bad('slug must be lowercase letters, digits and dashes (2 to 40)');
+    if (D.getGame(db, slug)) throw new HttpError(409, 'a game with that slug exists');
+    return pubGame(D.createGame(db, { slug, name: str(body.name, 'name', { max: 100, required: true }) }));
+  });
+
+  route('PATCH', /^\/api\/games\/([^/]+)$/, ({ m, body }) => {
+    const g = needGame(m[1]);
+    if (!isObj(body)) throw bad('body must be an object');
+    const patch = {};
+    if (body.name !== undefined) patch.name = str(body.name, 'name', { max: 100, required: true });
+    if (body.nextStep !== undefined) patch.nextStep = str(body.nextStep, 'nextStep', { max: 300 }) ?? '';
+    if (body.note !== undefined) patch.note = str(body.note, 'note', { max: 2000 }) ?? '';
+    if (body.versionType !== undefined) patch.versionType = str(body.versionType, 'versionType', { max: 40 }) ?? '';
+    if (body.version !== undefined) patch.version = intIn(body.version, 'version', 1, 9999);
+    if (body.universeId !== undefined) {
+      const u = body.universeId === null || body.universeId === '' ? null : String(body.universeId).trim();
+      if (u !== null && !/^\d{1,15}$/.test(u)) throw bad('universeId must be digits');
+      patch.universeId = u;
+    }
+    if (body.changelog !== undefined) {
+      const c = body.changelog;
+      if (c === null) patch.changelog = null;
+      else {
+        if (!isObj(c) || !Array.isArray(c.bullets) || c.bullets.length > 30) throw bad('changelog must be {heading, bullets[]}');
+        patch.changelog = { heading: str(c.heading, 'changelog.heading', { max: 200 }) ?? '', bullets: c.bullets.map((b) => str(b, 'changelog bullet', { max: 500, required: true })) };
+      }
+    }
+    return pubGame(D.updateGame(db, g.slug, patch));
+  });
+
+  route('GET', /^\/api\/stage-requests$/, ({ query }) => D.listStageRequests(db, {
+    state: oneOf(query.get('state') ?? undefined, 'state', ['open', 'approved', 'rejected']),
+    game: query.get('game') && SLUG.test(query.get('game')) ? query.get('game') : undefined,
+  }));
+
+  route('POST', /^\/api\/games\/([^/]+)\/stage-requests$/, ({ m, body, who, headers }) => {
+    const g = needGame(m[1]);
+    if (!isObj(body)) throw bad('body must be an object');
+    const requester = who === 'agent' ? agentTask(body, ['producer', 'lead'], headers) : null;
+    const toStage = oneOf(body.toStage, 'toStage', D.STAGES, { required: true });
+    if (toStage === 'live') throw new HttpError(403, 'only the owner marks a game live (they publish it themselves)');
+    if (D.STAGES.indexOf(toStage) !== D.STAGES.indexOf(g.stage) + 1) throw bad(`${g.name} is at "${g.stage}"; the only next stage is "${D.STAGES[D.STAGES.indexOf(g.stage) + 1] ?? 'none'}"`);
+    const role = requester ? requester.role : oneOf(body.role, 'role', roleIds) ?? 'producer';
+    if (D.listStageRequests(db, { state: 'open', game: g.slug }).some((r) => r.toStage === toStage)) throw new HttpError(409, 'that stage request is already open');
+    const r = D.createStageRequest(db, { game: g.slug, fromStage: g.stage, toStage, role, evidence: str(body.evidence, 'evidence', { max: 5000, required: true }) });
+    emit('stage', r);
+    postMessage({ role: 'lead', from: 'system', text: `${roleOf(role)?.label ?? role} asks to move ${g.name} from ${g.stage} to ${toStage}.` });
+    return r;
+  });
+
+  route('POST', /^\/api\/stage-requests\/([^/]+)\/decide$/, ({ m, body }) => {
+    const r = /^s_[0-9a-f]{12}$/.test(m[1]) ? D.getStageRequest(db, m[1]) : null;
+    if (!r) throw new HttpError(404, 'stage request not found');
+    if (r.state !== 'open') throw new HttpError(409, `request is already ${r.state}`);
+    const state = oneOf(isObj(body) ? body.state : undefined, 'state', ['approved', 'rejected'], { required: true });
+    const g = needGame(r.game);
+    if (state === 'approved') {
+      if (g.stage !== r.fromStage) throw new HttpError(409, `game is now at "${g.stage}", not "${r.fromStage}"`);
+      pubGame(D.updateGame(db, g.slug, { stage: r.toStage }));
+    }
+    const done = D.decideStageRequest(db, r.id, state);
+    emit('stage', done);
+    postMessage({ role: 'lead', from: 'system', text: state === 'approved' ? `Stage approved: ${g.name} moved from ${r.fromStage} to ${r.toStage}.` : `Stage request declined: ${g.name} stays at ${r.fromStage}.` });
+    return done;
+  });
+
+  // owner only: they published the game themselves
+  route('POST', /^\/api\/games\/([^/]+)\/mark-live$/, ({ m }) => {
+    const g = needGame(m[1]);
+    if (g.stage !== 'ready') throw new HttpError(409, `${g.name} is at "${g.stage}"; only a game that is ready can be marked live`);
+    const row = pubGame(D.updateGame(db, g.slug, { stage: 'live' }));
+    postMessage({ role: 'lead', from: 'system', text: `${g.name} is live (marked by the owner).` });
+    return row;
+  });
+
+  const liveView = (g) => {
+    const latest = D.latestGameSnapshot(db, g.slug);
+    const stored = D.latestMetrics(db, g.slug);
+    const metrics = Object.fromEntries(Object.keys(METRICS).map((k) => [k, stored[k]?.value ?? null]));
+    metrics.likeRatio = latest && latest.up != null && latest.up + latest.down > 0 ? latest.up / (latest.up + latest.down) : null;
+    return {
+      latest, series: D.gameSeries(db, g.slug, new Date(now() - 30 * 86400000).toISOString()), metrics,
+      metricDates: Object.fromEntries(Object.entries(stored).map(([k, v]) => [k, v.date])), targets: TARGETS, attention: D.gameAsksBy(db, g.slug, 'liveops'),
+    };
+  };
+  route('GET', /^\/api\/games\/([^/]+)\/live$/, ({ m }) => liveView(needGame(m[1])));
+
+  route('POST', /^\/api\/games\/([^/]+)\/live\/refresh$/, async ({ m }) => {
+    const g = needGame(m[1]);
+    if (!g.universeId) throw bad('set a universe id for this game first');
+    let snap;
+    try { snap = await fetchLive(g.universeId); } catch (e) { throw new HttpError(502, `Roblox live numbers failed: ${e.message}`); }
+    D.addGameSnapshot(db, g.slug, snap, nowIso());
+    emit('game', gameRow(g));
+    return liveView(g);
+  });
+
+  route('POST', /^\/api\/games\/([^/]+)\/metrics$/, ({ m, body, who, headers }) => {
+    const g = needGame(m[1]);
+    if (!isObj(body)) throw bad('body must be an object');
+    if (who === 'agent') agentTask(body, ['liveops'], headers);
+    const key = oneOf(body.key, 'key', Object.keys(METRICS), { required: true });
+    if (typeof body.value !== 'number' || !Number.isFinite(body.value) || body.value < 0 || body.value > METRICS[key]) throw bad(`value must be a number 0..${METRICS[key]}`);
+    const date = str(body.date, 'date', { max: 10 }) ?? nowIso().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bad('date must be YYYY-MM-DD');
+    const source = who === 'agent' ? 'liveops' : 'owner';
+    D.setMetric(db, g.slug, key, body.value, date, source);
+    return { ok: true, metrics: liveView(g).metrics };
+  });
+
+  route('GET', /^\/api\/freshness$/, () => {
+    let assetLibrary = null;
+    try { assetLibrary = fs.statSync(path.join(HERE, 'assets.json')).mtime.toISOString(); } catch { /* no index yet */ }
+    return {
+      marketCharts: D.latestMarketSnapshots(db, 1)[0]?.fetchedAt ?? null, breakouts: D.getSetting(db, 'breakoutsAt', null),
+      liveNumbers: D.latestSnapshotAt(db), assetLibrary, games: Object.fromEntries(D.listGames(db).map((g) => [g.slug, g.updatedAt])),
+    };
+  });
+
+  // screenshots pasted by the owner: png/jpeg/webp, checked by content, saved under .agent-hq/media/uploads/
+  const MAGIC = {
+    'image/png': { ext: 'png', ok: (b) => b.length > 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+    'image/jpeg': { ext: 'jpg', ok: (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+    'image/webp': { ext: 'webp', ok: (b) => b.length > 12 && b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP' },
+  };
+  route('POST', /^\/api\/uploads$/, ({ body }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const name = (str(body.name, 'name', { max: 200, required: true }).split(/[\\/]/).pop().replace(/[^\w.-]+/g, '_') || 'image').slice(0, 80);
+    const kind = MAGIC[oneOf(body.mime, 'mime', Object.keys(MAGIC), { required: true })];
+    if (typeof body.dataBase64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(body.dataBase64)) throw bad('dataBase64 must be base64');
+    if (body.dataBase64.length > Math.ceil(UPLOAD_MAX / 3) * 4) throw bad('image is larger than 5 MB');
+    const buf = Buffer.from(body.dataBase64, 'base64');
+    if (buf.length > UPLOAD_MAX) throw bad('image is larger than 5 MB');
+    if (!kind.ok(buf)) throw bad('file content does not match its type');
+    const rel = `uploads/${crypto.randomBytes(6).toString('hex')}.${kind.ext}`;
+    fs.mkdirSync(path.join(stateDir, 'media', 'uploads'), { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'media', rel), buf);
+    return { path: rel, name, bytes: buf.length };
+  }, { maxBody: 8 * 1024 * 1024 });
+
+  // pitches
+  const normalize = (input) => {
+    try { return normalizePitch(input); } catch (e) { throw new HttpError(e.status ?? 400, e.message); }
+  };
+  // the stored fields of a pitch row, ready to merge with edits and normalize again
+  const pitchFields = (p) => Object.fromEntries(Object.entries(p).filter(([k]) => !['id', 'state', 'createdAt', 'decidedAt', 'note', 'coreLoop'].includes(k)));
+  const pubPitch = (p) => { emit('pitch', p); return p; };
+
+  route('GET', /^\/api\/pitches$/, () => D.listPitches(db));
+
+  route('POST', /^\/api\/pitches$/, ({ body, who, headers }) => {
+    if (who === 'agent') agentTask(body, ['scout'], headers);
+    const data = normalize(body);
+    // the scout answering an owner idea fills in the waiting "evaluating" pitch instead of adding a second one
+    const waiting = data.origin === 'owner' ? D.listPitches(db).find((x) => x.state === 'evaluating' && x.title === data.title) : null;
+    if (waiting) return pubPitch(D.updatePitch(db, waiting.id, { state: 'proposed', data }));
+    return pubPitch(D.createPitch(db, { title: data.title, oneLiner: data.oneLiner, origin: data.origin, state: 'proposed', data }));
+  });
+
+  route('POST', /^\/api\/pitches\/ideas$/, ({ body }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const title = str(body.title, 'title', { max: 200, required: true });
+    const idea = str(body.idea, 'idea', { max: 2000, required: true });
+    const data = normalize({ title, oneLiner: idea.slice(0, 500), origin: 'owner', game: { howItPlays: idea } });
+    const p = pubPitch(D.createPitch(db, { title, oneLiner: data.oneLiner, origin: 'owner', state: 'evaluating', data }));
+    queueTask({
+      title: `Evaluate owner idea: ${title}`.slice(0, 200), role: 'scout', createdBy: 'owner',
+      body: `The owner has an idea: "${title}"\n\n${idea}\n\nCheck it against the charts and comparables. Then post the full pitch with hq_pitch (set origin to "owner" and keep this exact title) so the owner can decide.`,
+    });
+    return p;
+  });
+
+  route('POST', /^\/api\/pitches\/([^/]+)\/decide$/, ({ m, body }) => {
+    const before = PITCH_ID.test(m[1]) ? D.getPitch(db, m[1]) : null;
+    if (!before) throw new HttpError(404, 'pitch not found');
+    if (!isObj(body)) throw bad('body must be an object');
+    let state = oneOf(body.state, 'state', ['approved', 'changes', 'declined', 'rejected'], { required: true });
+    if (state === 'rejected') state = 'declined';
+    if (!['proposed', 'evaluating', 'changes'].includes(before.state)) throw new HttpError(409, `pitch is already ${before.state}`);
+    const note = str(body.note, 'note', { max: 2000, required: state === 'changes' }) ?? null;
+    let data;
+    if (body.edits !== undefined && body.edits !== null) {
+      if (!isObj(body.edits)) throw bad('edits must be an object');
+      if (before.format !== undefined || before.game) data = normalize({ ...pitchFields(before), ...body.edits });
+    }
+    const p = pubPitch(D.decidePitch(db, before.id, state, { note, data }));
+    if (state === 'approved') {
+      for (const w of D.withdrawOpenPitches(db, p.id)) pubPitch(w);
+      const facts = [
+        `One-liner: ${p.oneLiner}`, p.edge && `Edge: ${p.edge}`, p.game?.howItPlays && `How it plays: ${p.game.howItPlays}`,
+        p.evidence?.summary && `Evidence: ${p.evidence.summary}`, p.risks?.length && `Risks: ${[].concat(p.risks).join('; ')}`,
+      ].filter(Boolean).join('\n');
+      queueTask({ title: `Plan pitch: ${p.title}`.slice(0, 200), role: 'lead', createdBy: 'owner', body: `The owner approved this pitch. Plan it.\n\n${facts}`.slice(0, 20000) });
+    } else if (state === 'changes') {
+      queueTask({ title: `Revise pitch: ${p.title}`.slice(0, 200), role: 'scout', createdBy: 'owner', body: `The owner asked for changes to the pitch "${p.title}":\n\n${note}\n\nPost the revised pitch with hq_pitch (same title, origin "${p.origin}").` });
+    }
+    return p;
+  });
+
+  // settings
+  route('GET', /^\/api\/settings$/, () => settingsAll());
+
+  route('POST', /^\/api\/settings$/, ({ body }) => {
+    if (!isObj(body) || typeof body.key !== 'string') throw bad('key and value are required');
+    const value = validateSetting(body.key, body.value, roleIds);
+    D.setSetting(db, body.key, value);
+    emit('settings', { key: body.key, value });
+    return { key: body.key, value };
+  });
+
+  const setPaused = (paused) => {
+    D.setSetting(db, 'paused', paused);
+    emit('settings', { key: 'paused', value: paused });
+    return { ok: true, paused };
+  };
+  route('POST', /^\/api\/pause$/, () => setPaused(true));
+  route('POST', /^\/api\/resume$/, () => setPaused(false));
+
+  // market
+  const marketView = () => {
+    const [latest, previous] = D.latestMarketSnapshots(db, 2);
+    const cur = latest ?? { fetchedAt: null, sorts: [] };
+    return { latest: cur, previous: previous ?? null, velocity: velocity(cur, previous ?? null), sorts: cur.sorts.map((x) => ({ id: x.id, name: x.name, count: x.games.length })) };
+  };
+  route('GET', /^\/api\/market$/, () => marketView());
+
+  async function refreshBreakouts() {
+    const snaps = D.latestMarketSnapshots(db, 30);
+    const ids = [...new Set((snaps[0]?.sorts ?? []).flatMap((x) => x.games.map((g) => g.universeId)))].slice(0, 600);
+    const rows = computeBreakouts(snaps, await fetchers.details(ids), now());
+    D.setSetting(db, 'breakouts', { rows, at: nowIso() });
+    D.setSetting(db, 'breakoutsAt', nowIso());
+  }
+  route('POST', /^\/api\/market\/refresh$/, async () => {
+    let snap;
+    try { snap = await fetchCharts(); } catch (e) { throw new HttpError(502, `market fetch failed: ${e.message}`); }
+    D.saveMarketSnapshot(db, snap);
+    let breakoutsError = null;
+    try { await refreshBreakouts(); } catch (e) { breakoutsError = e.message; }
+    return { ...marketView(), breakoutsError };
+  });
+
+  route('GET', /^\/api\/market\/breakouts$/, () => D.getSetting(db, 'breakouts', { rows: [], at: null }));
+  route('GET', /^\/api\/market\/benchmarks$/, () => ({ rows: loadBenchmarks() }));
+
+  // corpus: reference games the owner wants to compare against (icons and thumbnails are stored when added)
+  route('GET', /^\/api\/market\/corpus$/, () => ({ games: D.getSetting(db, 'corpus', []) }));
+  route('POST', /^\/api\/market\/corpus$/, async ({ body }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const universeId = String(body.universeId ?? '').trim();
+    if (!/^\d{1,15}$/.test(universeId)) throw bad('universeId must be digits');
+    const corpus = D.getSetting(db, 'corpus', []);
+    if (corpus.some((g) => g.universeId === universeId)) return { games: corpus };
+    if (corpus.length >= 100) throw bad('the corpus is full (100 games)');
+    const seen = (D.latestMarketSnapshots(db, 1)[0]?.sorts ?? []).flatMap((x) => x.games).find((g) => String(g.universeId) === universeId);
+    const name = str(body.name, 'name', { max: 200 }) || seen?.name || `Universe ${universeId}`;
+    const [icons, thumbs] = await Promise.all([fetchers.icons([universeId]).catch(() => ({})), fetchers.thumbnails([universeId]).catch(() => ({}))]);
+    const games = [...corpus, { universeId, name, icon: icons[universeId] ?? null, thumbnail: thumbs[universeId] ?? null, addedAt: nowIso() }];
+    D.setSetting(db, 'corpus', games);
+    return { games };
+  });
+  route('DELETE', /^\/api\/market\/corpus\/(\d{1,15})$/, ({ m }) => {
+    const games = D.getSetting(db, 'corpus', []).filter((g) => g.universeId !== m[1]);
+    D.setSetting(db, 'corpus', games);
+    return { games };
+  });
+
+  // library: assets index, reusable systems catalogue
+  route('GET', /^\/api\/assets$/, ({ query }) => {
+    const kind = query.get('kind') || undefined;
+    if (kind && kind !== 'all' && !ASSET_KINDS.includes(kind)) throw bad(`kind must be all or one of ${ASSET_KINDS.join(', ')}`);
+    const scope = query.get('scope') || undefined;
+    if (scope && scope !== 'all' && scope !== 'studio' && !/^game:[a-z0-9-]{1,40}$/.test(scope)) throw bad('scope must be all, studio or game:<slug>');
+    return listAssetIndex(root, { search: (query.get('search') ?? '').slice(0, 100), kind, scope });
+  });
+  route('POST', /^\/api\/assets$/, ({ body, who, headers }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    if (who === 'agent') agentTask(body, ['librarian'], headers); // only a librarian task, or the owner, adds assets
+    try { return addAsset(root, body); } catch (e) { throw new HttpError(e.status ?? 500, e.message); }
+  });
+  route('GET', /^\/api\/systems$/, () => ({ markdown: readSystems(root) }));
+
+  route('GET', /^\/api\/vault$/, () => ({ chapters: parseVault(root) }));
+
+  route('GET', /^\/api\/library$/, () => {
+    const skills = [];
+    const sdir = path.join(root, '.claude', 'skills');
+    let names = [];
+    try { names = fs.readdirSync(sdir); } catch { /* none */ }
+    for (const n of names) {
+      const f = path.join(sdir, n, 'SKILL.md');
+      try {
+        const fm = frontmatter(fs.readFileSync(f, 'utf8'));
+        skills.push({ name: fm.name || n, description: fm.description || '', path: path.relative(root, f).replaceAll('\\', '/') });
+      } catch { /* not a skill dir */ }
+    }
+    return { skills, assets: listAssets(path.join(root, 'assets')) };
+  });
+
+  // ---- request handling ----
+  const send = (res, status, data, headers = {}) => {
+    const buf = Buffer.from(JSON.stringify(data));
+    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': buf.length, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers });
+    res.end(buf);
+  };
+
+  function readBody(req, limit = MAX_BODY) {
+    return new Promise((resolve, reject) => {
+      const declared = Number(req.headers['content-length']);
+      if (declared > limit) { req.resume(); return reject(new HttpError(413, 'body too large')); } // drain, so the client can read the 413
+      const chunks = [];
+      let size = 0;
+      req.on('data', (c) => {
+        size += c.length;
+        if (size > limit) { reject(new HttpError(413, 'body too large')); chunks.length = 0; return; }
+        chunks.push(c);
+      });
+      req.on('end', () => {
+        if (!size) return resolve(undefined);
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(bad('invalid JSON')); }
+      });
+      req.on('error', reject);
+    });
+  }
+
+  function serveFile(res, file, extra = {}) {
+    const ext = path.extname(file).toLowerCase();
+    const data = fs.readFileSync(file);
+    res.writeHead(200, { 'content-type': MIME[ext] ?? 'application/octet-stream', 'content-length': data.length, 'x-content-type-options': 'nosniff', 'cache-control': 'no-cache', ...extra });
+    res.end(data);
+  }
+
+  function serveIndex(res) {
+    const file = path.join(publicDir, 'index.html');
+    let html;
+    try { html = fs.readFileSync(file, 'utf8'); } catch { throw new HttpError(404, 'index.html missing'); }
+    // Never embed the owner token: any local process (agents included) can GET this page.
+    // The dashboard receives it from the URL fragment (#owner=...), which browsers never send to the server.
+    html = html.replace(/<meta\s+name="hq-token"[^>]*>\s*/g, '');
+    const buf = Buffer.from(html);
+    res.writeHead(200, { 'content-type': MIME['.html'], 'content-length': buf.length, 'cache-control': 'no-store', 'content-security-policy': CSP, 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' });
+    res.end(buf);
+  }
+
+  function serveMedia(res, rel) {
+    const tries = [[path.join(stateDir, 'media'), rel]];
+    if (rel.startsWith('assets/')) tries.push([path.join(root, 'assets'), rel.slice(7)]);
+    tries.push([path.join(root, 'assets'), rel]);
+    for (const [base, r] of tries) {
+      const f = readFileIn(base, r);
+      if (!f) continue;
+      // Agent-written files share this origin: only inert media renders inline, everything else downloads.
+      const inline = MEDIA_INLINE.has(path.extname(f).toLowerCase());
+      return serveFile(res, f, {
+        'content-security-policy': "default-src 'none'; sandbox",
+        ...(inline ? {} : { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment' }),
+      });
+    }
+    throw new HttpError(404, 'not found');
+  }
+
+  function handleSse(req, res) {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-content-type-options': 'nosniff' });
+    res.write('retry: 2000\n: connected\n\n');
+    clients.add(res);
+    const beat = setInterval(() => res.write(': ping\n\n'), 25000);
+    beat.unref();
+    req.on('close', () => { clearInterval(beat); clients.delete(res); });
+  }
+
+  const server = http.createServer(async (req, res) => {
+    try {
+      const host = req.headers.host;
+      if (host !== `127.0.0.1:${boundPort}` && host !== `localhost:${boundPort}`) throw new HttpError(403, 'bad host');
+      const url = new URL(req.url, 'http://127.0.0.1');
+      let pathname;
+      try { pathname = decodeURIComponent(url.pathname); } catch { throw bad('bad path'); }
+      if (pathname.includes('\0')) throw bad('bad path');
+
+      if (pathname.startsWith('/api/')) {
+        let who = null;
+        if (pathname !== '/api/health') {
+          const isEvents = pathname === '/api/events' && req.method === 'GET';
+          const supplied = isEvents ? url.searchParams.get('token') : req.headers['x-hq-token'];
+          who = whoIs(supplied);
+          if (!who) throw new HttpError(401, 'missing or bad token');
+          if (isEvents) return handleSse(req, res);
+          if (who !== 'owner' && OWNER_ONLY.some(([mt, re]) => mt === req.method && re.test(pathname))) throw new HttpError(403, 'owner only');
+        }
+        for (const [method, re, fn, opts] of routes) {
+          const m = re.exec(pathname);
+          if (!m || method !== req.method) continue;
+          const body = method !== 'GET' ? await readBody(req, opts.maxBody) : undefined;
+          return send(res, 200, await fn({ m, body, query: url.searchParams, who, headers: req.headers }));
+        }
+        throw new HttpError(404, 'not found');
+      }
+
+      if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
+      if (pathname === '/' || pathname === '/index.html') return serveIndex(res);
+      if (pathname.startsWith('/static/')) {
+        const f = readFileIn(publicDir, pathname.slice(8));
+        if (!f) throw new HttpError(404, 'not found');
+        return serveFile(res, f);
+      }
+      if (pathname.startsWith('/media/')) return serveMedia(res, pathname.slice(7));
+      throw new HttpError(404, 'not found');
+    } catch (e) {
+      const status = e instanceof HttpError ? e.status : 500;
+      if (status === 500) console.error(e);
+      if (!res.headersSent) send(res, status, { error: status === 500 ? 'internal error' : e.message });
+    }
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+  boundPort = server.address().port;
+
+  rn = runnerOwned ? runner({ db, root, emit: hookedEmit, port: boundPort, token }) : (runner ?? null);
+  if (runnerOwned) rn.start?.();
+
+  return {
+    server, db, token, ownerToken, port: boundPort, stateDir,
+    async close() {
+      if (runnerOwned) rn.stop?.();
+      for (const c of clients) c.end();
+      clients.clear();
+      server.closeAllConnections?.();
+      await new Promise((r) => server.close(r));
+      db.close();
+    },
+  };
+}
+
+// ---- main ----
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const { createRunner } = await import('./runner.mjs');
+  const port = Number(process.env.HQ_PORT) || 4317;
+  const s = await startServer({ root: path.resolve(HERE, '../..'), port, runner: (ctx) => createRunner(ctx) });
+  console.log(`Agent HQ on http://127.0.0.1:${s.port} (open it with scripts/hq.ps1 to sign in as the owner)`);
+  const stop = async () => { await s.close(); process.exit(0); };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+}
