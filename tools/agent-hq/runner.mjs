@@ -6,6 +6,8 @@ import { buildBrief, loadRoles } from './briefs.mjs';
 import { detectEngines, spawnEngine } from './engines.mjs';
 
 const mcpPath = path.join(import.meta.dirname, 'mcp.mjs');
+const llmAgentPath = path.join(import.meta.dirname, 'llm-agent.mjs');
+const LLM_ENGINES = new Set(['groq', 'nim']); // OpenAI-compatible APIs, run by llm-agent.mjs
 const isWin = process.platform === 'win32';
 
 function killTree(child) {
@@ -16,7 +18,7 @@ function killTree(child) {
   } catch { /* already gone */ }
 }
 
-export function createRunner({ db, root, emit = () => {}, port = 4317, token = '', tickMs = 2000, echoMs = 150, engines: detected, memoryDir }) {
+export function createRunner({ db, root, emit = () => {}, port = 4317, token = '', tickMs = 2000, echoMs = 150, engines: detected, memoryDir, providers = () => ({}) }) {
   const stateDir = path.join(root, '.agent-hq');
   const logDir = path.join(stateDir, 'logs');
   fs.mkdirSync(logDir, { recursive: true });
@@ -24,6 +26,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
   const roles = loadRoles();
   const procs = new Map(); // taskId -> { child, task, canceled }
   let timer = null;
+  let stopped = false; // after stop() the db may be closed: late child exits must not touch it
 
   const publish = (id) => { const t = getTask(db, id); if (t) emit('task', t); return t; };
   const studioHolder = () => [...procs.values()].find((p) => p.task.needsStudio)?.task.id ?? null;
@@ -37,11 +40,12 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     const role = roles.find((r) => r.id === task.role);
     const pref = getSetting(db, 'roleEngines', {})[task.role] ?? {};
     const engine = task.engine || pref.engine || 'claude-cli';
-    const exe = exes[engine] ?? null;
-    if (engine !== 'echo' && !exe) return fail(task.id, 'engine not installed');
+    const llmKey = LLM_ENGINES.has(engine) ? providers()?.[engine]?.apiKey ?? null : null;
+    const exe = LLM_ENGINES.has(engine) ? (llmKey ? llmAgentPath : null) : exes[engine] ?? null;
+    if (engine !== 'echo' && !exe) return fail(task.id, LLM_ENGINES.has(engine) ? `no ${engine} API key: add one in Settings, Model providers` : 'engine not installed');
     const model = task.model || pref.model || (engine === 'claude-cli' ? role?.model : null) || null;
 
-    let child, mcpConfigPath;
+    let child, mcpConfigPath, briefPath = null;
     const taskToken = issueTaskToken(db, task.id); // per-task secret: proves to the server which task is calling
     try {
       mcpConfigPath = path.join(stateDir, `mcp-${task.id}.json`);
@@ -50,12 +54,17 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
           HQ_URL: `http://127.0.0.1:${port}`, HQ_TOKEN: token, HQ_TASK: task.id, HQ_ROLE: task.role, HQ_TASK_TOKEN: taskToken,
         } } },
       }), { mode: 0o600 }); // holds the HQ token; owner-only, deleted when the task ends
-      child = spawnEngine({
-        engine, exe, model, mcpConfigPath, cwd: root,
-        brief: buildBrief({ task, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) }),
-        allowedTools: role?.allowedTools ?? [],
-        env: { ...process.env, HQ_ECHO_MS: String(echoMs) },
-      });
+      const brief = buildBrief({ task, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) });
+      let env = { ...process.env, HQ_ECHO_MS: String(echoMs) };
+      if (llmKey) {
+        // the brief can exceed the Windows command-line limit, so it goes in a file; the key only in this child's env
+        briefPath = path.join(stateDir, `brief-${task.id}.txt`);
+        fs.writeFileSync(briefPath, brief, { mode: 0o600 });
+        env = { ...env, HQ_URL: `http://127.0.0.1:${port}`, HQ_TOKEN: token, HQ_TASK: task.id, HQ_ROLE: task.role, HQ_TASK_TOKEN: taskToken,
+          HQ_ROOT: root, HQ_LLM_PROVIDER: engine, HQ_LLM_KEY: llmKey, HQ_LLM_MODEL: model ?? '', HQ_BRIEF_FILE: briefPath,
+          HQ_ROLE_JSON: JSON.stringify({ id: role?.id, mode: role?.mode, files: role?.files ?? [], allowedTools: role?.allowedTools ?? [] }) };
+      }
+      child = spawnEngine({ engine, exe, brief, model, mcpConfigPath, cwd: root, allowedTools: role?.allowedTools ?? [], env });
     } catch (e) {
       return fail(task.id, `spawn failed: ${e.message}`);
     }
@@ -103,9 +112,11 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     const finish = (code, spawnError) => {
       if (finished) return;
       finished = true;
-      if (buf) onLine(buf);
       procs.delete(task.id);
       fs.rm(mcpConfigPath, { force: true }, () => {});
+      if (briefPath) fs.rm(briefPath, { force: true }, () => {});
+      if (stopped) return;
+      if (buf) onLine(buf);
       if (!entry.canceled) {
         const cur = getTask(db, task.id);
         if (cur?.state === 'working') { // not already completed through MCP
@@ -153,14 +164,16 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
   return {
     start() {
       if (timer) return;
+      stopped = false;
       // tasks left "working" by a previous process are dead (app/antigravity ones belong to a desktop session)
       for (const t of listTasks(db, { state: 'working' })) {
-        if ((t.engine === 'claude-cli' || t.engine === 'echo') && !procs.has(t.id)) fail(t.id, 'interrupted by restart');
+        if ((t.engine === 'claude-cli' || t.engine === 'echo' || LLM_ENGINES.has(t.engine)) && !procs.has(t.id)) fail(t.id, 'interrupted by restart');
       }
       timer = setInterval(tick, tickMs);
       tick();
     },
     stop() {
+      stopped = true;
       clearInterval(timer);
       timer = null;
       for (const p of procs.values()) { p.canceled = true; killTree(p.child); }
@@ -175,7 +188,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     },
     running: () => [...procs.keys()],
     studioHolder,
-    engines: () => ({ 'claude-cli': !!exes['claude-cli'], echo: true }),
+    engines: () => ({ 'claude-cli': !!exes['claude-cli'], echo: true, groq: !!providers()?.groq?.apiKey, nim: !!providers()?.nim?.apiKey }),
     tick,
   };
 }

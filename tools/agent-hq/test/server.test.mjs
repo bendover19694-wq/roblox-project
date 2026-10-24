@@ -68,7 +68,7 @@ test('task create/list, validation, state shape', async () => {
   assert.equal(st.json.roles.length, 16);
   assert.equal(st.json.settings.budget, 2);
   assert.deepEqual(st.json.lanes, { app: { lastSeenAt: null, lastRunAt: null }, antigravity: { lastSeenAt: null, lastRunAt: null } });
-  assert.deepEqual(st.json.engines, { 'claude-cli': false, echo: true });
+  assert.deepEqual(st.json.engines, { 'claude-cli': false, echo: true, groq: false, nim: false });
   assert.equal(st.json.games[0].slug, 'space-agency');
   const c = await api('POST', `/api/tasks/${t.json.id}/cancel`);
   assert.equal(c.json.state, 'canceled');

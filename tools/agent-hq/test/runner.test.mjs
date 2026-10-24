@@ -100,9 +100,18 @@ test('due schedule enqueues a task once', async () => {
   s.cleanup();
 });
 
-test('engines() reports claude-cli and echo only', () => {
+test('engines() reports claude-cli, echo and which API providers have keys', () => {
   const s = setup();
-  assert.deepEqual(s.runner.engines(), { 'claude-cli': false, echo: true });
+  assert.deepEqual(s.runner.engines(), { 'claude-cli': false, echo: true, groq: false, nim: false });
+  s.cleanup();
+});
+
+test('a groq task without a key fails with a clear message', async () => {
+  const s = setup();
+  const t = s.mk({ engine: 'groq' });
+  s.runner.start();
+  await waitFor(() => getTask(s.db, t.id).state === 'failed');
+  assert.match(getTask(s.db, t.id).error, /no groq API key/);
   s.cleanup();
 });
 

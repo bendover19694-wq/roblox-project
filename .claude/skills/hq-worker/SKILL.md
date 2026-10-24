@@ -16,7 +16,7 @@ If the `hq_*` MCP tools are missing in this session, use `node tools/agent-hq/hq
 1. **Tools.** If the `agent-hq` tools and `hqctl` both fail even though HQ is up, report that and stop.
 2. **Claim.** Call `hq_next_task {engine: "app"}`. If it returns `Queue empty for app.`, say "Queue empty" and stop.
 3. **Run.** For each claimed task, read its role in `tools/agent-hq/roles.json` and spawn a subagent with the Agent tool:
-   - `subagent_type` = the role's `agentType`; `model` = the role's `model`.
+   - `subagent_type` = `runAs.agentType` and `model` = `runAs.model` from the claim result (the owner picks these per role in HQ Settings, Agent models). If `runAs` is missing, use the role's `agentType` and `model` from `roles.json`.
    - prompt = the returned `brief`, verbatim (it has the task id, the task's `taskToken`, the skills to use, the lessons and the definition of done). Each brief goes to its own subagent only: never put several briefs or tokens into one subagent, and never show a task's token to another task's subagent.
    - At most 2 subagents at a time. Never run two at once whose roles' `files` overlap (two writers on the same files), and never two `needsStudio` tasks at once (Studio is shared).
 4. **Close.** When a subagent ends:
@@ -25,3 +25,5 @@ If the `hq_*` MCP tools are missing in this session, use `node tools/agent-hq/hq
 5. **Loop.** Claim again until the queue is empty or `maxTasks` tasks are done this run. Then give a short report: tasks finished, anything waiting under "Needs you" in HQ.
 
 Design tasks (roles `designer`, `thumbnails`) belong to the Antigravity lane; never claim them here.
+
+Tasks set to Groq or NVIDIA NIM never reach this lane: HQ runs them itself (`tools/agent-hq/llm-agent.mjs`), so they cost no Claude usage.

@@ -237,6 +237,8 @@ export const ENGINES = [
   { value: 'app', label: 'Claude app' },
   { value: 'antigravity', label: 'Antigravity (design)' },
   { value: 'claude-cli', label: 'Claude CLI (optional)' },
+  { value: 'groq', label: 'Groq' },
+  { value: 'nim', label: 'NVIDIA NIM' },
   { value: 'echo', label: 'Echo (test)' },
 ];
 const LEGACY = { claude: 'claude-cli', agy: 'antigravity', manual: 'app' };

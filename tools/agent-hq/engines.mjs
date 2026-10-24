@@ -56,6 +56,9 @@ export function spawnEngine({ engine, exe, brief, model, allowedTools = [], mcpC
       '--allowedTools', ...allowedTools,
       '--mcp-config', mcpConfigPath, '--strict-mcp-config',
     ]));
+  } else if (engine === 'groq' || engine === 'nim') {
+    command = process.execPath; // exe is llm-agent.mjs; it reads the brief, key and role from env
+    args = [exe];
   } else {
     throw new Error(`unknown engine: ${engine}`);
   }

@@ -131,11 +131,14 @@ const TERMINAL = new Set(['done', 'failed', 'canceled']);
 // engine resolves at creation: explicit > settings.roleEngines[role] > roles.json default > "app"
 export function createTask(db, f) {
   const id = newId('t');
-  const engine = migrateEngine(f.engine ?? getSetting(db, 'roleEngines', {})?.[f.role]?.engine ?? roleEngine(f.role));
+  const pref = getSetting(db, 'roleEngines', {})?.[f.role] ?? {};
+  const engine = migrateEngine(f.engine ?? pref.engine ?? roleEngine(f.role));
+  // the role's chosen model applies only when the task runs on the role's chosen engine
+  const model = f.model ?? (!f.engine || f.engine === pref.engine ? pref.model ?? null : null);
   db.prepare(`INSERT INTO tasks (id,title,body,role,game,state,engine,model,needsStudio,parentId,createdBy,createdAt,gateFor,attempt,threadMessageId,attachPaths,reworkCount)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     id, f.title, f.body ?? '', f.role, f.game ?? null, f.state ?? 'queued',
-    engine, f.model ?? null, f.needsStudio ? 1 : 0, f.parentId ?? null,
+    engine, model, f.needsStudio ? 1 : 0, f.parentId ?? null,
     f.createdBy ?? 'owner', now(), f.gateFor ?? null, f.attempt ?? 1, f.threadMessageId ?? null, f.attachPaths?.length ? JSON.stringify(f.attachPaths) : null, f.reworkCount ?? 0);
   return getTask(db, id);
 }
@@ -183,7 +186,7 @@ const studioFull = (db) => studioLocks(db).length >= studioLimit(db);
 // Only spawnable engines (claude-cli, echo; legacy "claude" included). App and Antigravity lanes use claimNext.
 // Studio capacity is read from the database (the studioBusy argument is ignored).
 export function nextRunnable(db) {
-  const r = db.prepare(`SELECT * FROM tasks WHERE state='queued' AND engine IN ('claude-cli','claude','echo')
+  const r = db.prepare(`SELECT * FROM tasks WHERE state='queued' AND engine IN ('claude-cli','claude','echo','groq','nim')
     ${studioFull(db) ? 'AND needsStudio=0' : ''} ORDER BY createdAt ASC, rowid ASC LIMIT 1`).get();
   return taskOut(r);
 }

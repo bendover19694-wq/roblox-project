@@ -133,8 +133,31 @@ function referencesSection(r, references) {
 
 const clip =(s, n) => (s.length > n ? s.slice(0, n) + '...' : s);
 
+const LLM_ENGINES = new Set(['groq', 'nim']); // no Skill tool and a small context: their briefs point at files instead
+
+// Exemplar data the agents open on demand (never inlined, to keep briefs small). roles.json "library" picks per role.
+export const LIBRARY = {
+  'core-loops': ['research/exemplars/core-loops.md', '36 hit games: loop, return pull, clip moment, first 60 s and first 10 min templates'],
+  mechanics: ['research/exemplars/mechanics-catalog.md', '~90 engagement mechanics with tuning numbers, idle-economy formulas, Space Agency fit'],
+  'game-ui': ['research/exemplars/game-ui.md', 'Roblox UI facts, screen-by-screen exemplars, visual language, 1 to 5 screen rubric'],
+  thumbnails: ['research/exemplars/thumbnails-icons.md', 'icon and thumbnail specs, 50 exemplars, A/B testing, 20 Space Agency concepts'],
+  market: ['research/exemplars/market-data-sources.md', 'verified Roblox data endpoints, genre benchmarks, breakout signals, Run a ___ table'],
+  'pattern-cards': ['research/pattern-cards/', 'one card per studied hit game'],
+  monetization: ['research/monetization-policy.md', 'Roblox monetization rules this game follows'],
+  airline: ['research/run-an-airline-study.md', 'hands-on study of the reference game'],
+};
+function librarySection(r) {
+  const items = (r.library ?? []).map((k) => LIBRARY[k]).filter(Boolean);
+  if (!items.length) return null;
+  return `## Reference library (open only what this task needs; each file starts with a TL;DR)\n${items.map(([p, d]) => `- ${p}: ${d}`).join('\n')}`;
+}
+
 function skillsSection(r, engine) {
   if (!r.skills?.length) return null;
+  if (LLM_ENGINES.has(engine)) {
+    const files = r.skills.filter((s) => isPath(s.name));
+    return files.length ? `## Guides\n${files.map((s) => `- Read \`${s.name}\` (${s.when})`).join('\n')}` : null;
+  }
   const lines = r.skills.map((s) => (isPath(s.name)
     ? `- Read \`${s.name}\` (${s.when})`
     : `- Invoke with the Skill tool: ${s.name} (${s.when})`));
@@ -152,9 +175,14 @@ export function buildBrief({ task, role, root, db, taskToken, memoryDir, referen
   if (!r) throw new Error(`unknown role: ${role}`);
   const engine = task.engine || r.engine;
   const vault = parseVault(root);
-  const chapters = r.chapters.map((n) => vault.find((c) => c.n === n)?.text).filter(Boolean);
-  const lessons = readLessons(root, r.id, 15, memoryDir);
-  const convo = recentConversation(db, r.id);
+  const small = LLM_ENGINES.has(engine);
+  // A few chapters go in whole; with more (the Lead has all 14) only their titles, read with hq_vault when needed.
+  const own = r.chapters.map((n) => vault.find((c) => c.n === n)).filter(Boolean);
+  const chapterText = own.length <= (small ? 1 : 3)
+    ? own.map((c) => c.text).join('\n\n')
+    : `Read a chapter with hq_vault {chapter} only when the task needs it:\n${own.map((c) => `- ${c.n}. ${c.title}`).join('\n')}`;
+  const lessons = readLessons(root, r.id, small ? 6 : 10, memoryDir);
+  const convo = recentConversation(db, r.id, small ? 3 : 6);
 
   const parts = [
     `You are the ${r.label} agent (role id: ${r.id}) on the Run a Space Agency Roblox project.`,
@@ -164,11 +192,12 @@ export function buildBrief({ task, role, root, db, taskToken, memoryDir, referen
     skillsSection(r, engine),
     r.mcp?.length ? `## Tools to prefer\nPrefer these when present: ${r.mcp.join(', ')}.` : null,
     `## Your job\n${r.job}`,
-    `## Your knowledge chapters\n${chapters.join('\n\n')}`,
+    `## Your knowledge chapters\n${chapterText}`,
+    librarySection(r),
     `## Files you own\n${r.files.length ? r.files.join('\n') : '(none, read-only)'}`,
     `## Lessons from earlier tasks (follow them)\n${lessons.length ? lessons.join('\n') : '(none yet)'}`,
     convo.length
-      ? `## Conversation so far\n${convo.map((m) => `${m.from === 'owner' ? 'Owner' : r.label}: ${clip(m.text, 600)}`).join('\n')}`
+      ? `## Conversation so far\n${convo.map((m) => `${m.from === 'owner' ? 'Owner' : r.label}: ${clip(m.text, small ? 300 : 500)}`).join('\n')}`
       : null,
     referencesSection(r, references),
     attachedImages(task),

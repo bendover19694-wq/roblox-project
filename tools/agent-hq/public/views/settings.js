@@ -1,4 +1,5 @@
 import { h, store, api, act, btn, pageHead, selectEl, field, notify, toast, LANES, lastSeen, laneFresh, laneCfg, fmtTime } from './core.js';
+import { providersCard, agentModelsCard } from './models.js';
 
 let draft = null; // schedules being edited
 const rid = () => 's_' + Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -102,8 +103,8 @@ function lanesCard() {
 export function render() {
   const budget = store.settings.budget ?? 2;
   const paused = !!store.settings.paused;
-  return h('div', { class: 'page narrow' },
-    pageHead('Settings', 'Control how many agents run at once and when.'),
+  return h('div', { class: 'page' },
+    pageHead('Settings', 'Control which models your agents use, how many run at once, and when.'),
     h('div', { class: 'stack' },
       h('section', { class: 'card stack sm' },
         h('h2', { class: 'section-title' }, 'Run control'),
@@ -121,6 +122,8 @@ export function render() {
             const v = e.target.value.trim().slice(0, 40);
             if (await act(() => api('POST', '/api/settings', { key: 'ownerName', value: v }), 'Saved')) { store.settings = { ...store.settings, ownerName: v }; notify(); }
           } }))),
+      providersCard(),
+      agentModelsCard(),
       lanesCard(),
       schedules()));
 }

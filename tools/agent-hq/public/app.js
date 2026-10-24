@@ -111,7 +111,8 @@ function renderMain() {
   const key = name + '/' + param;
   if (key === lastKey && typing() && !views[name].live) { dirty = true; return; }
   dirty = false;
-  const top = key === lastKey ? main.scrollTop : 0;
+  const fresh = key !== lastKey;
+  const top = fresh ? 0 : main.scrollTop;
   lastKey = key;
   let node;
   try {
@@ -122,6 +123,7 @@ function renderMain() {
   }
   if (!(main.childNodes.length === 1 && main.firstChild === node)) { main.replaceChildren(node); main.scrollTop = top; }
   main.classList.toggle('fill', !!views[name].live);
+  main.classList.toggle('enter', fresh);
   document.title = 'Agent HQ';
 }
 

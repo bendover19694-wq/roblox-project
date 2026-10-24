@@ -89,20 +89,22 @@ test('every role brief has the hqctl line and a lessons section; referenced file
   }
 });
 
-test('lessons come from memory/<role>.md, newest 15', () => {
+test('lessons come from memory/<role>.md, newest 10 (6 on Groq/NIM)', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-brief-'));
   fs.cpSync(path.join(root, '.claude/skills/roblox-agent-team'), path.join(tmp, '.claude/skills/roblox-agent-team'), { recursive: true });
   fs.mkdirSync(path.join(tmp, 'tools/agent-hq/memory'), { recursive: true });
   const lines = Array.from({ length: 20 }, (_, i) => `- 2026-10-22: lesson number ${i + 1}`);
   fs.writeFileSync(path.join(tmp, 'tools/agent-hq/memory/builder.md'), lines.join('\n') + '\n');
   const b = buildBrief({ task, role: 'builder', root: tmp });
-  assert.ok(b.includes('lesson number 20') && b.includes('lesson number 6'));
-  assert.ok(!b.includes('lesson number 5\n') && !b.includes('lesson number 1\n'));
+  assert.ok(b.includes('lesson number 20') && b.includes('lesson number 11'));
+  assert.ok(!b.includes('lesson number 10\n') && !b.includes('lesson number 1\n'));
+  const small = buildBrief({ task: { ...task, engine: 'groq' }, role: 'builder', root: tmp });
+  assert.ok(small.includes('lesson number 15') && !small.includes('lesson number 14\n'));
   assert.doesNotMatch(buildBrief({ task, role: 'ui', root: tmp }), /lesson number/);
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test('conversation so far: last 10 owner/agent messages after the latest reset', () => {
+test('conversation so far: last 6 owner/agent messages after the latest reset', () => {
   const db = openDb(':memory:');
   addMessage(db, { role: 'builder', from: 'owner', text: 'before reset' });
   addMessage(db, { role: 'builder', from: 'system', text: RESET_TEXT });
@@ -111,8 +113,8 @@ test('conversation so far: last 10 owner/agent messages after the latest reset',
   addMessage(db, { role: 'ui', from: 'owner', text: 'other thread' });
   const b = buildBrief({ task, role: 'builder', root, db });
   assert.match(b, /## Conversation so far/);
-  assert.ok(b.includes('Owner: msg 11') && b.includes('Builder: msg 12') && b.includes('msg 3'));
-  assert.ok(!b.includes('msg 2\n') && !b.includes('before reset') && !b.includes('other thread') && !b.includes('Task done'));
+  assert.ok(b.includes('Owner: msg 11') && b.includes('Builder: msg 12') && b.includes('msg 7'));
+  assert.ok(!b.includes('msg 6\n') && !b.includes('before reset') && !b.includes('other thread') && !b.includes('Task done'));
   assert.doesNotMatch(buildBrief({ task, role: 'builder', root }), /Conversation so far/);
 });
 

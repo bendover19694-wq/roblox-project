@@ -12,7 +12,7 @@ export function normalizeCharts(raw, fetchedAt = new Date().toISOString()) {
   for (const s of raw?.sorts ?? []) {
     const games = (s.games ?? [])
       .filter((g) => !g.isSponsored)
-      .slice(0, 50)
+      .slice(0, s.sortId === 'top-earning' ? 300 : 100)
       .map((g) => ({
         universeId: g.universeId,
         rootPlaceId: g.rootPlaceId,
@@ -21,6 +21,7 @@ export function normalizeCharts(raw, fetchedAt = new Date().toISOString()) {
         up: g.totalUpVotes ?? 0,
         down: g.totalDownVotes ?? 0,
         genre: g.genreL1 ?? '',
+        maturity: g.contentMaturity ?? '',
         sponsored: false,
       }));
     if (games.length) sorts.push({ id: s.sortId, name: s.sortDisplayName, games });
@@ -37,9 +38,44 @@ async function getJson(fetcher, url) {
   return res.json();
 }
 
-export async function fetchCharts(arg) {
-  const url = `${URL_BASE}?sessionId=${crypto.randomUUID()}&device=computer&country=all`;
-  return normalizeCharts(await getJson(pickFetcher(arg), url));
+// Lists with no games or no market signal (music, subscriptions, learning) are skipped.
+const MINOR_SORT = /music|subscribe|learning|^filters/i;
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * All chart lists: get-sorts pages through about 26 sorts (sortsPageToken), then top-earning, the Robux-spent
+ * ranking, is paged on get-sort-content (pageToken) to about 300 games. Explore API limit: 120 requests a minute.
+ * See research/exemplars/market-data-sources.md.
+ */
+export async function fetchCharts(arg, { maxPages = 6, earningPages = 3, gapMs = 250 } = {}) {
+  const f = pickFetcher(arg);
+  const session = crypto.randomUUID();
+  const sorts = [];
+  let token = null;
+  for (let page = 0; page < maxPages; page++) {
+    const url = `${URL_BASE}?sessionId=${session}&device=computer&country=all${token ? `&sortsPageToken=${encodeURIComponent(token)}` : ''}`;
+    const j = await getJson(f, url);
+    sorts.push(...(j?.sorts ?? []).filter((s) => !MINOR_SORT.test(s.sortId ?? '')));
+    token = j?.nextSortsPageToken;
+    if (!token) break;
+    await pause(gapMs);
+  }
+  const earning = sorts.find((s) => s.sortId === 'top-earning');
+  if (earning) {
+    try {
+      let tok = null; const games = [];
+      for (let page = 0; page < earningPages; page++) {
+        const j = await getJson(f, `${URL_BASE.replace('get-sorts', 'get-sort-content')}?sessionId=${session}&sortId=top-earning&device=computer&country=all${tok ? `&pageToken=${encodeURIComponent(tok)}` : ''}`);
+        if (!Array.isArray(j?.games)) break;
+        games.push(...j.games);
+        tok = j.nextPageToken;
+        if (!tok) break;
+        await pause(gapMs);
+      }
+      if (games.length > (earning.games?.length ?? 0)) earning.games = games;
+    } catch { /* keep the first page */ }
+  }
+  return normalizeCharts({ sorts });
 }
 
 const ids = (list) => [...new Set((list ?? []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
@@ -90,13 +126,19 @@ export function velocity(latest, previous) {
   return { moves: moves.slice(0, 50), perSort };
 }
 
-/** { [universeId]: { visits, created, updated, genre } } from games.roblox.com, 50 ids per request. */
+/** { [universeId]: { visits, created, updated, genre, playing, favorites, maxPlayers, subgenre, creator } } from games.roblox.com, 50 ids per request. */
 export async function fetchGameDetails(universeIds, fetcher) {
   const f = pickFetcher(fetcher);
   const out = {};
   for (const batch of batches(ids(universeIds))) {
     const j = await getJson(f, `https://games.roblox.com/v1/games?universeIds=${batch.join(',')}`);
-    for (const g of j.data ?? []) out[g.id] = { visits: g.visits ?? 0, created: g.created ?? null, updated: g.updated ?? null, genre: g.genre_l1 || g.genre || '' };
+    for (const g of j.data ?? []) {
+      out[g.id] = {
+        visits: g.visits ?? 0, created: g.created ?? null, updated: g.updated ?? null, genre: g.genre_l1 || g.genre || '',
+        // same request, no extra cost: favorites per visit and true CCU for games off the charts
+        playing: g.playing ?? null, favorites: g.favoritedCount ?? null, maxPlayers: g.maxPlayers ?? null, subgenre: g.genre_l2 || '', creator: g.creator?.name ?? '',
+      };
+    }
   }
   return out;
 }
@@ -238,4 +280,18 @@ export function titleAnalysis(titles) {
     length: { mean: sample ? round1(lenSum / sample) : null, buckets: lenBuckets.map(({ label, count }) => ({ label, count })) },
     commonFirstWords: [...first.values()].sort((a, b) => b.count - a.count || (a.word < b.word ? -1 : 1)).slice(0, 10),
   };
+}
+
+/**
+ * Badge stats as a free player funnel: the first-join badge's pastDayAwardedCount is about new players a day, and
+ * each milestone badge's share of it is how deep players get. Many games have no badges (returns []). 100 req/min.
+ * -> [{ name, pastDay, total, created }] in the game's badge order.
+ */
+export async function fetchBadgeStats(universeId, fetcher) {
+  const id = ids([universeId])[0];
+  if (!id) return [];
+  const j = await getJson(pickFetcher(fetcher), `https://badges.roblox.com/v1/universes/${id}/badges?limit=100&sortOrder=Asc`);
+  return (j.data ?? []).filter((b) => b.enabled !== false).map((b) => ({
+    name: b.name, pastDay: b.statistics?.pastDayAwardedCount ?? 0, total: b.statistics?.awardedCount ?? 0, created: b.created ?? null,
+  }));
 }

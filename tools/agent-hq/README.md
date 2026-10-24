@@ -26,7 +26,7 @@ The page keeps the owner token in that browser's localStorage and removes it fro
   - *Pipeline*: nine stages from Pitched to Graded with the role that owns each. The game sits in its current stage; open stage requests and tasks show in their columns, and a drawer holds the stage history. Approve a request, Hold it with a reason, or Reject it with a reason and optional failed-criteria ids (Producer rubric ids such as `G5 S4`). Rejections add to the game's rework count and show in a "Kicked back" list.
 - **Publish gate** (`#/games/<slug>/gate`): the irreversible acts only you can do. Make a version live and set the experience public both need two steps: step 1 opens a 2-minute confirmation that changes nothing; step 2 needs you to type the game's slug before the button works, and it only accepts a real mouse click. "Spend ad money" is advisory: it records your note and nothing else. A human-only checklist (played on a phone, checked the store page, read the monetization policy) sits next to the acts, and the reversible review decisions are below a divider. HQ never publishes, goes public or spends money; it only records that you did.
 - **Pitches**: tabs for Needs your decision, Waiting on Scout, Your ideas and History. Each card shows the window and the game type (Collect and upgrade, Steal and escape, Survive and extract, Build and defend, Find the hidden, Race and rank, Tycoon and expand, Guess and reveal, Clean and restore, Raise and evolve), how we differ, stat tiles (Money (top earning), top comparable playing, its likes, Growth (upvotes/day), similar games), the money verdict, custom systems to build and the biggest risk, then collapsible sections: The game, Closest competitors, Evidence, Building it, Risks. A pitch missing required fields shows a banner and cannot be approved until the Scout fixes it. Actions: Approve, Edit and approve, Send to Scout (your note goes to the Scout), Decline. Approving one withdraws the other open pitches. Compare lines up 2 or 3 ticked pitches; New game idea hands your own idea (and anything else you want to add) to the Scout.
-- **Market**: five steps. 1, Charts: the Roblox charts with the biggest rank moves between the two latest snapshots, one tab per list, and a table with rank change, players, change, likes, votes and how many lists a game is on. 2, Corpus: reference games with icon and screenshots (click to enlarge), added or removed by universe id. 3, Titles: how the charting games are named (verb, article, noun share, verb-first share, emoji share, word and length distributions, common first words). 4, Benchmarks: the targets a game should hit, how each is measured, what a miss means and where the number comes from. 5, Breakouts: young games that are growing quickly, with a help line under each column. HQ refreshes the market data by itself every `marketEveryHours` hours (a setting, default 6, 0 turns it off); Refresh does it on demand.
+- **Market**: five steps. 1, Charts: all of the Roblox chart lists (about 23, including Top Earning paged to about 300 games and every genre trending list) with the biggest rank moves between the two latest snapshots, one tab per list, and a table with rank change, players, change, likes, votes and how many lists a game is on. 2, Corpus: reference games with icon and screenshots (click to enlarge), added or removed by universe id. 3, Titles: how the charting games are named (verb, article, noun share, verb-first share, emoji share, word and length distributions, common first words). 4, Benchmarks: the targets a game should hit, how each is measured, what a miss means and where the number comes from. 5, Breakouts: young games that are growing quickly, with a help line under each column. HQ refreshes the market data by itself every `marketEveryHours` hours (a setting, default 6, 0 turns it off); Refresh does it on demand.
 - **Library**: Assets (search by name or tag, filter by kind and scope, Roblox upload status, a button that copies the Roblox asset id, click an image to enlarge), Systems (the catalogue in `systems.md`, with a search box), Vault (the knowledge chapters) and Skills.
 
 ## Live telemetry
@@ -68,10 +68,16 @@ In Review, the Visual bar tab holds the images you pinned as house references, b
 
 Each brief is built from the repo hard rules, the skills to invoke, preferred tools, the role's vault chapters, owned files, the role's lessons, the last messages of the conversation, the task and the definition of done. Only the Lead can create tasks for others.
 
+## Reference library
+
+`research/exemplars/` holds the data agents learn from, read on demand (each file starts with a TL;DR): `core-loops.md` (36 hit games' loops and first-session templates), `mechanics-catalog.md` (~90 engagement mechanics with tuning numbers and idle-economy formulas), `game-ui.md` (Roblox UI facts, screen exemplars, scoring rubric), `thumbnails-icons.md` (store-art specs, 50 exemplars, A/B testing), `market-data-sources.md` (verified Roblox data endpoints, benchmarks, the Run a ___ genre) and `llm-providers.md`. Each role's brief lists only its files (`library` in `roles.json`), so nothing is pasted into every brief.
+
+Briefs are kept small to save usage: up to 3 vault chapters inline (more become a list to read with `hq_vault`), the newest 10 lessons, the last 6 messages; Groq/NIM briefs are smaller still.
+
 ## Quality gates and memory
 
 - **Gates**: when a role finishes, HQ queues its checkers (for example Reviewer and Playtester after a Builder task). A checker starts its summary with PASS or FAIL. FAIL queues a Fix task for the original role with the feedback; after 3 attempts it becomes a decision for you. When every gate passes, the task is marked done.
-- **Memory**: roles record reusable lessons (`hq_learn`); the newest 15 are included in every later brief. Edit or prune `memory/<role>.md` by hand if one is wrong.
+- **Memory**: roles record reusable lessons (`hq_learn`); the newest 10 are included in every later brief. Edit or prune `memory/<role>.md` by hand if one is wrong.
 
 ## Engines and lanes
 
@@ -82,9 +88,24 @@ Work is done by two apps, each pulling tasks from its own lane with the `hq_next
 | `app` ("Claude app") | A Claude Code desktop session | every role except designer and thumbnails |
 | `antigravity` ("Antigravity (design)") | An Antigravity agent, using its built-in `generate_image` | designer, thumbnails |
 | `claude-cli` (optional) | HQ spawns `claude -p` itself (needs the `claude` CLI; `--permission-mode acceptEdits` plus a per-role allow-list) | never |
+| `groq` ("Groq") | HQ itself, through `llm-agent.mjs` and your Groq key | never; pick it per role |
+| `nim` ("NVIDIA NIM") | HQ itself, through `llm-agent.mjs` and your NIM key | never; pick it per role |
 | `echo` | Fake engine for tests and dry runs | never |
 
-The engine is chosen when a task is created: the task's own engine, else the role's setting (Team screen), else the role default.
+The engine is chosen when a task is created: the task's own engine, else the role's setting (Settings, Agent models), else the role default.
+
+### Groq and NVIDIA NIM (save your Claude usage)
+
+1. Settings, Model providers: paste a Groq key (`gsk_...`, console.groq.com) and/or an NVIDIA NIM key (`nvapi-...`, build.nvidia.com). Keys go to `.agent-hq/providers.json` and are never sent back to the page.
+2. Settings, Agent models: pick an engine and model per role, or press **Saver preset** (Sonnet for lead, architect and reviewer; scout, kid-tester, producer and liveops on Groq or NIM). Press **Test** next to a Groq/NIM model before relying on it.
+3. HQ runs those tasks itself with `llm-agent.mjs`: read, list and search the repo, `fetch_url` for public pages, `write_file`/`edit_file` only inside the role's own `files`, `run_check` only for the role's allow-listed commands (stylua, selene, lune, rojo, luau-lsp...), and the `hq_*` reporting tools. No shell. Gates (reviewer, playtester) still check the work.
+
+The model lists fill themselves: NVIDIA's public catalogue is read at every start and daily (no key needed), Groq's once a key is saved; "Refresh model lists" does it now. The best tool-calling models are listed first and "Auto" picks the top one.
+
+Limits worth knowing (details and sources: `research/exemplars/llm-providers.md`):
+- Groq free tier: about 30 requests, 8K tokens a minute and 200K tokens a day per model. HQ keeps each Groq request under about 20K characters by trimming old tool results, and retries 429s.
+- NIM: about 40 requests a minute per key across all models. Its list includes models that are no longer served (404/410), so Test a model first.
+- Keep Luau code roles (builder, ui, economy) and the Lead on Claude: none of these models has a Luau track record. Use Groq/NIM for research, text review, status and summaries.
 
 ### Claude app lane
 

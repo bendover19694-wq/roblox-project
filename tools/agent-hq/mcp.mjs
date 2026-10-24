@@ -31,10 +31,10 @@ export async function api(method, route, body, taskToken) {
 const str = (extra = {}) => ({ type: 'string', ...extra });
 const TASK_ID = str({ description: 'Task id (not needed when the HQ_TASK env is set)' });
 const TASK_TOKEN = str({ description: 'Your HQ task token from the brief (not needed when the HQ_TASK_TOKEN env is set). Never share it.' });
-const TOOLS = [
+export const TOOLS = [
   { name: 'hq_list_tasks', description: 'List tasks, newest first.',
     inputSchema: { type: 'object', properties: { state: str({ enum: ['queued', 'working', 'review', 'done', 'failed', 'canceled'] }), role: str() } } },
-  { name: 'hq_next_task', description: 'Take the oldest queued task for your lane (app = Claude desktop, antigravity = design). Returns {task, brief}, or says the queue is empty.',
+  { name: 'hq_next_task', description: 'Take the oldest queued task for your lane (app = Claude desktop, antigravity = design). Returns {task, brief, runAs: {agentType, model}}, or says the queue is empty.',
     inputSchema: { type: 'object', properties: { engine: str({ enum: ['app', 'antigravity'] }), roles: { type: 'array', items: str() } }, required: ['engine'] } },
   { name: 'hq_claim_task', description: 'Alias kept for older setups: claim one specific queued task by id. Returns the full brief.',
     inputSchema: { type: 'object', properties: { taskId: str(), engine: str({ enum: ['app', 'antigravity'] }) }, required: ['taskId'] } },
@@ -140,7 +140,7 @@ export const handlers = {
     if (!['app', 'antigravity'].includes(a.engine)) throw new Error('engine must be "app" or "antigravity"');
     const out = await api('POST', '/api/tasks/next', { engine: a.engine, ...(a.roles?.length ? { roles: a.roles } : {}) });
     // The task token is returned by the server for the brief only; the agent reads it from the brief text.
-    return out?.task ? { task: out.task, brief: out.brief } : `Queue empty for ${a.engine}.`;
+    return out?.task ? { task: out.task, brief: out.brief, runAs: out.runAs } : `Queue empty for ${a.engine}.`;
   },
   async hq_claim_task(a) {
     const out = await api('POST', `/api/tasks/${encodeURIComponent(need(a.taskId, 'taskId'))}/claim`, { engine: a.engine || 'app' });

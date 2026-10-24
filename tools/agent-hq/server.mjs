@@ -8,6 +8,7 @@ import * as D from './db.mjs';
 import { loadRoles, parseVault, buildBrief } from './briefs.mjs';
 import { fetchCharts as realFetchCharts, velocity, computeBreakouts, fetchGameDetails, fetchIcons, fetchThumbnails, loadBenchmarks, titleAnalysis } from './market.mjs';
 import { liveStatsView } from './livestats.mjs';
+import { PROVIDERS, PROVIDER_IDS, CLAUDE_MODELS, keyLooksOk, createCatalog, testModel } from './providers.mjs';
 import { normalizePitch } from './pitches.mjs';
 import { listAssets as listAssetIndex, addAsset, readSystems, KINDS as ASSET_KINDS } from './assets.mjs';
 
@@ -21,7 +22,8 @@ const TARGETS = {
   likeRatio: { label: '>80 %', min: 0.8 }, d1: { label: '12 to 15 %', min: 12, max: 15 }, d7: { label: '2 to 3 %', min: 2, max: 3 },
   avgSessionMin: { label: '>10 min', min: 10 }, payingPct: { label: '~2 %', min: 2 }, firstMinute: { label: 'players act in the first minute' },
 };
-const ENGINES = ['app', 'antigravity', 'claude-cli', 'echo'];
+const ENGINES = ['app', 'antigravity', 'claude-cli', 'echo', 'groq', 'nim'];
+const CLAUDE_ENGINES = new Set(['app', 'claude-cli']); // these take a Claude model alias
 const LANES = ['app', 'antigravity'];
 const TASK_STATES = ['queued', 'working', 'review', 'done', 'failed', 'canceled'];
 const TASK_ID = /^t_[0-9a-f]{12}$/;
@@ -108,7 +110,12 @@ function validateSetting(key, value, roleIds) {
       for (const [r, v] of Object.entries(value)) {
         if (!roleIds.includes(r)) throw bad(`unknown role ${r}`);
         if (!isObj(v)) throw bad('roleEngines entries must be objects');
-        out[r] = { engine: oneOf(D.migrateEngine(v.engine), 'engine', ENGINES, { required: true }), model: str(v.model, 'model', { max: 100 }) ?? null };
+        const engine = oneOf(D.migrateEngine(v.engine), 'engine', ENGINES, { required: true });
+        let model = str(v.model, 'model', { max: 120 }) || null;
+        if (model && CLAUDE_ENGINES.has(engine) && !CLAUDE_MODELS.includes(model)) throw bad(`model for ${r} must be one of ${CLAUDE_MODELS.join(', ')}`);
+        if (model && !/^[\w./:-]+$/.test(model)) throw bad(`model for ${r} has odd characters`);
+        if (engine === 'antigravity' || engine === 'echo') model = null;
+        out[r] = { engine, model };
       }
       return out;
     }
@@ -249,6 +256,10 @@ export async function startServer({ root, port = 4317, stateDir, dbFile, runner,
   const readOpenCloud = () => {
     try { const j = JSON.parse(fs.readFileSync(ocFile, 'utf8')); return j?.apiKey && j?.universeId ? j : null; } catch { return null; }
   };
+  // Groq / NVIDIA NIM API keys. Owner-only, write-only: never returned by any route; a task gets one only in its child env.
+  const provFile = path.join(stateDir, 'providers.json');
+  const readProviders = () => { try { return JSON.parse(fs.readFileSync(provFile, 'utf8')) ?? {}; } catch { return {}; } };
+  const catalog = createCatalog({ stateDir, keys: readProviders, fetchFn: fetchers.models ?? fetch, now });
   const same = (a, b) => typeof a === 'string' && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
   // -> 'owner' | 'agent' | null
   const whoIs = (t) => (same(t, ownerToken) ? 'owner' : same(t, token) ? 'agent' : null);
@@ -271,6 +282,8 @@ export async function startServer({ root, port = 4317, stateDir, dbFile, runner,
     const out = Object.fromEntries(Object.entries(DEFAULT_SETTINGS).map(([k, v]) => [k, D.getSetting(db, k, v)]));
     out.laneSchedules = mergeLaneSchedules(out.laneSchedules);
     out.openCloud = { configured: !!readOpenCloud() };
+    const pk = readProviders();
+    out.providers = Object.fromEntries(PROVIDER_IDS.map((id) => [id, { configured: !!pk[id]?.apiKey, label: PROVIDERS[id].label }]));
     out.roleEngines = Object.fromEntries(Object.entries(out.roleEngines).map(([r, v]) => [r, { ...v, engine: D.migrateEngine(v.engine) }]));
     return out;
   };
@@ -304,7 +317,7 @@ ${task.body}`;
   const hookedEmit = (type, payload) => { emit(type, type === 'task' ? clean(payload) : payload); if (type === 'task') processTask(clean(payload)); };
 
   // ---- review gates: reviewer/tester tasks after a role finishes; FAIL sends work back (max 3 attempts) ----
-  const GATE_ENGINES = new Set(['app', 'claude-cli', 'echo']);
+  const GATE_ENGINES = new Set(['app', 'claude-cli', 'echo', 'groq', 'nim']);
   const evaluated = new Set();
   const isFail = (t) => /^\s*fail/i.test(t.summary ?? '');
   const bare = (title) => title.replace(/^(?:Fix|Check|Rework): /, '');
@@ -387,7 +400,7 @@ ${task.body}`;
     ['GET', /^\/api\/games\/[^/]+\/gate$/], ['POST', /^\/api\/games\/[^/]+\/(?:gate\/(?:start|confirm|checklist)|ad-note)$/],
     ['POST', /^\/api\/pitches\/ideas$/], ['POST', /^\/api\/pitches\/[^/]+\/decide$/], ['POST', /^\/api\/stage-requests\/[^/]+\/decide$/],
     ['POST', /^\/api\/games$/], ['PATCH', /^\/api\/games\/[^/]+$/], ['POST', /^\/api\/games\/[^/]+\/mark-live$/],
-    ['POST', /^\/api\/settings$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
+    ['POST', /^\/api\/settings$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
     ['POST', /^\/api\/messages\/[^/]+\/reset$/], ['POST', /^\/api\/threads\/[^/]+\/read$/],
     ['POST', /^\/api\/market\/corpus$/], ['DELETE', /^\/api\/market\/corpus\/\d+$/], ['POST', /^\/api\/uploads$/],
   ];
@@ -423,7 +436,7 @@ ${task.body}`;
       tasks: D.listTasks(db, { limit: 500 }), asks: [...open, ...rest], pitches: D.listPitches(db),
       settings: settingsAll(), roles, running: R().running(),
       studio: { lanes: D.getSetting(db, 'studioLanes', 1), locks, holder: locks[0]?.taskId ?? R().studioHolder() },
-      engines: { 'claude-cli': !!eng?.['claude-cli'], echo: true }, lanes: lanesAll(),
+      engines: { 'claude-cli': !!eng?.['claude-cli'], echo: true, groq: !!eng?.groq, nim: !!eng?.nim }, lanes: lanesAll(),
       games: D.listGames(db).map(gameRow), stageRequests: [...D.listStageRequests(db, { state: 'open' }), ...D.listStageRequests(db, { state: 'held' })],
     };
   });
@@ -517,7 +530,10 @@ ${task.body}`;
     if (!claimed) return { task: null };
     const { taskToken, ...task } = claimed; // the token goes only to the claimer, in this response and the brief
     pubTask(task);
-    return { task, brief: briefFor(task, taskToken), taskToken };
+    // runAs: the subagent settings the worker must use (the owner's per-role choice in Settings, else roles.json)
+    const r = roleOf(task.role);
+    const runAs = { agentType: r?.agentType ?? 'general-purpose', model: CLAUDE_MODELS.includes(task.model) ? task.model : r?.model ?? 'sonnet' };
+    return { task, brief: briefFor(task, taskToken), taskToken, runAs };
   });
 
   // alias for older callers: claim one specific queued task for a lane
@@ -1103,8 +1119,38 @@ ${task.body}`;
   // settings
   route('GET', /^\/api\/settings$/, () => settingsAll());
 
-  route('POST', /^\/api\/settings$/, ({ body }) => {
+  // model catalogue for the per-role pickers; refresh re-reads the providers' live lists
+  route('GET', /^\/api\/models$/, () => catalog.get());
+  route('POST', /^\/api\/models\/refresh$/, async () => { await catalog.refreshAll(); return catalog.get(); });
+  route('POST', /^\/api\/models\/test$/, async ({ body }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const provider = oneOf(body.provider, 'provider', PROVIDER_IDS, { required: true });
+    const model = str(body.model, 'model', { max: 120, required: true });
+    const key = readProviders()[provider]?.apiKey;
+    if (!key) throw bad(`add a ${PROVIDERS[provider].label} key first`);
+    try { return await testModel({ provider, key, model, fetchFn: fetchers.models ?? fetch }); } catch (e) { return { ok: false, error: String(e.message ?? e).slice(0, 300) }; }
+  });
+
+  route('POST', /^\/api\/settings$/, async ({ body }) => {
     if (!isObj(body) || typeof body.key !== 'string') throw bad('key and value are required');
+    if (body.key === 'providers') {
+      // {id, apiKey} saves a key, {id, apiKey: null} removes it; the key is written to .agent-hq/providers.json only
+      const v = body.value;
+      if (!isObj(v)) throw bad('providers must be {id, apiKey}');
+      const id = oneOf(v.id, 'id', PROVIDER_IDS, { required: true });
+      const all = readProviders();
+      if (v.apiKey === null) delete all[id];
+      else {
+        const apiKey = typeof v.apiKey === 'string' ? v.apiKey.trim() : '';
+        if (!keyLooksOk(apiKey)) throw bad(`that does not look like a ${PROVIDERS[id].label} key`);
+        all[id] = { apiKey };
+      }
+      fs.writeFileSync(provFile, JSON.stringify(all), { mode: 0o600 });
+      await catalog.refresh(id);
+      const value = settingsAll().providers;
+      emit('settings', { key: 'providers', value });
+      return { key: 'providers', value, models: catalog.get()[id] };
+    }
     if (body.key === 'openCloud') {
       // write-only: the key goes to .agent-hq/opencloud.json and is never read back through any route
       const v = body.value;
@@ -1373,8 +1419,11 @@ ${task.body}`;
     timer = setInterval(() => runTimers().catch(() => {}), tickMs);
     timer.unref();
     setTimeout(() => runTimers().catch(() => {}), 5000).unref();
+    // scrape the providers' model lists at boot and then daily, so the pickers are filled
+    catalog.refreshAll().catch(() => {});
+    setInterval(() => catalog.refreshAll().catch(() => {}), 86400000).unref();
   }
-  rn = runnerOwned ? runner({ db, root, emit: hookedEmit, port: boundPort, token, memoryDir }) : (runner ?? null);
+  rn = runnerOwned ? runner({ db, root, emit: hookedEmit, port: boundPort, token, memoryDir, providers: readProviders }) : (runner ?? null);
   if (runnerOwned) rn.start?.();
 
   return {

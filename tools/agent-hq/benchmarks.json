@@ -56,8 +56,8 @@
     "measuredBy": "Creator Analytics D1 retention; closed-test return rate before launch",
     "tier": "gate",
     "failureMeaning": "The first session does not create a reason to come back. Organic Home players decide ranking.",
-    "source": "research/video-notes/tizzy-3-viral-games.md (D1 about 6 to 8% rising to about 16% after a progression overhaul); research/concepts.md (25% within 48 h proxy)",
-    "label": "Creator claim, Unverified"
+    "source": "research/video-notes/tizzy-3-viral-games.md (D1 about 6 to 8% rising to about 16% after a progression overhaul); research/concepts.md (25% within 48 h proxy); research/exemplars/market-data-sources.md section 4.2 (GameAnalytics 2025 Roblox Benchmark Report): game-level D1 P50 10 to 11% and P90 15 to 19% for games with 13+ minute sessions.",
+    "label": "Third-party sampled (GameAnalytics 2025) plus creator claim"
   },
   {
     "id": "d7",
@@ -66,8 +66,18 @@
     "measuredBy": "Creator Analytics D2 to 7 retention window",
     "tier": "health",
     "failureMeaning": "Progression, offline growth and daily rewards are not pulling players back across a week.",
-    "source": "research/video-notes/rasdev-algorithm.md section 1 (D1, D2 to 7 and D8 to 28 windows are Documented; weights are not published). No published number was found in the research.",
-    "label": "Team target; replace with the Creator Analytics baseline after launch"
+    "source": "research/exemplars/market-data-sources.md section 4.2 (GameAnalytics 2025 Roblox Benchmark Report): D7 P50 0.4 to 1.8%, P90 1.8 to 5.9%. Windows: research/video-notes/rasdev-algorithm.md section 1 (D1, D2 to 7 and D8 to 28 windows are Documented; weights are not published). No published number was found in the research.",
+    "label": "Third-party sampled (GameAnalytics 2025); about P75 to P90"
+  },
+  {
+    "id": "d30",
+    "benchmark": "Day-30 retention",
+    "target": "0.5 to 1.5% (P50 to P90)",
+    "measuredBy": "Creator Analytics D8 to 28 window and the D30 cohort",
+    "tier": "health",
+    "failureMeaning": "There is no long-term goal: career stages, research and live events run out before a month.",
+    "source": "research/exemplars/market-data-sources.md section 4.2 (GameAnalytics 2025 Roblox Benchmark Report): D30 P50 0.13 to 0.50%, P90 0.6 to 1.45%.",
+    "label": "Third-party sampled (GameAnalytics 2025)"
   },
   {
     "id": "like-ratio",
@@ -96,7 +106,7 @@
     "measuredBy": "Payers divided by players in Creator Analytics",
     "tier": "watch",
     "failureMeaning": "Revenue plans built on the assumption are too high. Plan from cohort data instead.",
-    "source": "research/monetization-tactics.md (2 to 3% payer conversion for simulator-type games, profitable.app; stated there as assumptions, not data)",
+    "source": "research/monetization-tactics.md (2 to 3% payer conversion for simulator-type games, profitable.app; stated there as assumptions, not data); research/exemplars/market-data-sources.md section 4.2 (GameAnalytics 2025 Roblox Benchmark Report): 4.2% of players spend Robux platform wide (2023).",
     "label": "Unverified (third-party model)"
   },
   {
@@ -106,7 +116,7 @@
     "measuredBy": "Creator Analytics revenue per daily active user, by cohort",
     "tier": "watch",
     "failureMeaning": "Planning from a weekend peak overstates revenue and hides the decay curve.",
-    "source": "research/video-notes/takeaways.md constraint 13; research/video-notes/tizzy-3-viral-games.md (ARPDAU about 0.9 to 1.0 rising to about 2.0, units not stated)",
+    "source": "research/video-notes/takeaways.md constraint 13; research/video-notes/tizzy-3-viral-games.md (ARPDAU about 0.9 to 1.0 rising to about 2.0, units not stated); research/exemplars/market-data-sources.md section 4.2 (GameAnalytics 2025 Roblox Benchmark Report): GameAnalytics reports ARPPU per day (P50 $0.72 platform, $1.71 for 19 to 24 minute games). ARPDAU = ARPPU x payer share, so 2 to 4% payers gives about $0.02 to $0.08 per DAU. Creator figures of 0.9 to 2.0 are probably ARPPU.",
     "label": "Creator claim (units unstated)"
   },
   {

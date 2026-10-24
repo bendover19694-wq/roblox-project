@@ -1,18 +1,19 @@
-/* Agent HQ. Dark, dense, one accent. */
+/* Agent HQ. Mission Control: deep navy, cyan accent, rocket orange for counts. Gradients live in polish.css. */
 :root {
-  --bg: #0c0e12;
-  --panel: #12151b;
-  --panel-2: #181c24;
-  --line: #242a34;
-  --line-2: #2f3744;
-  --text: #e7e9ee;
-  --muted: #8d95a5;
-  --accent: #7b93ff;
-  --accent-ink: #0b0f1d;
-  --accent-soft: rgba(123, 147, 255, 0.14);
-  --ok: #5fb98a;
-  --warn: #d6a24a;
-  --err: #e2686c;
+  --bg: #080c1d;
+  --panel: #0f1531;
+  --panel-2: #161d40;
+  --line: #1f2852;
+  --line-2: #2c3768;
+  --text: #e9edf9;
+  --muted: #8e97bd;
+  --accent: #2ee6d6;
+  --accent-ink: #032220;
+  --accent-soft: rgba(46, 230, 214, 0.13);
+  --flare: #ff6b2c;
+  --ok: #3ccf8e;
+  --warn: #f5a524;
+  --err: #ff5d6c;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
   --r: 8px;
   --sidew: 244px;

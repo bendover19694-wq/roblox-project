@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { velocity, computeBreakouts, fetchGameDetails, fetchIcons, fetchThumbnails, fetchCharts, loadBenchmarks, titleAnalysis } from '../market.mjs';
+import { velocity, computeBreakouts, fetchGameDetails, fetchIcons, fetchThumbnails, fetchCharts, fetchBadgeStats, loadBenchmarks, titleAnalysis } from '../market.mjs';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 const g = (universeId, name, playerCount, up = 90, down = 10) => ({ universeId, name, playerCount, up, down, genre: 'Action', sponsored: false });
@@ -98,7 +98,7 @@ test('fetchGameDetails batches 50 ids per request', async () => {
   assert.equal(calls.length, 3);
   assert.ok(calls[0].startsWith('https://games.roblox.com/v1/games?universeIds=1,2,'));
   assert.equal(Object.keys(out).length, 120);
-  assert.deepEqual(out[7], { visits: 5, created: '2026-01-01T00:00:00Z', updated: '2026-02-01T00:00:00Z', genre: 'Action' });
+  assert.deepEqual(out[7], { visits: 5, created: '2026-01-01T00:00:00Z', updated: '2026-02-01T00:00:00Z', genre: 'Action', playing: null, favorites: null, maxPlayers: null, subgenre: '', creator: '' });
   assert.deepEqual(await fetchGameDetails([], fetcher), {});
   assert.equal(calls.length, 3, 'no request for an empty list');
 });
@@ -127,6 +127,30 @@ test('fetchCharts keeps both calling styles and drops sponsored games', async ()
     assert.equal(c.sorts[0].games.length, 1);
     assert.equal(c.sorts[0].games[0].up, 3);
   }
+});
+
+test('fetchCharts pages the sorts list and the top-earning list, and skips minor lists', async () => {
+  const game = (id) => ({ universeId: id, name: 'G' + id, playerCount: id, totalUpVotes: 1, totalDownVotes: 0 });
+  const { fetcher, calls } = fakeFetch((url) => {
+    const u = new URL(url);
+    if (u.pathname.endsWith('get-sort-content')) {
+      return u.searchParams.get('pageToken') ? { games: [game(3)] } : { games: [game(1), game(2)], nextPageToken: 'p2' };
+    }
+    return u.searchParams.get('sortsPageToken')
+      ? { sorts: [{ sortId: 'top-earning', sortDisplayName: 'Top Earning', games: [game(1)] }] }
+      : { sorts: [{ sortId: 'top-trending', sortDisplayName: 'Top Trending', games: [game(9)] }, { sortId: 'music-top-100', games: [game(8)] }], nextSortsPageToken: 'abc' };
+  });
+  const c = await fetchCharts(fetcher, { gapMs: 0 });
+  assert.deepEqual(c.sorts.map((s) => s.id), ['top-trending', 'top-earning']);
+  assert.deepEqual(c.sorts[1].games.map((g) => g.universeId), [1, 2, 3]);
+  assert.ok(calls.some((x) => x.includes('sortsPageToken=abc')) && calls.some((x) => x.includes('pageToken=p2')));
+});
+
+test('fetchBadgeStats reads the badge funnel', async () => {
+  const { fetcher, calls } = fakeFetch(() => ({ data: [{ name: 'Welcome!', enabled: true, statistics: { pastDayAwardedCount: 19000, awardedCount: 21680867 } }, { name: 'Off', enabled: false, statistics: {} }] }));
+  assert.deepEqual(await fetchBadgeStats(9970645639, fetcher), [{ name: 'Welcome!', pastDay: 19000, total: 21680867, created: null }]);
+  assert.match(calls[0], /badges\.roblox\.com\/v1\/universes\/9970645639\/badges/);
+  assert.deepEqual(await fetchBadgeStats('x', fetcher), []);
 });
 
 test('benchmarks.json: every row has a source and label, and cited repo files exist', () => {
