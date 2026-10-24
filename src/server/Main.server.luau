@@ -9,6 +9,7 @@ require(ReplicatedStorage.Shared.Remotes) -- creates the remotes
 local Services = script.Parent.Services
 local AgencyService = require(Services.AgencyService)
 local DataService = require(Services.DataService)
+local StatsService = require(Services.StatsService)
 
 -- The player never walks around: no character, a calm night sky behind the UI.
 Players.CharacterAutoLoads = false
@@ -16,3 +17,4 @@ Lighting.ClockTime = 0
 
 DataService.start()
 AgencyService.start()
+StatsService.start()

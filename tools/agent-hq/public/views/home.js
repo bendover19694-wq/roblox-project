@@ -1,6 +1,6 @@
 import { h, store, api, act, ic, btn, empty, roleLabel, avatar, roleStatus, ago, fmtTime, go, plain, gameName, mediaUrl, studioLocks, LANES, lastSeen, laneFresh, laneCfg, loadFreshness, notify } from './core.js';
-import { askCard, isMediaAsk } from './review.js';
-import { newTaskModal } from './tasks.js';
+import { askCard, isMediaAsk, needsDecision } from './review.js';
+import { newTaskModal, backToYou, isBackToYou } from './tasks.js';
 
 let leadDraft = '';
 const replyOpen = new Set();
@@ -51,20 +51,45 @@ function tryCard(ask) {
       open ? btn('Send reply', async () => {
         const text = ta.value.trim();
         if (!text) { ta.focus(); return; }
-        if (await act(() => api('POST', '/api/messages', { role: ask.role, text: `Re: ${plain(ask.title)}\n${text}` }), 'Reply sent')) {
+        if (await act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: text }), 'Reply sent')) {
           replyOpen.delete(ask.id); delete replyDraft[ask.id];
-          await act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: 'done' }));
           notify();
         }
       }, { kind: 'primary', icon: 'send' }) : btn('Reply', () => { replyOpen.add(ask.id); notify(); }, { icon: 'send' }),
       btn('Done', () => act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: 'done' }), 'Marked done'), { icon: 'check' })));
 }
 
+function publishCards() {
+  return store.gameList.filter((g) => g.stage === 'ready').map((g) => h('article', { class: 'card ask', 'data-kind': 'publish' },
+    h('div', { class: 'row gap' }, h('span', { class: 'tag' }, 'Ready to publish'), h('span', { class: 'tag ghost' }, 'only you can')),
+    h('h3', {}, `${g.name} v${g.version ?? 1} is ready`),
+    h('p', { class: 'muted' }, 'Going live is a human-only step with its own two-step check.'),
+    h('div', { class: 'row' }, h('a', { class: 'btn primary', href: `#/games/${encodeURIComponent(g.slug)}/gate` }, 'Open the publish gate'))));
+}
+
+function pickCard() {
+  const awaiting = store.pitches.filter((p) => p.state === 'proposed').length;
+  const inProgress = store.gameList.some((g) => !['live', 'graded'].includes(g.stage));
+  if (!awaiting && (inProgress || !store.gameList.length)) return null;
+  return h('article', { class: 'card ask', 'data-kind': 'pick' },
+    h('div', { class: 'row gap' }, h('span', { class: 'tag' }, 'Next game')),
+    h('h3', {}, 'Pick the next game'),
+    h('p', { class: 'muted' }, awaiting ? `${awaiting} pitch${awaiting === 1 ? '' : 'es'} await${awaiting === 1 ? 's' : ''} your decision.` : 'No game is in progress. Look at the pitches and pick one.'),
+    h('div', { class: 'row' }, h('a', { class: 'btn primary', href: '#/pitches' }, 'See the pitches')));
+}
+
 function needsYou() {
-  const open = store.asks.filter((a) => a.state === 'open' && !a.superseded);
+  const open = store.asks.filter(needsDecision);
   const media = open.filter(isMediaAsk);
   const rest = open.filter((a) => !isMediaAsk(a));
-  const cards = [];
+  const cards = [...publishCards()];
+  const pick = pickCard();
+  if (pick) cards.push(pick);
+  for (const t of store.tasks.filter(isBackToYou)) {
+    cards.push(h('article', { class: 'card ask', 'data-kind': 'back' },
+      h('div', { class: 'row gap' }, h('span', { class: 'tag' }, roleLabel(t.role)), h('span', { class: 'tag ghost' }, 'Back to you'), h('span', { class: 'muted grow end-text' }, ago(t.endedAt || t.startedAt || t.createdAt))),
+      backToYou(t, { compact: true })));
+  }
   if (media.length) cards.push(imagesCard(media));
   for (const a of rest) cards.push(a.kind === 'try' ? tryCard(a) : askCard(a));
   return cards.length ? cards : [empty('Nothing needs you right now')];
@@ -126,7 +151,7 @@ function freshnessCard() {
 }
 
 export function render() {
-  const open = store.asks.filter((a) => a.state === 'open' && !a.superseded);
+  const open = [...store.asks.filter(needsDecision), ...store.tasks.filter(isBackToYou)];
   const working = store.tasks.filter((t) => t.state === 'working');
   const queued = store.tasks.filter((t) => t.state === 'queued');
   const g = greeting();

@@ -160,3 +160,25 @@ test('producer and lead briefs explain stage requests; scout, liveops and librar
   assert.match(buildBrief({ task, role: 'librarian', root }), /hq_asset_add \{name, kind/);
   assert.doesNotMatch(buildBrief({ task, role: 'ui', root }), /hq_asset_add|hq_metric|Pitch format/);
 });
+
+test('Visual bar: pinned house references are listed for designer, thumbnails and ui only', () => {
+  const references = [
+    { mediaPath: 'uploads/ref1.png', category: 'ui-icons', note: 'chunky outlines' },
+    { mediaPath: 'assets/concepts/t_9-1.png', category: 'screens', note: '' },
+    { mediaPath: 'uploads/pack.png', category: 'packaging' },
+    { mediaPath: '../secret.png', category: 'screens' },
+  ];
+  for (const role of ['designer', 'thumbnails', 'ui']) {
+    const b = buildBrief({ task, role, root, references });
+    assert.match(b, /## House references \(the Visual bar\)/, role);
+    assert.ok(b.includes('house reference for every hand-off'));
+    assert.ok(b.includes('### UI icons\n- .agent-hq/media/uploads/ref1.png (chunky outlines)'));
+    assert.ok(b.includes('### Screens\n- assets/concepts/t_9-1.png'));
+    assert.ok(b.includes('### Packaging\n- .agent-hq/media/uploads/pack.png'));
+    assert.ok(!b.includes('secret') && !b.includes('3D models'));
+    assert.ok(b.indexOf('## House references') < b.indexOf('## Your task'));
+  }
+  for (const role of ['builder', 'reviewer', 'lead']) assert.doesNotMatch(buildBrief({ task, role, root, references }), /House references/);
+  assert.doesNotMatch(buildBrief({ task, role: 'designer', root }), /House references/);
+  assert.doesNotMatch(buildBrief({ task, role: 'designer', root, references: [] }), /House references/);
+});

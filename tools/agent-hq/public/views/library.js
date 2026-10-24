@@ -1,5 +1,6 @@
-import { h, store, api, empty, pageHead, assetUrl, mediaUrl, notify, toast } from './core.js';
-import { chip, segmented } from './games.js';
+import { h, store, api, btn, empty, pageHead, assetUrl, mediaUrl, notify, toast } from './core.js';
+import { chip, segmented } from './charts.js';
+import { openLightbox } from './lightbox.js';
 
 let tab = 'assets';
 let chapter = null;
@@ -113,6 +114,14 @@ let systemsMd = null;
 let searchTimer = 0;
 let assetSeq = 0;
 
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('Copied ' + text); return; } catch { /* fall through */ }
+  const ta = h('textarea', { style: 'position:fixed;opacity:0' }, text);
+  document.body.append(ta); ta.select();
+  try { document.execCommand('copy'); toast('Copied ' + text); } catch { toast('Could not copy. The id is ' + text, 'error'); }
+  ta.remove();
+}
+
 async function loadAssets(into) {
   const seq = ++assetSeq;
   const qs = new URLSearchParams();
@@ -132,11 +141,12 @@ function assetGrid() {
     const file = x.file || '';
     const img = /\.(png|jpe?g|gif|webp|svg)$/i.test(file);
     return h('article', { class: 'pg-asset' },
-      h('div', { class: 'pv' }, img ? h('img', { src: assetUrl(file), alt: x.name, loading: 'lazy' }) : (x.kind || file.split('.').pop() || 'file')),
+      h('div', { class: 'pv' }, img ? h('img', { src: assetUrl(file), alt: x.name, loading: 'lazy', style: 'cursor:zoom-in', title: 'Click to enlarge',
+        onclick: () => { const imgs = a.filter((y) => /\.(png|jpe?g|gif|webp|svg)$/i.test(y.file || '')); openLightbox(imgs.map((y) => ({ src: assetUrl(y.file), title: y.name })), Math.max(0, imgs.indexOf(x))); } }) : (x.kind || file.split('.').pop() || 'file')),
       h('div', { class: 'info' },
         h('span', { class: 'nm', title: x.name }, x.name),
         h('div', { class: 'row gap wrap' }, chip(x.kind || 'file'), chip(String(x.scope || 'studio').replace('game:', 'game: ')), x.robloxId ? chip('On Roblox', 'ok') : chip('Not on Roblox')),
-        x.robloxId ? h('span', { class: 'muted mono' }, 'id ' + x.robloxId) : null,
+        x.robloxId ? h('div', { class: 'row gap' }, h('span', { class: 'muted mono' }, 'id ' + x.robloxId), btn('Copy the Roblox asset id', () => copyText(String(x.robloxId)), { kind: 'sm' })) : null,
         (x.tags || []).length ? h('div', { class: 'pg-tags' }, x.tags.map((t) => h('span', { class: 'pg-chip' }, t))) : null,
         file ? h('span', { class: 'muted mono clip', title: file }, file) : null));
   }));
@@ -165,9 +175,22 @@ async function loadSystems() {
   try { systemsMd = (await api('GET', '/api/systems')).markdown || ''; } catch (e) { toast(e.message, 'error'); systemsMd = ''; }
   notify();
 }
+let sysQuery = '';
+function systemsView() {
+  const q = sysQuery.trim().toLowerCase();
+  const parts = systemsMd.split(/^(?=## )/m);
+  const intro = parts[0].startsWith('## ') ? '' : parts.shift();
+  const hit = parts.filter((p) => !q || p.toLowerCase().includes(q));
+  if (!hit.length) return empty('No system matches "' + sysQuery.trim() + '".');
+  return h('article', { class: 'card reader' }, markdown((q ? '' : intro) + hit.join('')));
+}
 function systemsTab() {
   if (systemsMd === null) { loadSystems(); return empty('Loading'); }
-  return systemsMd ? h('article', { class: 'card reader' }, markdown(systemsMd)) : empty('No systems catalogue found.');
+  if (!systemsMd) return empty('No systems catalogue found.');
+  const results = h('div', {}, systemsView());
+  const input = h('input', { class: 'pg-input', type: 'search', placeholder: 'Search systems', value: sysQuery, 'aria-label': 'Search systems', maxlength: 80,
+    oninput: (e) => { sysQuery = e.target.value; results.replaceChildren(systemsView()); } });
+  return h('div', { class: 'stack' }, h('div', { class: 'pg-filters' }, input), results);
 }
 
 export function render() {

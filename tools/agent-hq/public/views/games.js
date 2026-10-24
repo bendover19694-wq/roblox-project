@@ -1,5 +1,8 @@
 // Games: Overview, Live numbers, Pipeline. One tab per game.
 import { h, ic, store, api, act, btn, empty, pageHead, statePill, roleLabel, avatar, ago, fmtTime, openDrawer, openModal, notify, toast, field } from './core.js';
+import { render as renderGate, requestActions } from './gate.js';
+import { chip, segmented } from './charts.js';
+import { liveBoard } from './live.js';
 
 export const STAGES = [
   { id: 'pitched', name: 'Pitched', owner: 'Scout', roles: ['scout'] },
@@ -16,67 +19,8 @@ const stageIdx = (id) => STAGES.findIndex((s) => s.id === id);
 const stageName = (id) => STAGES.find((s) => s.id === id)?.name || id;
 const stageOfRole = (role) => STAGES.find((s) => s.roles.includes(role))?.id || null;
 
-// ---------- small shared helpers (also used by the Market page) ----------
-export const num = (n) => (n == null || Number.isNaN(Number(n)) ? 'n/a' : Number(n).toLocaleString());
-export const chip = (text, tone) => h('span', { class: 'pg-chip', 'data-tone': tone || null }, text);
-export function tile(label, value, sub, tone) {
-  const none = value == null || value === '';
-  return h('div', { class: 'pg-tile', 'data-tone': tone || null },
-    h('span', { class: 'k' }, label),
-    h('span', { class: 'v' + (none ? ' dim' : '') }, none ? 'not measured' : value),
-    sub ? h('span', { class: 't' }, sub) : null);
-}
-export function segmented(items, current, onPick, counts = {}) {
-  return h('div', { class: 'pg-seg', role: 'tablist' }, items.map(([id, label]) => h('button', {
-    type: 'button', role: 'tab', 'aria-selected': String(id === current), onclick: () => onPick(id),
-  }, label, counts[id] != null ? h('span', { class: 'pg-count' }, counts[id]) : null)));
-}
-
-const SVGNS = 'http://www.w3.org/2000/svg';
-const sv = (tag, attrs = {}, ...kids) => {
-  const e = document.createElementNS(SVGNS, tag);
-  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-  kids.forEach((k) => k && e.append(k));
-  return e;
-};
-const compact = (n) => (Math.abs(n) >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : Math.abs(n) >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)));
-
-// Simple line chart: points = [{x: Date|number, y: number}]. One series, direct label on the last value.
-export function lineChart(title, points, { unit = '', target = null } = {}) {
-  const wrap = h('div', { class: 'pg-chart' }, h('h4', {}, title));
-  const pts = points.filter((p) => p.y != null && Number.isFinite(p.y));
-  if (pts.length < 2) {
-    wrap.append(h('p', { class: 'pg-note' }, pts.length ? `One reading so far (${compact(pts[0].y)}${unit}). A line needs two or more refreshes.` : 'No readings yet.'));
-    return wrap;
-  }
-  const W = 560; const H = 170; const L = 56; const R = 64; const T = 12; const B = 22;
-  const xs = pts.map((p) => +p.x); const x0 = Math.min(...xs); const x1 = Math.max(...xs) || x0 + 1;
-  let lo = Math.min(...pts.map((p) => p.y), target ?? Infinity); let hi = Math.max(...pts.map((p) => p.y), target ?? -Infinity);
-  if (lo === hi) { lo = lo - 1; hi = hi + 1; }
-  const pad = (hi - lo) * 0.1; lo = Math.max(0, lo - pad); hi += pad;
-  const fmt = (v) => (hi - lo < 2000 && Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : compact(v)) + unit;
-  const X = (x) => L + ((x - x0) / (x1 - x0 || 1)) * (W - L - R);
-  const Y = (y) => T + (1 - (y - lo) / (hi - lo)) * (H - T - B);
-  const svgEl = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${title}, latest ${compact(pts.at(-1).y)}${unit}` });
-  for (let i = 0; i <= 3; i++) {
-    const v = lo + ((hi - lo) * i) / 3; const y = Y(v);
-    svgEl.append(sv('line', { class: 'grid', x1: L, x2: W - R, y1: y, y2: y }));
-    const t = sv('text', { class: 'axis', x: L - 6, y: y + 3, 'text-anchor': 'end' }); t.textContent = fmt(v); svgEl.append(t);
-  }
-  const d = pts.map((p, i) => (i ? 'L' : 'M') + X(+p.x).toFixed(1) + ' ' + Y(p.y).toFixed(1)).join(' ');
-  svgEl.append(sv('path', { class: 'area', d: `${d} L${X(+pts.at(-1).x).toFixed(1)} ${H - B} L${X(+pts[0].x).toFixed(1)} ${H - B} Z` }));
-  if (target != null) svgEl.append(sv('line', { class: 'tgt', x1: L, x2: W - R, y1: Y(target), y2: Y(target) }));
-  svgEl.append(sv('path', { class: 'line', d }));
-  const last = pts.at(-1);
-  svgEl.append(sv('circle', { class: 'dot', cx: X(+last.x), cy: Y(last.y), r: 3.5 }));
-  const lb = sv('text', { class: 'lbl', x: X(+last.x) + 7, y: Y(last.y) + 4 }); lb.textContent = fmt(last.y); svgEl.append(lb);
-  for (const [x, anchor] of [[x0, 'start'], [x1, 'end']]) {
-    const t = sv('text', { class: 'axis', x: X(x), y: H - 6, 'text-anchor': anchor });
-    t.textContent = new Date(x).toLocaleDateString([], { month: 'short', day: 'numeric' }); svgEl.append(t);
-  }
-  wrap.append(svgEl);
-  return wrap;
-}
+// Shared bits live in charts.js; re-exported here for the other pages.
+export { num, chip, tile, segmented, lineChart } from './charts.js';
 
 // ---------- data ----------
 let gamesList = null;
@@ -93,8 +37,11 @@ async function loadGames(force) {
   loadingGames = true;
   try {
     const r = await api('GET', '/api/games');
-    gamesList = Array.isArray(r) ? r : r.games || [];
-    gamesAt = Date.now();
+    const next = Array.isArray(r) ? r : r.games || [];
+    const same = JSON.stringify(next) === JSON.stringify(gamesList);
+    gamesList = next; gamesAt = Date.now();
+    loadingGames = false;
+    if (same) return;
   } catch (e) { toast(e.message, 'error'); gamesList = gamesList || []; gamesAt = Date.now(); }
   loadingGames = false;
   notify();
@@ -102,22 +49,33 @@ async function loadGames(force) {
 async function loadRequests(force) {
   if (reqCache.loading || (!force && reqCache.rows && Date.now() - reqCache.at < 15000)) return;
   reqCache.loading = true;
+  let changed = true;
   try {
     const r = await api('GET', '/api/stage-requests');
-    reqCache.rows = Array.isArray(r) ? r : r.requests || r.rows || [];
-  } catch { reqCache.rows = reqCache.rows || []; }
+    const next = Array.isArray(r) ? r : r.requests || r.rows || [];
+    changed = JSON.stringify(next) !== JSON.stringify(reqCache.rows); reqCache.rows = next;
+  } catch { changed = !reqCache.rows; reqCache.rows = reqCache.rows || []; }
   reqCache.at = Date.now(); reqCache.loading = false;
-  notify();
+  if (changed) notify();
 }
 async function loadLive(g, force) {
   const c = liveCache[g] || (liveCache[g] = {});
   if (c.loading || (!force && c.data && Date.now() - c.at < 30000)) return;
   c.loading = true;
-  try { c.data = await api('GET', `/api/games/${encodeURIComponent(g)}/live`); } catch (e) { c.error = e.message; c.data = c.data || { series: [], metrics: {}, targets: {}, attention: [] }; }
+  let changed = true;
+  try { const next = await api('GET', `/api/games/${encodeURIComponent(g)}/live`); changed = JSON.stringify(next) !== JSON.stringify(c.data); c.data = next; } catch (e) { c.error = e.message; changed = !c.data; c.data = c.data || { series: [], metrics: {}, targets: {}, attention: [] }; }
   c.at = Date.now(); c.loading = false;
-  notify();
+  if (changed) notify();
 }
-const reloadAll = async (g) => { await Promise.all([loadGames(true), loadRequests(true), g ? loadLive(g, true) : null]); };
+const kickedCache = { rows: null, at: 0 };
+async function loadKicked(force) {
+  if (kickedCache.loading || (!force && kickedCache.rows && Date.now() - kickedCache.at < 15000)) return;
+  kickedCache.loading = true;
+  let changed = true;
+  try { const r = await api('GET', '/api/stage-requests?state=rejected'); const next = Array.isArray(r) ? r : r.requests || r.rows || []; changed = JSON.stringify(next) !== JSON.stringify(kickedCache.rows); kickedCache.rows = next; } catch { changed = !kickedCache.rows; kickedCache.rows = kickedCache.rows || []; }
+  kickedCache.at = Date.now(); kickedCache.loading = false; if (changed) notify();
+}
+const reloadAll = async (g) => { await Promise.all([loadGames(true), loadRequests(true), loadKicked(true), g ? loadLive(g, true) : null]); };
 
 // ---------- overview ----------
 function editableText(label, value, onSave, { multiline = false, placeholder = '' } = {}) {
@@ -175,7 +133,9 @@ function overview(g) {
           g.versionType ? chip(g.versionType) : null, h('span', { class: 'muted push' }, g.updatedAt ? 'updated ' + ago(g.updatedAt) + (ago(g.updatedAt) === 'just now' ? '' : ' ago') : '')),
         editableText('Next step', g.nextStep, (v) => patchGame(g, { nextStep: v }), { placeholder: 'Not set' }),
         editableText('Note', g.note, (v) => patchGame(g, { note: v }), { multiline: true, placeholder: 'Add a note for the team' }),
-        nextStage ? h('p', { class: 'pg-note' }, `Next stage: ${nextStage.name} (${nextStage.owner}). Agents ask for it with a stage request; you decide in Review.`) : null),
+        nextStage ? h('p', { class: 'pg-note' }, `Next stage: ${nextStage.name} (${nextStage.owner}). Agents ask for it with a stage request; you decide in Review.`) : null,
+        g.reworkCount ? h('p', { class: 'pg-note' }, `Sent back for rework ${g.reworkCount} ${g.reworkCount === 1 ? 'time' : 'times'}.`) : null,
+        h('div', { class: 'row gap' }, h('a', { class: 'btn', href: `#/games/${encodeURIComponent(g.slug)}/gate` }, ic('lock', 14), 'Open the publish gate'))),
       h('section', { class: 'pg-card' },
         h('h3', {}, `What's new in v${g.version ?? 1}`),
         cl && (cl.heading || (cl.bullets || []).length) ? h('div', { class: 'stack sm' },
@@ -186,146 +146,52 @@ function overview(g) {
 }
 
 // ---------- live numbers ----------
-const TARGETS = [
-  { key: 'likeRatio', label: 'Like ratio', target: '>80%', test: (v) => v >= 0.8, fmt: (v) => Math.round(v * 100) + '%' },
-  { key: 'd1', label: 'Day-1 retention', target: '12 to 15%', test: (v) => v >= 12, fmt: (v) => v + '%' },
-  { key: 'd7', label: 'Day-7 retention', target: '2 to 3%', test: (v) => v >= 2, fmt: (v) => v + '%' },
-  { key: 'avgSessionMin', label: 'Average session', target: '>10 min', test: (v) => v >= 10, fmt: (v) => v + ' min' },
-  { key: 'payingPct', label: 'Paying players', target: '~2%', test: (v) => v >= 2, fmt: (v) => v + '%' },
-  { key: 'firstMinute', label: 'Still playing after minute 1', target: 'higher is better', test: null, fmt: (v) => v + '%' },
-];
-
-function metricTiles(live, g) {
-  const m = live.metrics || {};
-  const latest = live.latest;
-  const up = latest?.up; const down = latest?.down;
-  const likeFromVotes = up != null && up + down > 0 ? up / (up + down) : null;
-  const tiles = [
-    tile('Players now', latest ? num(latest.playing) : null, latest ? 'as of ' + ago(latest.at) + (ago(latest.at) === 'just now' ? '' : ' ago') : (g.universeId ? 'press Refresh' : 'needs a universe id')),
-    tile('Visits', latest ? num(latest.visits) : null),
-    tile('Favorites', latest ? num(latest.favorites) : null),
-  ];
-  for (const t of TARGETS) {
-    const v = t.key === 'likeRatio' ? (m.likeRatio ?? likeFromVotes) : m[t.key];
-    const tgt = `target ${t.target}`;
-    const ok = v != null && t.test ? t.test(v) : null;
-    tiles.push(tile(t.label, v == null ? null : t.fmt(v), tgt, ok == null ? null : ok ? 'ok' : 'warn'));
-  }
-  return h('div', { class: 'pg-tiles' }, tiles);
-}
-
-const seriesPts = (series, key) => (series || []).map((r) => ({ x: new Date(r.at), y: r[key] }));
-
-function chartsFor(live, g) {
-  const series = live.series || [];
-  const items = [['trends', 'Trends'], ['leave', 'Where players leave'], ['money', 'Sessions, money and errors'], ['bench', 'Benchmarks'], ['fixes', 'Fixes and reports']];
-  const m = live.metrics || {};
-  let body;
-  if (chartTab === 'trends') {
-    body = h('div', { class: 'pg-grid2' },
-      lineChart('Players', seriesPts(series, 'playing')),
-      lineChart('Visits', seriesPts(series, 'visits')),
-      lineChart('Favorites', seriesPts(series, 'favorites')),
-      lineChart('Like ratio', (series || []).map((r) => ({ x: new Date(r.at), y: r.up + r.down ? (r.up / (r.up + r.down)) * 100 : null })), { unit: '%', target: 80 }));
-  } else if (chartTab === 'leave') {
-    body = m.firstMinute != null || m.d1 != null ? h('div', { class: 'pg-tiles' },
-      tile('Still playing after minute 1', m.firstMinute != null ? m.firstMinute + '%' : null),
-      tile('Back the next day', m.d1 != null ? m.d1 + '%' : null, 'target 12 to 15%'),
-      tile('Back after a week', m.d7 != null ? m.d7 + '%' : null, 'target 2 to 3%'))
-      : empty('No retention numbers yet. Live ops records them with hq_metric once the game has players.');
-  } else if (chartTab === 'money') {
-    body = m.avgSessionMin != null || m.payingPct != null ? h('div', { class: 'pg-tiles' },
-      tile('Average session', m.avgSessionMin != null ? m.avgSessionMin + ' min' : null, 'target >10 min'),
-      tile('Paying players', m.payingPct != null ? m.payingPct + '%' : null, 'target ~2%'))
-      : empty('No session or money numbers yet. They are not public on Roblox, so Live ops records them from the creator dashboard.');
-  } else if (chartTab === 'bench') {
-    body = h('div', { class: 'pg-scroll' }, h('table', { class: 'pg-tbl' },
-      h('thead', {}, h('tr', {}, ['Measure', 'Target', 'Now', 'Status'].map((c, i) => h('th', { class: i === 2 ? 'num' : '' }, c)))),
-      h('tbody', {}, TARGETS.filter((t) => t.test).map((t) => {
-        const v = t.key === 'likeRatio' ? (m.likeRatio ?? (live.latest && live.latest.up + live.latest.down ? live.latest.up / (live.latest.up + live.latest.down) : null)) : m[t.key];
-        return h('tr', {}, h('td', {}, t.label), h('td', {}, t.target), h('td', { class: 'num' }, v == null ? 'not measured' : t.fmt(v)),
-          h('td', {}, v == null ? chip('not measured') : t.test(v) ? chip('on target', 'ok') : chip('below target', 'warn')));
-      }))));
-  } else {
-    const fixes = store.tasks.filter((t) => t.game === g.slug && t.role === 'liveops');
-    body = h('div', { class: 'stack' },
-      (live.attention || []).length ? h('ul', { class: 'pg-list' }, live.attention.map((a) => h('li', {}, chip(a.state, a.state === 'open' ? 'warn' : null), h('span', {}, a.title), a.why ? h('span', { class: 'muted' }, a.why) : null))) : null,
-      fixes.length ? h('div', { class: 'pg-work' }, fixes.slice(0, 12).map((t) => h('div', { class: 'pg-work-row' }, h('span', { class: 'title' }, t.title), statePill(t.state)))) : null,
-      !(live.attention || []).length && !fixes.length ? empty('No reports yet. Ask Live ops to read the numbers once the game is public.') : null);
-  }
-  return h('div', { class: 'stack' }, segmented(items, chartTab, (id) => { chartTab = id; notify(); }), body);
-}
-
 function liveTab(g) {
   const c = liveCache[g.slug];
-  if (!c || !c.data) { loadLive(g.slug); return empty('Loading live numbers'); }
-  const live = c.data;
-  const all = gamesList || [];
-  const attention = live.attention || [];
-  const board = [
-    ['Ready to publish', all.filter((x) => x.stage === 'ready').length],
-    ['Live', all.filter((x) => x.stage === 'live').length],
-    ['Graded', all.filter((x) => x.stage === 'graded').length],
-    ['To look at', attention.length],
-  ];
-  const uid = h('input', { class: 'pg-input', value: g.universeId || '', placeholder: 'Universe id', inputmode: 'numeric', 'aria-label': 'Universe id', maxlength: 20 });
-  let busy = false;
-  const refresh = async (b) => {
-    if (busy) return; busy = true; b.disabled = true;
-    const v = uid.value.trim();
-    if (v && v !== String(g.universeId || '')) {
-      if (!/^\d{1,20}$/.test(v)) { toast('The universe id is digits only', 'error'); busy = false; b.disabled = false; return; }
-      if (!await act(() => api('PATCH', `/api/games/${encodeURIComponent(g.slug)}`, { universeId: v }))) { busy = false; b.disabled = false; return; }
-    }
-    await act(() => api('POST', `/api/games/${encodeURIComponent(g.slug)}/live/refresh`, {}), 'Live numbers refreshed');
-    await reloadAll(g.slug);
-    busy = false; b.disabled = false;
-  };
-  const rb = h('button', { type: 'button', class: 'btn primary', onclick: (e) => refresh(e.currentTarget) }, ic('refresh', 14), 'Refresh');
-  return h('div', { class: 'stack' },
-    h('div', { class: 'pg-tiles' }, board.map(([k, v]) => h('div', { class: 'pg-tile sm' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v)))),
-    h('section', { class: 'pg-card' },
-      h('div', { class: 'row gap wrap' },
-        h('label', { class: 'row gap' }, h('span', { class: 'muted' }, 'Universe id'), uid), rb,
-        h('span', { class: 'muted' }, live.latest ? 'Last reading ' + fmtTime(live.latest.at) : 'No reading yet')),
-      g.universeId ? null : h('p', { class: 'pg-note' }, 'The game is not public yet, so there is nothing to read. After you publish it yourself, paste its universe id here and press Refresh. Until then every number below stays "not measured".')),
-    attention.length ? h('section', { class: 'pg-card' }, h('h3', {}, 'Brought to your attention'),
-      h('ul', { class: 'pg-list' }, attention.map((a) => h('li', {}, chip(a.kind, 'warn'), h('strong', {}, a.title), a.why ? h('span', { class: 'muted' }, a.why) : null, h('a', { href: '#/review' }, 'Open'))))) : null,
-    metricTiles(live, g),
-    chartsFor(live, g));
+  if (!c || !c.data) { loadLive(g.slug); return empty('Reading the studio'); }
+  return liveBoard(g, c.data, { chartTab, setChartTab: (id) => { chartTab = id; notify(); }, reload: () => reloadAll(g.slug), all: gamesList || [] });
 }
 
 // ---------- pipeline ----------
 function stageRequestsFor(g) { return (reqCache.rows || []).filter((r) => r.game === g.slug); }
 
-function decideRequest(r, state, g) {
-  return act(() => api('POST', `/api/stage-requests/${encodeURIComponent(r.id)}/decide`, { state }), state === 'approved' ? 'Stage approved' : 'Request rejected').then(() => reloadAll(g.slug));
-}
-
 function drawerForGame(g) {
   const reqs = stageRequestsFor(g).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const reload = () => reloadAll(g.slug);
+  const tone = { approved: 'ok', rejected: 'err', held: 'warn', open: 'warn' };
   const body = h('div', { class: 'stack' },
-    h('div', { class: 'row gap wrap' }, chip(stageName(g.stage), 'accent'), h('span', { class: 'muted' }, 'v' + (g.version ?? 1))),
+    h('div', { class: 'row gap wrap' }, chip(stageName(g.stage), 'accent'), h('span', { class: 'muted' }, 'v' + (g.version ?? 1)),
+      g.reworkCount ? chip(`sent back ${g.reworkCount}x`, 'warn') : null),
     h('p', {}, g.nextStep ? 'Next: ' + g.nextStep : 'No next step set.'),
     h('h4', {}, 'Stage history and requests'),
     reqs.length ? h('ul', { class: 'pg-hist' }, reqs.map((r) => h('li', {},
-      h('div', { class: 'row gap wrap' }, h('strong', {}, `${stageName(r.fromStage)} to ${stageName(r.toStage)}`), chip(r.state, r.state === 'approved' ? 'ok' : r.state === 'rejected' ? 'err' : 'warn')),
+      h('div', { class: 'row gap wrap' }, h('strong', {}, `${stageName(r.fromStage)} to ${stageName(r.toStage)}`), chip(r.state, tone[r.state])),
       h('span', { class: 'muted' }, `${roleLabel(r.role)} asked ${ago(r.createdAt)}${ago(r.createdAt) === 'just now' ? '' : ' ago'}`),
       r.evidence ? h('p', { class: 'pre' }, r.evidence) : null,
-      r.state === 'open' ? h('div', { class: 'row gap' }, btn('Approve', () => decideRequest(r, 'approved', g), { kind: 'primary sm', icon: 'check' }), btn('Reject', () => decideRequest(r, 'rejected', g), { kind: 'sm' })) : null)))
+      r.reason ? h('p', { class: 'pre' }, h('strong', {}, 'Your reason: '), r.reason) : null,
+      (r.criteriaFailed || []).length ? h('div', { class: 'row gap wrap' }, r.criteriaFailed.map((c) => chip(c, 'err'))) : null,
+      ['open', 'held'].includes(r.state) ? requestActions(r, reload) : null)))
       : h('p', { class: 'muted' }, 'No stage requests yet. When a role thinks the game is ready for the next stage it asks here.'),
     g.stage === 'ready' ? h('div', { class: 'pg-foot' },
-      h('p', { class: 'pg-note' }, 'Only you publish. After publishing the game yourself in Roblox, mark it live here.'),
-      btn('Mark live (I published it)', async () => {
-        if (!confirm(`Mark ${g.name} as live? Do this only after you published it yourself.`)) return;
-        await act(() => api('POST', `/api/games/${encodeURIComponent(g.slug)}/mark-live`, {}), 'Marked live');
-        await reloadAll(g.slug);
-      }, { kind: 'primary' })) : null);
+      h('p', { class: 'pg-note' }, 'Only you publish. After publishing the game yourself in Roblox, go to the publish gate to mark it live.'),
+      h('a', { class: 'btn primary', href: `#/games/${encodeURIComponent(g.slug)}/gate`, onclick: () => document.querySelector('.backdrop')?.remove() }, ic('lock', 14), 'Open the publish gate')) : null);
   openDrawer(g.name, body);
+}
+
+function kickedBack(g) {
+  const rows = (kickedCache.rows || []).filter((r) => r.game === g.slug);
+  if (!rows.length) return null;
+  return h('section', { class: 'pg-card' },
+    h('h3', {}, `Kicked back (${rows.length})`),
+    h('p', { class: 'pg-note' }, 'Requests you rejected. For context only; the role reworks and asks again.'),
+    h('ul', { class: 'pg-list' }, rows.slice(0, 12).map((r) => h('li', {},
+      h('strong', {}, `${stageName(r.fromStage)} to ${stageName(r.toStage)}`), h('span', { class: 'muted' }, roleLabel(r.role) + ', ' + ago(r.decidedAt || r.createdAt) + ' ago'),
+      r.reason ? h('span', {}, r.reason) : null, ...(r.criteriaFailed || []).map((c) => chip(c, 'err'))))));
 }
 
 function pipeline(g) {
   if (!reqCache.rows) { loadRequests(); }
+  loadKicked();
   const reqs = stageRequestsFor(g).filter((r) => r.state === 'open');
   const tasks = store.tasks.filter((t) => t.game === g.slug && ['queued', 'working', 'review'].includes(t.state));
   const cur = stageIdx(g.stage);
@@ -344,12 +210,13 @@ function pipeline(g) {
       }
       for (const t of tasks.filter((t) => stageOfRole(t.role) === s.id)) {
         cards.push(h('button', { type: 'button', class: 'pg-pcard', onclick: () => drawerForGame(g) },
-          h('span', { class: 't' }, t.title), h('span', { class: 'm' }, statePill(t.state), roleLabel(t.role), ago(t.createdAt))));
+          h('span', { class: 't' }, t.title), h('span', { class: 'm' }, statePill(t.state), roleLabel(t.role), ago(t.createdAt), t.reworkCount ? chip(`reworked ${t.reworkCount}x`, 'warn') : null)));
       }
       return h('section', { class: 'pg-col', 'data-current': String(s.id === g.stage), 'aria-label': s.name },
         h('div', { class: 'pg-col-head' }, h('span', { class: 'n' }, s.name, h('span', { class: 'pg-count' }, cards.length)), h('span', { class: 'o' }, s.owner)),
         h('div', { class: 'pg-col-body' }, cards.length ? cards : h('span', { class: 'pg-col-empty' }, i < cur ? 'Done' : 'Nothing here')));
-    })));
+    })),
+    kickedBack(g));
 }
 
 // ---------- page ----------
@@ -370,6 +237,9 @@ function addGame() {
 }
 
 export function render(param) {
+  const [first, second] = String(param || '').split('/');
+  if (first && second === 'gate') return renderGate(first);
+  param = first;
   loadGames();
   if (!reqCache.rows) loadRequests();
   const list = gamesList || (store.games || []).map((g) => ({ ...g, stage: 'built', version: 1 }));

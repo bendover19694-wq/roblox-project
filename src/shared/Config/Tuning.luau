@@ -143,4 +143,15 @@ return {
 			blurb = "2x cash for everyone here for 15 minutes.",
 		},
 	},
+	-- Live telemetry (StatsService, LiveStats): aggregates only, written to the HQStats DataStore.
+	stats = {
+		storeName = "HQStats",
+		flushSeconds = 60, -- how often a server writes its delta and its live line
+		minBudget = 6, -- skip a flush when fewer UpdateAsync requests than this are left, so saves never starve
+		maxErrorSamples = 20, -- distinct error messages kept per record
+		maxErrorChars = 120,
+		hoursKept = 72, -- hourly buckets kept in a record
+		serverStaleSeconds = 180, -- a server silent for this long drops out of the live record
+		deviceWaitSeconds = 8, -- how long a join waits for the client to report its device class
+	},
 }

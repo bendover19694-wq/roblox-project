@@ -1,6 +1,6 @@
 // Tasks list and task drawer.
 import { h, store, api, act, ic, btn, empty, pageHead, statePill, roleLabel, avatar, ago, fmtTime, engineLabel, selectEl, plain, gameName, creatorLabel, mediaUrl,
-  openModal, openDrawer, subscribe, onLog, upsert, notify, go } from './core.js';
+  openModal, openDrawer, subscribe, onLog, upsert, notify, go, loadState, toast } from './core.js';
 import { taskForm } from './taskform.js';
 
 let roleFilter = '';
@@ -28,9 +28,39 @@ export function taskRow(t) {
       h('span', { class: 'trow-title' }, plain(t.title),
         gate ? h('span', { class: 'tag ghost', title: 'Automatic check of another task' }, 'gate') : null,
         t.attempt > 1 ? h('span', { class: 'tag ghost', title: 'Rework round' }, 'attempt ' + t.attempt) : null,
+        t.reworkCount > 0 ? h('span', { class: 'tag ghost', title: 'Times sent back for rework' }, `sent back ${t.reworkCount}x`) : null,
         t.needsStudio ? h('span', { class: 'tag ghost', title: 'Needs Studio' }, ic('lock', 11), 'Studio') : null),
       h('span', { class: 'trow-meta muted' }, meta)),
     statePill(t.state));
+}
+
+// ---- Back to you: a finished task waiting for the owner's verdict ----
+const btyOpen = new Set();
+const btyDraft = {};
+export const pendingGates = (t) => store.tasks.some((g) => g.gateFor === t.id && ['queued', 'working'].includes(g.state));
+export const isBackToYou = (t) => t.state === 'review' && t.createdBy !== 'gate' && !t.gateFor && !pendingGates(t);
+
+export function backToYou(t, { compact = false } = {}) {
+  const open = btyOpen.has(t.id);
+  const ta = open ? h('textarea', { class: 'textarea', rows: 3, placeholder: 'What should change?', 'aria-label': 'What should change', oninput: (e) => { btyDraft[t.id] = e.target.value; } }) : null;
+  if (ta) ta.value = btyDraft[t.id] || '';
+  const send = async (verdict, note) => {
+    const r = await act(() => api('POST', `/api/tasks/${t.id}/verdict`, note ? { verdict, note } : { verdict }), verdict === 'approve' ? 'Done. Marked as finished.' : 'Sent back for rework');
+    if (r) { btyOpen.delete(t.id); delete btyDraft[t.id]; loadState().catch(() => {}); notify(); }
+  };
+  return h('div', { class: 'block bty' + (compact ? ' compact' : '') },
+    compact ? null : h('h4', {}, 'Back to you'),
+    h('h4', {}, 'What was asked'),
+    h('p', { class: 'pre' }, plain(t.title) + (t.body && !compact ? '\n' + t.body : '')),
+    h('h4', {}, 'Result'),
+    h('p', { class: 'pre' + (t.summary ? '' : ' muted') }, t.summary || 'The agent did not write a summary.'),
+    ta,
+    h('div', { class: 'row gap wrap' },
+      btn('Looks good', () => send('approve'), { kind: 'primary', icon: 'check' }),
+      open
+        ? btn('Send it back', () => { const n = ta.value.trim(); if (!n) { ta.focus(); toast('Say what should change', 'error'); return; } send('changes', n); }, { kind: 'danger' })
+        : btn('Needs changes: say what', () => { btyOpen.add(t.id); notify(); }),
+      open ? btn('Cancel', () => { btyOpen.delete(t.id); notify(); }, { kind: 'ghost' }) : null));
 }
 
 export function newTaskModal(role) {
@@ -88,19 +118,18 @@ export function openTaskDrawer(id) {
   const find = () => store.tasks.find((t) => t.id === id);
   let sig = '';
   let reviewState = '';
-  let changes = '';
 
   function paintHead() {
     const t = find();
     if (!t) { head.replaceChildren(empty('Task not found')); return; }
-    const s = JSON.stringify([t.state, t.summary, t.error, t.costUsd, t.startedAt, t.endedAt]);
+    const s = JSON.stringify([t.state, t.summary, t.error, t.costUsd, t.startedAt, t.endedAt, t.reworkCount, pendingGates(t)]);
     if (s === sig) return;
     sig = s;
     const meta = [
       ['Role', roleLabel(t.role)], ['Engine', engineLabel(t.engine) + (t.model ? ' / ' + t.model : '')],
       ['Created', fmtTime(t.createdAt) + ' by ' + t.createdBy], ['Started', fmtTime(t.startedAt) || 'not yet'],
       ['Ended', fmtTime(t.endedAt) || 'not yet'], ['Cost', t.costUsd != null ? '$' + Number(t.costUsd).toFixed(3) : 'unknown'],
-      t.game ? ['Game', t.game] : null, t.needsStudio ? ['Studio', 'needed'] : null, t.parentId ? ['Parent', t.parentId] : null, t.gateFor ? ['Checks', t.gateFor] : null, t.attempt > 1 ? ['Attempt', String(t.attempt)] : null,
+      t.game ? ['Game', t.game] : null, t.needsStudio ? ['Studio', 'needed'] : null, t.parentId ? ['Parent', t.parentId] : null, t.gateFor ? ['Checks', t.gateFor] : null, t.attempt > 1 ? ['Attempt', String(t.attempt)] : null, t.reworkCount > 0 ? ['Sent back', `${t.reworkCount} time${t.reworkCount === 1 ? '' : 's'} for rework`] : null,
     ].filter(Boolean);
     const actions = h('div', { class: 'row gap wrap' },
       ['queued', 'working'].includes(t.state) ? btn('Cancel', () => act(() => api('POST', `/api/tasks/${id}/cancel`), 'Canceled'), { kind: 'danger', icon: 'x' }) : null,
@@ -113,24 +142,11 @@ export function openTaskDrawer(id) {
       t.summary ? h('div', { class: 'block' }, h('h4', {}, 'Summary'), h('p', { class: 'pre' }, t.summary)) : null,
       t.error ? h('div', { class: 'block err' }, h('h4', {}, 'Error'), h('p', { class: 'pre' }, t.error)) : null,
       actions);
-    if (t.state !== reviewState) {
-      reviewState = t.state;
-      reviewBox.replaceChildren(t.state === 'review' ? reviewControls(t) : '');
+    const rs = t.state + (isBackToYou(t) ? ':b' : pendingGates(t) ? ':g' : '');
+    if (rs !== reviewState) {
+      reviewState = rs;
+      reviewBox.replaceChildren(isBackToYou(t) ? backToYou(t) : t.state === 'review' && pendingGates(t) ? h('p', { class: 'muted block' }, 'Waiting for the automatic checks to finish.') : '');
     }
-  }
-
-  function reviewControls(t) {
-    const ta = h('textarea', { class: 'textarea', rows: 3, placeholder: 'What should change?', oninput: (e) => { changes = e.target.value; } });
-    ta.value = changes;
-    return h('div', { class: 'block' },
-      h('h4', {}, 'Your call'),
-      h('div', { class: 'row gap' }, btn('Approve', () => act(() => api('POST', `/api/tasks/${id}/complete`, { summary: t.summary || 'Approved by owner', state: 'done' }), 'Approved'), { kind: 'primary', icon: 'check' })),
-      ta,
-      h('div', { class: 'row' }, btn('Ask for changes', async () => {
-        if (!changes.trim()) { ta.focus(); return; }
-        const r = await act(() => api('POST', '/api/tasks', { title: 'Changes: ' + t.title.slice(0, 180), body: changes.trim(), role: t.role, parentId: t.id, game: t.game || undefined, needsStudio: !!t.needsStudio }), 'Follow-up queued');
-        if (r && r !== true) { upsert(store.tasks, r); changes = ''; ta.value = ''; notify(); }
-      })));
   }
 
   // log

@@ -5,11 +5,12 @@
 --       arrival {dest, profit}, reward {amount, source}
 --   C to S: Act(action, ...) returns (ok, message)   [RemoteFunction; every action validated in
 --     AgencyService and Progression]
+--   C to S: Device(class) once per join: "phone" | "tablet" | "pc" | "console". Telemetry only (StatsService).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local EVENTS = { "State", "Toast", "Celebrate", "Welcome" }
+local EVENTS = { "State", "Toast", "Celebrate", "Welcome", "Device" }
 
 local folder: Folder
 if RunService:IsServer() then
@@ -33,5 +34,6 @@ return {
 	Toast = folder:WaitForChild("Toast") :: RemoteEvent,
 	Celebrate = folder:WaitForChild("Celebrate") :: RemoteEvent,
 	Welcome = folder:WaitForChild("Welcome") :: RemoteEvent,
+	Device = folder:WaitForChild("Device") :: RemoteEvent,
 	Act = folder:WaitForChild("Act") :: RemoteFunction,
 }

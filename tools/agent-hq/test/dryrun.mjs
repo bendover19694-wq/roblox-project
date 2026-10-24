@@ -146,6 +146,44 @@ check(off.json?.run === false && /paused/.test(off.json?.reason || ''), 'a disab
 const mem = (await owner('GET', '/api/memory/builder')).json;
 check(JSON.stringify(mem).includes('UTC day numbers'), 'builder lesson is in role memory');
 
+// ---------- 9. Visual bar, reject with a reason, back to you, publish gate ----------
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64').toString('base64');
+const up = await owner('POST', '/api/uploads', { name: 'house.png', mime: 'image/png', dataBase64: png });
+const pin = await owner('POST', '/api/references', { mediaPath: up.json?.path, category: 'ui-icons', note: 'the coin icon' });
+check(pin.status === 200, 'owner pins an approved image on the Visual bar', JSON.stringify(pin.json));
+check((await agentHttp('POST', '/api/references', { mediaPath: up.json?.path, category: 'screens' })).status === 403, 'agents cannot pin house references');
+const dTask = (await owner('POST', '/api/tasks', { role: 'designer', title: 'Concept: shop header', body: 'Dry run.' })).json;
+check((await owner('GET', `/api/tasks/${dTask.id}/brief`)).json.brief.includes(up.json?.path), 'the designer brief lists the pinned house reference');
+
+await owner('POST', '/api/tasks', { role: 'scout', title: 'Concept sheet for review', body: 'Dry run.' });
+const sc2 = await claimRole('scout');
+await tool('hq_add_media', { ...as(sc2), path: 'assets/marketing/icon_draft.png', ask: 'Does this read at phone size?' });
+await tool('hq_complete', { ...as(sc2), summary: 'Sheet attached.', state: 'review' });
+const askRev = (await owner('GET', '/api/asks?state=open')).json.find((a) => a.taskId === sc2.task.id && a.kind === 'review');
+const rj = await owner('POST', `/api/asks/${askRev.id}/answer`, { answer: 'reject:The coin is too small at 150 px' });
+check(rj.json?.verdict === 'rejected' && rj.json?.verdictNote === 'The coin is too small at 150 px', 'reject keeps the owner reason on the ask', JSON.stringify(rj.json));
+check((await owner('GET', '/api/messages?role=scout')).json.some((m) => /Reason: The coin is too small/.test(m.text)), 'the reason reaches the agent thread');
+
+await owner('POST', '/api/tasks', { role: 'scout', title: 'Summarise the trend', body: 'Dry run.' });
+const sc3 = await claimRole('scout');
+await tool('hq_complete', { ...as(sc3), summary: 'Trend summary.', state: 'review' });
+check((await agentHttp('POST', `/api/tasks/${sc3.task.id}/verdict`, { verdict: 'approve' })).status === 403, 'agents cannot give the back-to-you verdict');
+const back = await owner('POST', `/api/tasks/${sc3.task.id}/verdict`, { verdict: 'changes', note: 'Add the top three examples' });
+check(back.json?.rework?.attempt === 2 && /Add the top three examples/.test(back.json?.rework?.body), 'Needs changes queues a rework task with the note', JSON.stringify(back.json?.rework));
+
+for (const st of ['art', 'ready']) {
+  const r = await owner('POST', '/api/games/space-agency/stage-requests', { toStage: st, evidence: 'Dry run.' });
+  await owner('POST', `/api/stage-requests/${r.json?.id}/decide`, { state: 'approved' });
+}
+check((await agentHttp('POST', '/api/games/space-agency/gate/start', { action: 'live' })).status === 403, 'agents cannot open the publish gate');
+const ch = await owner('POST', '/api/games/space-agency/gate/start', { action: 'live' });
+check(ch.status === 200 && (await owner('GET', '/api/games')).json.find((g) => g.slug === 'space-agency')?.stage === 'ready', 'step 1 opens a confirmation and changes nothing');
+const wrong = await owner('POST', '/api/games/space-agency/gate/confirm', { challengeId: ch.json?.challengeId, typed: 'space agency' });
+check(wrong.status === 400 && (await owner('GET', '/api/games')).json.find((g) => g.slug === 'space-agency')?.stage === 'ready', 'a wrong typed slug is refused');
+const done = await owner('POST', '/api/games/space-agency/gate/confirm', { challengeId: ch.json?.challengeId, typed: 'space-agency' });
+check(done.json?.game?.stage === 'live', 'step 2 with the exact slug makes the game live', JSON.stringify(done.json));
+check((await owner('POST', '/api/games/space-agency/gate/confirm', { challengeId: ch.json?.challengeId, typed: 'space-agency' })).status === 404, 'a confirmation works once');
+
 mcp.kill();
 await s.close();
 fs.rmSync(stateDir, { recursive: true, force: true });

@@ -6,7 +6,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import * as D from './db.mjs';
 import { loadRoles, parseVault, buildBrief } from './briefs.mjs';
-import { fetchCharts as realFetchCharts, velocity, computeBreakouts, fetchGameDetails, fetchIcons, fetchThumbnails, loadBenchmarks } from './market.mjs';
+import { fetchCharts as realFetchCharts, velocity, computeBreakouts, fetchGameDetails, fetchIcons, fetchThumbnails, loadBenchmarks, titleAnalysis } from './market.mjs';
+import { liveStatsView } from './livestats.mjs';
 import { normalizePitch } from './pitches.mjs';
 import { listAssets as listAssetIndex, addAsset, readSystems, KINDS as ASSET_KINDS } from './assets.mjs';
 
@@ -90,7 +91,7 @@ const DEFAULT_LANE_SCHEDULES = {
   app: { enabled: true, everyMinutes: 60, activeFrom: '00:00', activeTo: '24:00', maxTasks: 8 },
   antigravity: { enabled: true, everyMinutes: 20, activeFrom: '00:00', activeTo: '24:00', maxTasks: 6 },
 };
-const DEFAULT_SETTINGS = { paused: false, budget: 2, roleEngines: {}, schedules: [], laneSchedules: DEFAULT_LANE_SCHEDULES, ownerName: '', studioLanes: 1 };
+const DEFAULT_SETTINGS = { paused: false, budget: 2, roleEngines: {}, schedules: [], laneSchedules: DEFAULT_LANE_SCHEDULES, ownerName: '', studioLanes: 1, marketEveryHours: 6 };
 const HHMM = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/;
 const toMin = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 const mergeLaneSchedules = (v) => Object.fromEntries(LANES.map((k) => [k, { ...DEFAULT_LANE_SCHEDULES[k], ...(v?.[k] ?? {}) }]));
@@ -126,6 +127,8 @@ function validateSetting(key, value, roleIds) {
         };
       });
     }
+    case 'marketEveryHours':
+      return intIn(value, 'marketEveryHours', 0, 48);
     case 'ownerName': {
       if (typeof value !== 'string') throw bad('ownerName must be a string');
       const v = value.trim();
@@ -199,12 +202,27 @@ async function realFetchLive(universeId) {
   return { playing: gd.playing ?? null, visits: gd.visits ?? null, favorites: gd.favoritedCount ?? null, up: v.data?.[0]?.upVotes ?? null, down: v.data?.[0]?.downVotes ?? null };
 }
 
+// Reads the game's aggregate DataStore entries (live + the last days) with an Open Cloud key. 404 = no entry yet.
+export async function realFetchLiveStats({ apiKey, universeId, dates }) {
+  const entry = async (key) => {
+    const u = `https://apis.roblox.com/datastores/v1/universes/${encodeURIComponent(universeId)}/standard-datastores/datastore/entries/entry?datastoreName=HQStats&entryKey=${encodeURIComponent(key)}`;
+    const r = await fetch(u, { headers: { 'x-api-key': apiKey }, signal: AbortSignal.timeout(15000) });
+    if (r.status === 404) return null;
+    if (r.status === 401 || r.status === 403) throw new Error(`Open Cloud refused the key (HTTP ${r.status}); it needs DataStore read access for HQStats`);
+    if (!r.ok) throw new Error(`Open Cloud HTTP ${r.status}`);
+    try { return JSON.parse(await r.text()); } catch { return null; }
+  };
+  const days = {};
+  for (const d of dates) days[d] = await entry(`day-${d}`);
+  return { live: await entry('live'), days };
+}
+
 // ---- server ----
 /**
  * startServer({root, port=4317, stateDir, dbFile, runner, fetchCharts}) -> Promise<{server, db, token (agent), ownerToken, port, close}>
  * runner: an object, or a factory ({db, root, emit, port, token}) => runner (started/stopped by the server).
  */
-export async function startServer({ root, port = 4317, stateDir, dbFile, runner, fetchCharts = realFetchCharts, now = Date.now, roles: rolesOpt, memoryDir, fetchLive = realFetchLive, fetchers: fetchersOpt = {} } = {}) {
+export async function startServer({ root, port = 4317, stateDir, dbFile, runner, fetchCharts = realFetchCharts, now = Date.now, roles: rolesOpt, memoryDir, fetchLive = realFetchLive, fetchLiveStats = realFetchLiveStats, autoTimers = false, tickMs = 60000, fetchers: fetchersOpt = {} } = {}) {
   const fetchers = { details: fetchGameDetails, icons: fetchIcons, thumbnails: fetchThumbnails, ...fetchersOpt };
   root = path.resolve(root ?? path.resolve(HERE, '../..'));
   stateDir = path.resolve(stateDir ?? path.join(root, '.agent-hq'));
@@ -226,6 +244,11 @@ export async function startServer({ root, port = 4317, stateDir, dbFile, runner,
     ownerToken = crypto.randomBytes(32).toString('hex');
     fs.writeFileSync(ownerFile, ownerToken, { mode: 0o600 });
   }
+  // Open Cloud credentials for reading the game's HQStats DataStore. Owner-only, write-only: never returned by any route.
+  const ocFile = path.join(stateDir, 'opencloud.json');
+  const readOpenCloud = () => {
+    try { const j = JSON.parse(fs.readFileSync(ocFile, 'utf8')); return j?.apiKey && j?.universeId ? j : null; } catch { return null; }
+  };
   const same = (a, b) => typeof a === 'string' && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
   // -> 'owner' | 'agent' | null
   const whoIs = (t) => (same(t, ownerToken) ? 'owner' : same(t, token) ? 'agent' : null);
@@ -247,6 +270,7 @@ export async function startServer({ root, port = 4317, stateDir, dbFile, runner,
   const settingsAll = () => {
     const out = Object.fromEntries(Object.entries(DEFAULT_SETTINGS).map(([k, v]) => [k, D.getSetting(db, k, v)]));
     out.laneSchedules = mergeLaneSchedules(out.laneSchedules);
+    out.openCloud = { configured: !!readOpenCloud() };
     out.roleEngines = Object.fromEntries(Object.entries(out.roleEngines).map(([r, v]) => [r, { ...v, engine: D.migrateEngine(v.engine) }]));
     return out;
   };
@@ -263,7 +287,7 @@ export async function startServer({ root, port = 4317, stateDir, dbFile, runner,
   const clean = (t) => { if (t && 'taskToken' in t) { const { taskToken, ...r } = t; return r; } return t; };
   // a missing vault or skill file must not break claiming a task (the token would be lost)
   const briefFor = (task, taskToken) => {
-    try { return buildBrief({ task, role: task.role, root, db, taskToken, memoryDir }); } catch (e) {
+    try { return buildBrief({ task, role: task.role, root, db, taskToken, memoryDir, references: D.listReferences(db) }); } catch (e) {
       // Degraded brief: keep the hard rules and the reporting credentials so the agent stays safe and can still report.
       return `Full brief unavailable (${e.message}). Read CLAUDE.md first and follow it.
 
@@ -283,7 +307,7 @@ ${task.body}`;
   const GATE_ENGINES = new Set(['app', 'claude-cli', 'echo']);
   const evaluated = new Set();
   const isFail = (t) => /^\s*fail/i.test(t.summary ?? '');
-  const bare = (title) => title.replace(/^(?:Fix|Check): /, '');
+  const bare = (title) => title.replace(/^(?:Fix|Check|Rework): /, '');
   function processTask(t) {
     if (!t) return;
     if (t.gateFor) return evalGate(t);
@@ -309,7 +333,7 @@ ${task.body}`;
       if (orig.attempt < 3) {
         const fix = queueTask({
           title: `Fix: ${bare(orig.title)}`.slice(0, 200), role: orig.role, game: orig.game, engine: orig.engine,
-          needsStudio: orig.needsStudio, parentId: orig.id, attempt: orig.attempt + 1, createdBy: 'gate',
+          needsStudio: orig.needsStudio, parentId: orig.id, attempt: orig.attempt + 1, createdBy: 'gate', reworkCount: orig.reworkCount + 1,
           body: `${orig.body}\n\nReviewer feedback:\n${g.summary}`.slice(0, 20000),
         });
         note = `queued ${fix.title} (attempt ${fix.attempt})`;
@@ -358,7 +382,9 @@ ${task.body}`;
   };
   // Routes only the owner token may call (the dashboard). Agents get 403.
   const OWNER_ONLY = [
-    ['POST', /^\/api\/asks\/approve-all$/], ['POST', /^\/api\/asks\/[^/]+\/(?:answer|dismiss)$/],
+    ['POST', /^\/api\/asks\/(?:approve-all|reject-all|empty)$/], ['POST', /^\/api\/asks\/[^/]+\/(?:answer|dismiss)$/],
+    ['POST', /^\/api\/tasks\/[^/]+\/verdict$/], ['POST', /^\/api\/references$/], ['DELETE', /^\/api\/references\/[^/]+$/],
+    ['GET', /^\/api\/games\/[^/]+\/gate$/], ['POST', /^\/api\/games\/[^/]+\/(?:gate\/(?:start|confirm|checklist)|ad-note)$/],
     ['POST', /^\/api\/pitches\/ideas$/], ['POST', /^\/api\/pitches\/[^/]+\/decide$/], ['POST', /^\/api\/stage-requests\/[^/]+\/decide$/],
     ['POST', /^\/api\/games$/], ['PATCH', /^\/api\/games\/[^/]+$/], ['POST', /^\/api\/games\/[^/]+\/mark-live$/],
     ['POST', /^\/api\/settings$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
@@ -398,7 +424,7 @@ ${task.body}`;
       settings: settingsAll(), roles, running: R().running(),
       studio: { lanes: D.getSetting(db, 'studioLanes', 1), locks, holder: locks[0]?.taskId ?? R().studioHolder() },
       engines: { 'claude-cli': !!eng?.['claude-cli'], echo: true }, lanes: lanesAll(),
-      games: D.listGames(db).map(gameRow), stageRequests: D.listStageRequests(db, { state: 'open' }),
+      games: D.listGames(db).map(gameRow), stageRequests: [...D.listStageRequests(db, { state: 'open' }), ...D.listStageRequests(db, { state: 'held' })],
     };
   });
 
@@ -457,6 +483,27 @@ ${task.body}`;
     return pubTask(D.updateTask(db, t.id, { state, summary, ...(state === 'failed' ? { error: summary.slice(0, 500) } : {}) }));
   });
 
+  // "Back to you": the owner's verdict on a finished task (not a gate): looks good, or needs changes
+  route('POST', /^\/api\/tasks\/([^/]+)\/verdict$/, ({ m, body }) => {
+    const t = needTask(m[1]);
+    if (t.state !== 'review' || t.gateFor) throw new HttpError(409, 'only a finished task (state review, not a gate) takes a verdict');
+    if (!isObj(body)) throw bad('body must be an object');
+    const verdict = oneOf(body.verdict, 'verdict', ['approve', 'changes'], { required: true });
+    const note = str(body.note, 'note', { max: 2000, required: verdict === 'changes' }) ?? null;
+    const say = (text) => postMessage({ role: t.role, from: 'owner', text, taskId: t.id });
+    if (verdict === 'approve') {
+      say(`Looks good: ${t.title}${note ? `. Note: ${note}` : ''}`);
+      return { task: pubTask(D.updateTask(db, t.id, { state: 'done' })), rework: null };
+    }
+    say(`Needs changes on "${t.title}": ${note}`);
+    const rework = queueTask({
+      title: `Rework: ${bare(t.title)}`.slice(0, 200), role: t.role, game: t.game, engine: t.engine, needsStudio: t.needsStudio, parentId: t.id,
+      attempt: t.attempt + 1, reworkCount: t.reworkCount + 1, createdBy: 'owner', attachPaths: t.attachPaths,
+      body: `${t.body}\n\nOwner feedback:\n${note}`.slice(0, 20000),
+    });
+    return { task: pubTask(D.updateTask(db, t.id, { state: 'done' })), rework };
+  });
+
   route('POST', /^\/api\/tasks\/next$/, ({ body }) => {
     if (!isObj(body)) throw bad('body must be an object');
     const engine = oneOf(body.engine, 'engine', LANES, { required: true });
@@ -497,7 +544,7 @@ ${task.body}`;
   // asks
   route('GET', /^\/api\/asks$/, ({ query }) => D.listAsks(db, {
     state: oneOf(query.get('state') ?? undefined, 'state', ['open', 'answered', 'dismissed']),
-    verdict: oneOf(query.get('verdict') ?? undefined, 'verdict', ['approved', 'changes', 'rejected']),
+    verdict: oneOf(query.get('verdict') ?? undefined, 'verdict', ['approved', 'changes', 'rejected', 'held']),
     includeSuperseded: query.get('includeSuperseded') === '1',
   }));
 
@@ -510,7 +557,7 @@ ${task.body}`;
     if (mediaPath && !safeRel(mediaPath)) throw bad('mediaPath must be relative');
     const ask = D.createAsk(db, {
       taskId, role: agent ? agent.role : oneOf(body.role, 'role', roleIds, { required: true }),
-      kind: oneOf(body.kind, 'kind', ['decision', 'try', 'approve', 'review'], { required: true }),
+      kind: oneOf(body.kind, 'kind', ['decision', 'try', 'approve', 'review', 'reference'], { required: true }),
       title: str(body.title, 'title', { max: 200, required: true }), why: str(body.why, 'why', { max: 20000 }) ?? '',
       options: parseOptions(body.options), mediaPath,
     });
@@ -518,51 +565,64 @@ ${task.body}`;
     return ask;
   });
 
-  const needAsk = (id) => {
+  const needAsk = (id, allowHeld = false) => {
     const a = ASK_ID.test(id) ? D.getAsk(db, id) : null;
     if (!a) throw new HttpError(404, 'ask not found');
-    if (a.state !== 'open') throw new HttpError(409, `ask is already ${a.state}`);
+    if (a.state !== 'open' && !(allowHeld && a.verdict === 'held')) throw new HttpError(409, `ask is already ${a.state}`); // held asks can be decided later
     return a;
   };
+  // review answers: approve[:note], reject[:reason], hold:<reason>, changes:<text>
+  const parseVerdict = (answer) => {
+    const at = (re) => re.exec(answer)?.[1].trim();
+    if (answer === 'approve') return ['approved', null];
+    if (answer === 'reject') return ['rejected', null];
+    if (answer.startsWith('approve:')) return ['approved', at(/^approve:([\s\S]*)$/) || null];
+    if (answer.startsWith('reject:')) return ['rejected', at(/^reject:([\s\S]*)$/) || null];
+    if (answer.startsWith('hold:') && at(/^hold:([\s\S]*)$/)) return ['held', at(/^hold:([\s\S]*)$/)];
+    if (answer.startsWith('changes:') && at(/^changes:([\s\S]*)$/)) return ['changes', at(/^changes:([\s\S]*)$/)];
+    return null;
+  };
 
-  // Apply an owner answer to an open ask and run its side effects.
+  // Apply an owner answer to an ask and run its side effects.
   function applyAnswer(a, answer) {
-    let verdict = null;
+    let verdict = null; let note = null;
     if (a.kind === 'review') {
-      if (answer === 'approve') verdict = 'approved';
-      else if (answer === 'reject') verdict = 'rejected';
-      else if (answer.startsWith('changes:') && answer.slice(8).trim()) verdict = 'changes';
-      else throw bad('review answers are "approve", "reject" or "changes:<what to change>"');
+      const v = parseVerdict(answer);
+      if (!v) throw bad('review answers are "approve[:note]", "reject[:reason]", "hold:<reason>" or "changes:<what to change>"');
+      [verdict, note] = v;
     }
-    const done = D.answerAsk(db, a.id, { answer, verdict });
+    const done = D.answerAsk(db, a.id, { answer, verdict, verdictNote: note });
     emit('ask', done);
     const task = a.taskId ? D.getTask(db, a.taskId) : null;
-    if (a.kind === 'decision') {
+    const say = (text) => postMessage({ role: a.role, from: 'owner', text, taskId: a.taskId });
+    if (a.kind === 'decision' || a.kind === 'try' || a.kind === 'approve') {
       const opt = a.options.find((o) => o.id === answer);
-      if (opt) postMessage({ role: a.role, from: 'owner', text: `Decision on "${a.title}": ${opt.label}`, taskId: a.taskId });
+      if (opt) say(`Decision on "${a.title}": ${opt.label}`);
+      else if (answer !== 'done' && answer !== 'ok') say(`Answer to "${a.title}": ${answer}`); // free text: "or say it in your own words"
       if (task && a.title.startsWith('Gate failed') && task.state === 'failed') {
         if (answer === 'retry') pubTask(D.updateTask(db, task.id, { state: 'queued', attempt: 1 }));
         else if (answer === 'drop') pubTask(D.updateTask(db, task.id, { state: 'canceled' }));
       }
     } else if (verdict === 'approved') {
-      postMessage({ role: a.role, from: 'owner', text: `Approved: ${a.title}`, taskId: a.taskId });
+      say(`Approved: ${a.title}${note ? `. Note: ${note}` : ''}`);
       if (task?.state === 'review') pubTask(D.updateTask(db, task.id, { state: 'done' }));
       if (task?.role === 'designer') {
         queueTask({
           title: `Build approved concept: ${task.title}`.slice(0, 200), role: 'ui', engine: 'app', parentId: task.id, createdBy: 'owner',
           game: task.game,
-          body: `Rebuild the approved concept image at ${a.mediaPath ?? '(see the review ask)'} as real Luau UI. Use the roblox-concept-art-ui skill, sections 2 to 4. The image is a reference only and is never shipped.`,
+          body: `Rebuild the approved concept image at ${a.mediaPath ?? '(see the review ask)'} as real Luau UI. Use the roblox-concept-art-ui skill, sections 2 to 4. The image is a reference only and is never shipped.${note ? `\n\nOwner note: ${note}` : ''}`,
         });
       }
     } else if (verdict === 'rejected') {
-      postMessage({ role: a.role, from: 'owner', text: `Rejected: ${a.title}`, taskId: a.taskId });
+      say(`Rejected: ${a.title}${note ? `. Reason: ${note}` : ''}`);
       if (task?.state === 'review') pubTask(D.updateTask(db, task.id, { state: 'canceled' }));
+    } else if (verdict === 'held') {
+      say(`Held for later: ${a.title}. Reason: ${note}`); // parked: the task stays in review, nothing is queued
     } else if (verdict === 'changes') {
-      const text = answer.slice(8).trim();
-      postMessage({ role: a.role, from: 'owner', text: `Changes requested on "${a.title}": ${text}`, taskId: a.taskId });
+      say(`Changes requested on "${a.title}": ${note}`);
       queueTask({
-        title: `Changes: ${task?.title ?? a.title}`.slice(0, 200), body: text, role: a.role, game: task?.game ?? null,
-        needsStudio: task?.needsStudio ?? 0, parentId: task?.id ?? null, createdBy: 'owner',
+        title: `Changes: ${task?.title ?? a.title}`.slice(0, 200), body: note, role: a.role, game: task?.game ?? null,
+        needsStudio: task?.needsStudio ?? 0, parentId: task?.id ?? null, createdBy: 'owner', reworkCount: (task?.reworkCount ?? 0) + 1,
       });
       if (task?.state === 'review') pubTask(D.updateTask(db, task.id, { state: 'done' }));
     }
@@ -570,7 +630,7 @@ ${task.body}`;
   }
 
   route('POST', /^\/api\/asks\/([^/]+)\/answer$/, ({ m, body }) => {
-    const a = needAsk(m[1]);
+    const a = needAsk(m[1], true);
     if (!isObj(body)) throw bad('body must be an object');
     return applyAnswer(a, str(body.answer, 'answer', { max: 20000, required: true }));
   });
@@ -586,6 +646,28 @@ ${task.body}`;
     return { approved, skipped };
   });
 
+  route('POST', /^\/api\/asks\/reject-all$/, ({ body }) => {
+    if (!isObj(body) || !Array.isArray(body.ids) || body.ids.length > 200) throw bad('ids must be an array of up to 200 ask ids');
+    const reason = str(body.reason, 'reason', { max: 2000 });
+    const rejected = []; const skipped = [];
+    for (const id of body.ids) {
+      const a = typeof id === 'string' && ASK_ID.test(id) ? D.getAsk(db, id) : null;
+      if (a && a.state === 'open' && a.kind === 'review') { applyAnswer(a, reason ? `reject:${reason}` : 'reject'); rejected.push(id); } else skipped.push(id);
+    }
+    return { rejected, skipped };
+  });
+
+  // "Empty the queue without approving anything": dismiss, no verdict, tasks untouched
+  route('POST', /^\/api\/asks\/empty$/, ({ body }) => {
+    if (!isObj(body) || !Array.isArray(body.ids) || body.ids.length > 200) throw bad('ids must be an array of up to 200 ask ids');
+    const dismissed = []; const skipped = [];
+    for (const id of body.ids) {
+      const a = typeof id === 'string' && ASK_ID.test(id) ? D.getAsk(db, id) : null;
+      if (a && a.state === 'open') { emit('ask', D.answerAsk(db, a.id, { answer: null, state: 'dismissed' })); dismissed.push(id); } else skipped.push(id);
+    }
+    return { dismissed, skipped };
+  });
+
   route('POST', /^\/api\/asks\/([^/]+)\/dismiss$/, ({ m }) => {
     const done = D.answerAsk(db, needAsk(m[1]).id, { answer: null, state: 'dismissed' });
     emit('ask', done);
@@ -593,7 +675,17 @@ ${task.body}`;
   });
 
   // messages
-  route('GET', /^\/api\/messages$/, ({ query }) => D.listMessages(db, { role: oneOf(query.get('role') ?? undefined, 'role', roleIds) }));
+  route('GET', /^\/api\/messages$/, ({ query }) => {
+    const archive = query.get('archive') ?? undefined;
+    if (archive && !/^ar_[0-9a-f]{12}$/.test(archive)) throw bad('archive is not an archive id');
+    return D.listMessages(db, { role: oneOf(query.get('role') ?? undefined, 'role', roleIds), archive });
+  });
+
+  // palette search over what was said, current and archived chats
+  route('GET', /^\/api\/messages\/search$/, ({ query }) => {
+    const q = (query.get('q') ?? '').trim().slice(0, 100);
+    return q.length < 2 ? [] : D.searchMessages(db, q).map((r) => ({ ...r, snippet: r.text.slice(Math.max(0, r.text.toLowerCase().indexOf(q.toLowerCase()) - 30), 150) }));
+  });
 
   route('POST', /^\/api\/messages$/, ({ body, who, headers }) => {
     if (!isObj(body)) throw bad('body must be an object');
@@ -610,8 +702,11 @@ ${task.body}`;
 
   route('POST', /^\/api\/messages\/([^/]+)\/reset$/, ({ m }) => {
     const role = oneOf(m[1], 'role', roleIds, { required: true });
-    return postMessage({ role, from: 'system', text: 'New conversation' });
+    const archivedAs = D.archiveThread(db, role); // "Start fresh" keeps the old conversation under Past chats
+    return { ...postMessage({ role, from: 'system', text: 'New conversation' }), archivedAs };
   });
+
+  route('GET', /^\/api\/threads\/([^/]+)\/archives$/, ({ m }) => D.listArchives(db, oneOf(m[1], 'role', roleIds, { required: true })));
 
   route('GET', /^\/api\/threads$/, () => {
     const reads = D.getSetting(db, 'threadReads', {});
@@ -680,6 +775,22 @@ ${task.body}`;
     return out(true, 'ok');
   });
 
+  // ---- the Visual bar: approved images pinned as house references ----
+  const mediaExists = (rel) => !!(readFileIn(path.join(stateDir, 'media'), rel) || readFileIn(path.join(root, 'assets'), rel.replace(/^assets\//, '')) || readFileIn(path.join(root, 'assets'), rel));
+  route('GET', /^\/api\/references$/, () => D.listReferences(db));
+  route('POST', /^\/api\/references$/, ({ body }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const mediaPath = str(body.mediaPath, 'mediaPath', { max: 500, required: true });
+    if (!safeRel(mediaPath) || !mediaExists(mediaPath)) throw bad('mediaPath must be an existing image under media or assets');
+    const category = oneOf(body.category, 'category', D.REFERENCE_CATEGORIES, { required: true });
+    const dup = D.listReferences(db).find((r) => r.mediaPath === mediaPath && r.category === category);
+    return dup ?? D.addReference(db, { mediaPath, category, note: str(body.note, 'note', { max: 500 }) ?? '' });
+  });
+  route('DELETE', /^\/api\/references\/([^/]+)$/, ({ m }) => {
+    if (!/^r_[0-9a-f]{12}$/.test(m[1]) || !D.deleteReference(db, m[1])) throw new HttpError(404, 'reference not found');
+    return { ok: true };
+  });
+
   // ---- games, stages, live numbers ----
   route('GET', /^\/api\/games$/, () => D.listGames(db).map(gameRow));
 
@@ -717,7 +828,7 @@ ${task.body}`;
   });
 
   route('GET', /^\/api\/stage-requests$/, ({ query }) => D.listStageRequests(db, {
-    state: oneOf(query.get('state') ?? undefined, 'state', ['open', 'approved', 'rejected']),
+    state: oneOf(query.get('state') ?? undefined, 'state', ['open', 'approved', 'rejected', 'held']),
     game: query.get('game') && SLUG.test(query.get('game')) ? query.get('game') : undefined,
   }));
 
@@ -729,7 +840,7 @@ ${task.body}`;
     if (toStage === 'live') throw new HttpError(403, 'only the owner marks a game live (they publish it themselves)');
     if (D.STAGES.indexOf(toStage) !== D.STAGES.indexOf(g.stage) + 1) throw bad(`${g.name} is at "${g.stage}"; the only next stage is "${D.STAGES[D.STAGES.indexOf(g.stage) + 1] ?? 'none'}"`);
     const role = requester ? requester.role : oneOf(body.role, 'role', roleIds) ?? 'producer';
-    if (D.listStageRequests(db, { state: 'open', game: g.slug }).some((r) => r.toStage === toStage)) throw new HttpError(409, 'that stage request is already open');
+    if (D.listStageRequests(db, { game: g.slug }).some((r) => r.toStage === toStage && ['open', 'held'].includes(r.state))) throw new HttpError(409, 'that stage request is already open');
     const r = D.createStageRequest(db, { game: g.slug, fromStage: g.stage, toStage, role, evidence: str(body.evidence, 'evidence', { max: 5000, required: true }) });
     emit('stage', r);
     postMessage({ role: 'lead', from: 'system', text: `${roleOf(role)?.label ?? role} asks to move ${g.name} from ${g.stage} to ${toStage}.` });
@@ -739,16 +850,27 @@ ${task.body}`;
   route('POST', /^\/api\/stage-requests\/([^/]+)\/decide$/, ({ m, body }) => {
     const r = /^s_[0-9a-f]{12}$/.test(m[1]) ? D.getStageRequest(db, m[1]) : null;
     if (!r) throw new HttpError(404, 'stage request not found');
-    if (r.state !== 'open') throw new HttpError(409, `request is already ${r.state}`);
-    const state = oneOf(isObj(body) ? body.state : undefined, 'state', ['approved', 'rejected'], { required: true });
+    if (!['open', 'held'].includes(r.state)) throw new HttpError(409, `request is already ${r.state}`);
+    const state = oneOf(isObj(body) ? body.state : undefined, 'state', ['approved', 'rejected', 'held'], { required: true });
+    const reason = str(body.reason, 'reason', { max: 2000, required: state !== 'approved' }) ?? null; // a reject or hold always says why
+    const criteriaFailed = body.criteriaFailed ?? [];
+    if (!Array.isArray(criteriaFailed) || criteriaFailed.length > 20 || criteriaFailed.some((c) => typeof c !== 'string' || !/^[A-Z][0-9]{1,2}$/.test(c))) throw bad('criteriaFailed must be rubric ids like G5 or S4');
     const g = needGame(r.game);
     if (state === 'approved') {
       if (g.stage !== r.fromStage) throw new HttpError(409, `game is now at "${g.stage}", not "${r.fromStage}"`);
       pubGame(D.updateGame(db, g.slug, { stage: r.toStage }));
+    } else if (state === 'rejected') {
+      pubGame(D.bumpGameRework(db, g.slug)); // times sent back for rework
     }
-    const done = D.decideStageRequest(db, r.id, state);
+    const done = D.decideStageRequest(db, r.id, state, { reason, criteriaFailed: state === 'approved' ? [] : criteriaFailed });
     emit('stage', done);
-    postMessage({ role: 'lead', from: 'system', text: state === 'approved' ? `Stage approved: ${g.name} moved from ${r.fromStage} to ${r.toStage}.` : `Stage request declined: ${g.name} stays at ${r.fromStage}.` });
+    const crit = done.criteriaFailed.length ? ` Failed: ${done.criteriaFailed.join(', ')}.` : '';
+    postMessage({
+      role: 'lead', from: 'system',
+      text: state === 'approved' ? `Stage approved: ${g.name} moved from ${r.fromStage} to ${r.toStage}.`
+        : state === 'held' ? `Stage request held: ${g.name} stays at ${r.fromStage}. Reason: ${reason}.${crit}`
+          : `Stage request rejected: ${g.name} stays at ${r.fromStage}. Reason: ${reason}.${crit}`,
+    });
     return done;
   });
 
@@ -761,26 +883,119 @@ ${task.body}`;
     return row;
   });
 
+  // ---- publish gate: the irreversible, human-only acts. Two steps; HQ never calls Roblox to publish. ----
+  const GATE_CHECKLIST = [
+    { id: 'phone', label: 'I played this version on a real phone' },
+    { id: 'store-page', label: 'I checked the store page: icon, thumbnails and description' },
+    { id: 'policy', label: 'I read the monetization policy and the shop copy' },
+  ];
+  const challenges = new Map(); // challengeId -> {game, action, expiresAt, tries}
+  const gateView = (slug) => {
+    const g = D.getGame(db, slug); const d = D.getGateData(db, slug);
+    return { stage: g.stage, isPublic: g.isPublic, publicSinceUtc: g.publicSinceUtc, checklist: GATE_CHECKLIST.map((i) => ({ ...i, done: !!d.checklist[i.id] })), adNotes: d.adNotes };
+  };
+  route('GET', /^\/api\/games\/([^/]+)\/gate$/, ({ m }) => gateView(needGame(m[1]).slug));
+
+  route('POST', /^\/api\/games\/([^/]+)\/gate\/checklist$/, ({ m, body }) => {
+    const g = needGame(m[1]);
+    if (!isObj(body) || typeof body.done !== 'boolean') throw bad('id and done are required');
+    const id = oneOf(body.id, 'id', GATE_CHECKLIST.map((i) => i.id), { required: true });
+    const d = D.getGateData(db, g.slug);
+    D.setGateData(db, g.slug, { ...d, checklist: { ...d.checklist, [id]: body.done } });
+    return gateView(g.slug);
+  });
+
+  // advisory only: ad money is spent in Roblox by the owner; HQ just keeps their note
+  route('POST', /^\/api\/games\/([^/]+)\/ad-note$/, ({ m, body }) => {
+    const g = needGame(m[1]);
+    if (!isObj(body)) throw bad('body must be an object');
+    const d = D.getGateData(db, g.slug);
+    const adNotes = [{ note: str(body.note, 'note', { max: 2000, required: true }), at: nowIso() }, ...d.adNotes].slice(0, 50);
+    D.setGateData(db, g.slug, { ...d, adNotes });
+    return { adNotes };
+  });
+
+  // step 1: open a confirmation. It changes nothing and lasts 2 minutes.
+  route('POST', /^\/api\/games\/([^/]+)\/gate\/start$/, ({ m, body }) => {
+    const g = needGame(m[1]);
+    if (!isObj(body)) throw bad('body must be an object');
+    const action = oneOf(body.action, 'action', ['live', 'public'], { required: true });
+    if (action === 'live' && g.stage !== 'ready') throw new HttpError(409, `${g.name} is at "${g.stage}"; only a game that is ready can go live`);
+    if (action === 'public' && D.STAGES.indexOf(g.stage) < D.STAGES.indexOf('ready')) throw new HttpError(409, `${g.name} is at "${g.stage}"; it must be ready before it goes public`);
+    for (const [k, c] of challenges) if (c.expiresAt <= now()) challenges.delete(k);
+    const challengeId = `c_${crypto.randomBytes(6).toString('hex')}`;
+    const expiresAt = now() + 2 * 60000;
+    challenges.set(challengeId, { game: g.slug, action, expiresAt, tries: 0 });
+    return { challengeId, expiresAt: new Date(expiresAt).toISOString() };
+  });
+
+  // step 2: type the game slug to apply it. One challenge, one use.
+  route('POST', /^\/api\/games\/([^/]+)\/gate\/confirm$/, ({ m, body }) => {
+    const g = needGame(m[1]);
+    if (!isObj(body)) throw bad('body must be an object');
+    const c = typeof body.challengeId === 'string' ? challenges.get(body.challengeId) : null;
+    if (!c || c.game !== g.slug) throw new HttpError(404, 'no such confirmation (start again)');
+    if (c.expiresAt <= now()) { challenges.delete(body.challengeId); throw new HttpError(410, 'the confirmation expired (start again)'); }
+    if (body.typed !== g.slug) {
+      if (++c.tries >= 5) challenges.delete(body.challengeId);
+      throw bad(`type the game slug "${g.slug}" exactly`);
+    }
+    challenges.delete(body.challengeId);
+    if (c.action === 'live') {
+      if (g.stage !== 'ready') throw new HttpError(409, `${g.name} is at "${g.stage}", not ready`);
+      const row = pubGame(D.updateGame(db, g.slug, { stage: 'live' }));
+      postMessage({ role: 'lead', from: 'system', text: `${g.name} is live (confirmed by the owner at the publish gate).` });
+      return { action: 'live', game: row };
+    }
+    const row = pubGame(D.setGamePublic(db, g.slug, nowIso()));
+    postMessage({ role: 'lead', from: 'system', text: `${g.name} was set public by the owner.` });
+    return { action: 'public', game: row };
+  });
+
   const liveView = (g) => {
     const latest = D.latestGameSnapshot(db, g.slug);
     const stored = D.latestMetrics(db, g.slug);
     const metrics = Object.fromEntries(Object.keys(METRICS).map((k) => [k, stored[k]?.value ?? null]));
     metrics.likeRatio = latest && latest.up != null && latest.up + latest.down > 0 ? latest.up / (latest.up + latest.down) : null;
+    // the game's own numbers (aggregates read from its DataStore) fill the metrics the public API cannot give
+    const rows = D.listGameStats(db, g.slug);
+    const live = rows.find((r) => r.key === 'live')?.json ?? null;
+    const days = rows.filter((r) => r.key.startsWith('day-') && r.json).map((r) => ({ date: r.key.slice(4), ...r.json }));
+    const stats = liveStatsView(days, live, now());
+    for (const [k, v] of Object.entries(stats?.metrics ?? {})) if (v != null && k in metrics) metrics[k] = v;
     return {
-      latest, series: D.gameSeries(db, g.slug, new Date(now() - 30 * 86400000).toISOString()), metrics,
+      latest, series: D.gameSeries(db, g.slug, new Date(now() - 30 * 86400000).toISOString()), metrics, live, days, stats,
       metricDates: Object.fromEntries(Object.entries(stored).map(([k, v]) => [k, v.date])), targets: TARGETS, attention: D.gameAsksBy(db, g.slug, 'liveops'),
     };
   };
   route('GET', /^\/api\/games\/([^/]+)\/live$/, ({ m }) => liveView(needGame(m[1])));
 
+  // Public numbers (needs the game to be public) and the game's own DataStore aggregates (needs Open Cloud). Both optional.
+  const ocFor = (g) => { const oc = readOpenCloud(); return oc && g.universeId === oc.universeId ? oc : null; };
+  async function refreshGameLive(g) {
+    const errors = []; let ok = false;
+    if (g.universeId) {
+      try { D.addGameSnapshot(db, g.slug, await fetchLive(g.universeId), nowIso()); ok = true; } catch (e) { errors.push(`Roblox live numbers failed: ${e.message}`); }
+    }
+    const oc = ocFor(g);
+    if (oc) {
+      try {
+        const dates = Array.from({ length: 14 }, (_, i) => new Date(now() - i * 86400000).toISOString().slice(0, 10));
+        const got = await fetchLiveStats({ apiKey: oc.apiKey, universeId: oc.universeId, dates });
+        if (got?.live) D.saveGameStat(db, g.slug, 'live', got.live, nowIso());
+        for (const [date, v] of Object.entries(got?.days ?? {})) if (v && /^\d{4}-\d{2}-\d{2}$/.test(date)) D.saveGameStat(db, g.slug, `day-${date}`, v, nowIso());
+        ok = true;
+      } catch (e) { errors.push(`Open Cloud stats failed: ${String(e.message).split(oc.apiKey).join('[key]')}`); }
+    }
+    return { ok, errors };
+  }
   route('POST', /^\/api\/games\/([^/]+)\/live\/refresh$/, async ({ m }) => {
     const g = needGame(m[1]);
-    if (!g.universeId) throw bad('set a universe id for this game first');
-    let snap;
-    try { snap = await fetchLive(g.universeId); } catch (e) { throw new HttpError(502, `Roblox live numbers failed: ${e.message}`); }
-    D.addGameSnapshot(db, g.slug, snap, nowIso());
+    if (!g.universeId && !ocFor(g)) throw bad('set a universe id for this game first');
+    const r = await refreshGameLive(g);
+    if (!r.ok) throw new HttpError(502, r.errors.join('; '));
     emit('game', gameRow(g));
-    return liveView(g);
+    return { ...liveView(g), errors: r.errors };
   });
 
   route('POST', /^\/api\/games\/([^/]+)\/metrics$/, ({ m, body, who, headers }) => {
@@ -890,6 +1105,26 @@ ${task.body}`;
 
   route('POST', /^\/api\/settings$/, ({ body }) => {
     if (!isObj(body) || typeof body.key !== 'string') throw bad('key and value are required');
+    if (body.key === 'openCloud') {
+      // write-only: the key goes to .agent-hq/opencloud.json and is never read back through any route
+      const v = body.value;
+      if (v === null) { try { fs.unlinkSync(ocFile); } catch { /* none */ } } else {
+        if (!isObj(v)) throw bad('openCloud must be {apiKey, universeId}');
+        const apiKey = typeof v.apiKey === 'string' ? v.apiKey.trim() : '';
+        if (apiKey.length < 16 || apiKey.length > 600 || /\s/.test(apiKey)) throw bad('apiKey does not look like an Open Cloud key');
+        const universeId = String(v.universeId ?? '').trim();
+        if (!/^\d{1,15}$/.test(universeId)) throw bad('universeId must be digits');
+        fs.writeFileSync(ocFile, JSON.stringify({ apiKey, universeId }), { mode: 0o600 });
+        // the live numbers belong to the game with this universe id; claim it for the first game that has none
+        if (!D.listGames(db).some((g) => g.universeId === universeId)) {
+          const target = (v.game && D.getGame(db, String(v.game))) || D.listGames(db).find((g) => !g.universeId) || D.listGames(db)[0];
+          if (target && (!target.universeId || v.game)) pubGame(D.updateGame(db, target.slug, { universeId }));
+        }
+      }
+      const value = { configured: !!readOpenCloud() };
+      emit('settings', { key: 'openCloud', value });
+      return { key: 'openCloud', value };
+    }
     const value = validateSetting(body.key, body.value, roleIds);
     D.setSetting(db, body.key, value);
     emit('settings', { key: body.key, value });
@@ -919,14 +1154,39 @@ ${task.body}`;
     D.setSetting(db, 'breakouts', { rows, at: nowIso() });
     D.setSetting(db, 'breakoutsAt', nowIso());
   }
-  route('POST', /^\/api\/market\/refresh$/, async () => {
+  async function refreshMarket() {
+    D.setSetting(db, 'marketAttemptAt', nowIso());
     let snap;
     try { snap = await fetchCharts(); } catch (e) { throw new HttpError(502, `market fetch failed: ${e.message}`); }
     D.saveMarketSnapshot(db, snap);
     let breakoutsError = null;
     try { await refreshBreakouts(); } catch (e) { breakoutsError = e.message; }
     return { ...marketView(), breakoutsError };
+  }
+  route('POST', /^\/api\/market\/refresh$/, () => refreshMarket());
+
+  // title patterns across everything on the charts right now
+  route('GET', /^\/api\/market\/titles$/, () => {
+    const titles = [...new Set((D.latestMarketSnapshots(db, 1)[0]?.sorts ?? []).flatMap((x) => x.games.map((g) => g.name)))];
+    return titleAnalysis(titles);
   });
+
+  // background refresh: market data every `marketEveryHours` (0 = off) and live numbers every 15 minutes when Open Cloud is set
+  const lastLive = new Map();
+  async function runTimers() {
+    const hours = settingsAll().marketEveryHours;
+    const last = D.getSetting(db, 'marketAttemptAt', null);
+    if (hours > 0 && (!last || now() - Date.parse(last) >= hours * 3600000)) await refreshMarket().catch(() => {});
+    const oc = readOpenCloud();
+    if (oc) {
+      for (const g of D.listGames(db).filter((x) => x.universeId === oc.universeId)) {
+        if (lastLive.has(g.slug) && now() - lastLive.get(g.slug) < 15 * 60000) continue;
+        lastLive.set(g.slug, now());
+        await refreshGameLive(g).catch(() => {});
+        emit('game', gameRow(g));
+      }
+    }
+  }
 
   route('GET', /^\/api\/market\/breakouts$/, () => D.getSetting(db, 'breakouts', { rows: [], at: null }));
   route('GET', /^\/api\/market\/benchmarks$/, () => ({ rows: loadBenchmarks() }));
@@ -1108,12 +1368,19 @@ ${task.body}`;
   });
   boundPort = server.address().port;
 
+  let timer = null;
+  if (autoTimers) {
+    timer = setInterval(() => runTimers().catch(() => {}), tickMs);
+    timer.unref();
+    setTimeout(() => runTimers().catch(() => {}), 5000).unref();
+  }
   rn = runnerOwned ? runner({ db, root, emit: hookedEmit, port: boundPort, token, memoryDir }) : (runner ?? null);
   if (runnerOwned) rn.start?.();
 
   return {
-    server, db, token, ownerToken, port: boundPort, stateDir,
+    server, db, token, ownerToken, port: boundPort, stateDir, runTimers,
     async close() {
+      if (timer) clearInterval(timer);
       if (runnerOwned) rn.stop?.();
       for (const c of clients) c.end();
       clients.clear();
@@ -1128,7 +1395,7 @@ ${task.body}`;
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { createRunner } = await import('./runner.mjs');
   const port = Number(process.env.HQ_PORT) || 4317;
-  const s = await startServer({ root: path.resolve(HERE, '../..'), port, runner: (ctx) => createRunner(ctx) });
+  const s = await startServer({ root: path.resolve(HERE, '../..'), port, runner: (ctx) => createRunner(ctx), autoTimers: true });
   console.log(`Agent HQ on http://127.0.0.1:${s.port} (open it with scripts/Agent HQ.bat or the desktop shortcut to sign in as the owner)`);
   const stop = async () => { await s.close(); process.exit(0); };
   process.on('SIGINT', stop);

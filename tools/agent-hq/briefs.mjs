@@ -112,7 +112,26 @@ function attachedImages(task) {
   return `## Attached images (Read them first)\nThe owner attached these. Open each with the Read tool before anything else:\n${files.map((f) => `- ${f}`).join('\n')}`;
 }
 
-const clip = (s, n) => (s.length > n ? s.slice(0, n) + '...' : s);
+const REFERENCE_ROLES = new Set(['designer', 'thumbnails', 'ui']);
+const REFERENCE_CATEGORIES = [['packaging', 'Packaging'], ['ui-icons', 'UI icons'], ['3d-models', '3D models'], ['screens', 'Screens']];
+
+/** The owner's pinned "Visual bar" images, listed for the roles that make images or screens. */
+function referencesSection(r, references) {
+  if (!REFERENCE_ROLES.has(r.id) || !Array.isArray(references)) return null;
+  const clean = references.filter((x) => typeof x?.mediaPath === 'string' && x.mediaPath && !x.mediaPath.includes('..'));
+  if (!clean.length) return null;
+  const path_ = (p) => (p.startsWith('uploads/') ? `.agent-hq/media/${p}` : p);
+  const groups = REFERENCE_CATEGORIES.map(([id, label]) => {
+    const items = clean.filter((x) => x.category === id);
+    return items.length ? `### ${label}\n${items.map((x) => `- ${path_(x.mediaPath)}${x.note ? ` (${clip(String(x.note), 200)})` : ''}`).join('\n')}` : null;
+  }).filter(Boolean);
+  if (!groups.length) return null;
+  return '## House references (the Visual bar)\n' +
+    'The owner pinned these approved images as the house reference for every hand-off. Open each one with the Read tool and match its look; ' +
+    'if your work departs from one, say why in your summary.\n' + groups.join('\n');
+}
+
+const clip =(s, n) => (s.length > n ? s.slice(0, n) + '...' : s);
 
 function skillsSection(r, engine) {
   if (!r.skills?.length) return null;
@@ -127,7 +146,7 @@ function skillsSection(r, engine) {
  * conversation, task, definition of done, reporting, then engine and lead extras.
  * Pass `db` to include the role's recent conversation.
  */
-export function buildBrief({ task, role, root, db, taskToken, memoryDir }) {
+export function buildBrief({ task, role, root, db, taskToken, memoryDir, references }) {
   const roles = loadRoles();
   const r = typeof role === 'string' ? roles.find((x) => x.id === role) : role;
   if (!r) throw new Error(`unknown role: ${role}`);
@@ -151,6 +170,7 @@ export function buildBrief({ task, role, root, db, taskToken, memoryDir }) {
     convo.length
       ? `## Conversation so far\n${convo.map((m) => `${m.from === 'owner' ? 'Owner' : r.label}: ${clip(m.text, 600)}`).join('\n')}`
       : null,
+    referencesSection(r, references),
     attachedImages(task),
     `## Your task\nTitle: ${task.title}\n\n${task.body || ''}`,
     r.doneWhen?.length ? `## Definition of done\n${r.doneWhen.map((d) => `- ${d}`).join('\n')}` : null,

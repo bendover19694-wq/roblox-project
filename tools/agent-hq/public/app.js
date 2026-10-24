@@ -7,7 +7,9 @@ import * as review from './views/review.js';
 import * as settings from './views/settings.js';
 import { openPalette } from './views/palette.js';
 import { newTaskModal } from './views/tasks.js';
-import { isMediaAsk } from './views/review.js';
+import { isMediaAsk, needsDecision } from './views/review.js';
+import { isBackToYou } from './views/tasks.js';
+import { openLightbox } from './views/lightbox.js';
 
 const views = { home, lead, team, tasks, review, settings };
 // Pages built by another module owner load on their own, so one broken page never takes the shell down.
@@ -30,14 +32,19 @@ const topbar = document.getElementById('topbar');
 const main = document.getElementById('main');
 
 function route() {
-  const [name, param] = location.hash.replace(/^#\/?/, '').split('/');
-  return { name: views[name] ? name : 'home', param: param ? decodeURIComponent(param) : '' };
+  const raw = location.hash.replace(/^#\/?/, '');
+  const cut = raw.indexOf('/');
+  const name = cut < 0 ? raw : raw.slice(0, cut);
+  const rest = cut < 0 ? '' : raw.slice(cut + 1);
+  let param = rest;
+  try { param = decodeURIComponent(rest); } catch { /* keep raw */ }
+  return { name: views[name] ? name : 'home', param };
 }
 
 function counts() {
-  const openAsks = store.asks.filter((a) => a.state === 'open' && !a.superseded);
+  const openAsks = store.asks.filter(needsDecision);
   return {
-    home: openAsks.length,
+    home: openAsks.length + store.tasks.filter(isBackToYou).length,
     team: store.tasks.filter((t) => t.state === 'working').length,
     tasks: store.tasks.filter((t) => ['queued', 'working', 'review'].includes(t.state)).length,
     review: openAsks.filter((a) => isMediaAsk(a) || a.kind === 'review').length,
@@ -81,7 +88,7 @@ function renderTop() {
   const { name, param } = route();
   let sub = PAGE_SUB[name];
   if (name === 'team' && param) sub = roleLabel(param);
-  if (name === 'games' && param) sub = gameName(param);
+  if (name === 'games' && param) { const [slug, more] = param.split('/'); sub = gameName(slug) + (more === 'gate' ? ' · Publish gate' : ''); }
   const project = (store.gameList[0] || store.games[0])?.name;
   topbar.replaceChildren(
     h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' }, h('strong', {}, PAGE_LABEL[name]), h('span', { class: 'muted' }, ' · ' + sub)),
@@ -108,7 +115,7 @@ function renderMain() {
   lastKey = key;
   let node;
   try {
-    node = store.loaded ? views[name].render(param) : h('div', { class: 'empty' }, 'Loading');
+    node = store.loaded ? views[name].render(param) : h('div', { class: 'empty' }, 'Reading the studio…');
   } catch (e) {
     console.error(e);
     node = h('div', { class: 'empty' }, 'This screen failed to render: ' + e.message);
@@ -123,7 +130,20 @@ function renderAll() { renderSide(); renderTop(); renderMain(); }
 main.addEventListener('focusout', () => { setTimeout(() => { if (dirty && !typing()) renderMain(); }, 80); });
 window.addEventListener('hashchange', () => { dirty = false; renderAll(); main.focus({ preventScroll: true }); });
 window.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'k') { e.preventDefault(); openPalette(); }
+  else if (k === 'n') { e.preventDefault(); if (!document.querySelector('.modal .taskform')) newTaskModal(); }
+});
+// Any enlargeable image opens the lightbox, with its neighbours in the same container for prev/next.
+const LB = 'img.md-img, img.ask-media, img.thumb, img.lb-able';
+document.addEventListener('click', (e) => {
+  const img = e.target.closest?.(LB);
+  if (!img || img.closest('.lightbox')) return;
+  e.preventDefault();
+  const scope = img.closest('.chat-list, .drawer, .modal, .thumb-row, .small-prev, .attach-grid') || main;
+  const all = [...scope.querySelectorAll(LB)];
+  openLightbox(all.map((i) => ({ src: i.getAttribute('src'), title: i.getAttribute('alt') || '' })), Math.max(0, all.indexOf(img)));
 });
 subscribe(renderAll);
 setInterval(() => { if (!document.hidden) notify(); }, 20000); // keeps "last change" and times fresh

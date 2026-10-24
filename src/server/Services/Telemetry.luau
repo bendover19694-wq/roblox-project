@@ -6,6 +6,13 @@ local AnalyticsService = game:GetService("AnalyticsService")
 
 local Telemetry = {}
 
+-- Read-only observers of funnel steps (StatsService). They see steps as they happen and can never change them.
+local funnelObservers: { (Player, number) -> () } = {}
+
+function Telemetry.observeFunnel(fn: (Player, number) -> ())
+	table.insert(funnelObservers, fn)
+end
+
 Telemetry.FUNNEL = {
 	"Joined",
 	"Named agency",
@@ -24,6 +31,9 @@ function Telemetry.funnel(player: Player, step: number, progress: { funnel: numb
 		return
 	end
 	progress.funnel = step
+	for _, observer in funnelObservers do
+		task.spawn(observer, player, step)
+	end
 	pcall(function()
 		AnalyticsService:LogOnboardingFunnelStepEvent(player, step, Telemetry.FUNNEL[step])
 	end)

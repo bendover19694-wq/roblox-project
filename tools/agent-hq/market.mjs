@@ -117,7 +117,7 @@ export async function fetchThumbnails(universeIds, fetcher) {
   const f = pickFetcher(fetcher);
   const out = {};
   for (const batch of batches(ids(universeIds), 50)) {
-    const j = await getJson(f, `https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=${batch.join(',')}&size=768x432&format=Png`);
+    const j = await getJson(f, `https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=${batch.join(',')}&countPerUniverse=3&defaults=true&size=768x432&format=Png&isCircular=false`);
     for (const g of j.data ?? []) {
       const t = (g.thumbnails ?? []).find((x) => x.imageUrl && (!x.state || x.state === 'Completed'));
       if (t) out[g.universeId] = t.imageUrl;
@@ -178,4 +178,64 @@ export function computeBreakouts(snapshots, details, now = Date.now()) {
 
 export function loadBenchmarks() {
   return JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'benchmarks.json'), 'utf8'));
+}
+
+// ---- title analysis: how do the charting games name themselves? ----
+// A small curated list of the action verbs that open Roblox game titles ("Steal a Brainrot", "Grow a Garden").
+const TITLE_VERBS = new Set([
+  'steal', 'grow', 'escape', 'survive', 'build', 'find', 'run', 'catch', 'collect', 'tame', 'raise', 'race', 'defend', 'fish',
+  'clean', 'mine', 'fight', 'hunt', 'cook', 'farm', 'dig', 'save', 'rescue', 'sell', 'buy', 'open', 'craft', 'merge', 'slap',
+  'punch', 'spin', 'feed', 'battle', 'climb', 'jump', 'dodge', 'dress', 'make', 'become', 'join', 'play', 'take', 'get', 'hide',
+  'seek', 'draw', 'guess', 'pick', 'create', 'train', 'trade', 'kill', 'destroy', 'drive', 'fly', 'swim', 'smash', 'break',
+  'stack', 'throw', 'shoot', 'unbox', 'hatch', 'summon', 'protect', 'explore', 'delete', 'be', 'do', 'go', 'pet',
+]);
+const TITLE_ARTICLES = new Set(['a', 'an', 'the']);
+const SYMBOL = /[\p{Extended_Pictographic}\p{S}\[\]]/u;
+
+const pct1 = (n, d) => (d > 0 ? Math.round((n / d) * 1000) / 10 : null);
+
+/**
+ * Patterns across a list of game titles: sample size, share that read "verb article noun" or "verb noun",
+ * share with an emoji or symbol, word-count and length distributions, and the commonest first words.
+ */
+export function titleAnalysis(titles) {
+  const list = (titles ?? []).filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim());
+  const sample = list.length;
+  let vAN = 0, vNoArt = 0, emoji = 0, wordSum = 0, lenSum = 0;
+  const wordHist = new Map();
+  const first = new Map();
+  const lenBuckets = [['1 to 8', 8], ['9 to 14', 14], ['15 to 20', 20], ['21 to 30', 30], ['31+', Infinity]].map(([label, max]) => ({ label, max, count: 0 }));
+
+  for (const title of list) {
+    if (SYMBOL.test(title)) emoji++;
+    const words = title.replace(/\[[^\]]*\]/g, ' ').split(/\s+/)
+      .map((w) => w.replace(/[^\p{L}\p{N}'&-]/gu, '')).filter((w) => /[\p{L}\p{N}]/u.test(w));
+    wordSum += words.length;
+    wordHist.set(words.length, (wordHist.get(words.length) ?? 0) + 1);
+    const len = Array.from(title).length;
+    lenSum += len;
+    lenBuckets.find((b) => len <= b.max).count++;
+    if (!words.length) continue;
+    const w0 = words[0].toLowerCase();
+    const entry = first.get(w0) ?? { word: words[0], count: 0 };
+    entry.count++;
+    first.set(w0, entry);
+    if (TITLE_VERBS.has(w0) && words.length >= 2) {
+      if (TITLE_ARTICLES.has(words[1].toLowerCase()) && words.length >= 3) vAN++;
+      else if (!TITLE_ARTICLES.has(words[1].toLowerCase())) vNoArt++;
+    }
+  }
+  const round1 = (n) => Math.round(n * 10) / 10;
+  return {
+    sample,
+    verbArticleNoun: { count: vAN, pct: pct1(vAN, sample) },
+    verbInitialNoArticle: { count: vNoArt, pct: pct1(vNoArt, sample) },
+    withEmoji: { count: emoji, pct: pct1(emoji, sample) },
+    words: {
+      mean: sample ? round1(wordSum / sample) : null,
+      histogram: [...wordHist].sort((a, b) => a[0] - b[0]).map(([words, count]) => ({ words, count })),
+    },
+    length: { mean: sample ? round1(lenSum / sample) : null, buckets: lenBuckets.map(({ label, count }) => ({ label, count })) },
+    commonFirstWords: [...first.values()].sort((a, b) => b.count - a.count || (a.word < b.word ? -1 : 1)).slice(0, 10),
+  };
 }

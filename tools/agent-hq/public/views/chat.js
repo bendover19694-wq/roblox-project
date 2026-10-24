@@ -2,7 +2,7 @@
 // chatView() returns {node, update}; the owner view calls update() on every store change,
 // so the composer is never rebuilt while you type.
 import { h, store, api, act, ic, btn, empty, loadMessages, reloadMessages, markRead, avatar, roleById, roleLabel, roleStatus,
-  engineOf, engineLabel, ago, fmtTime, statePill, openDrawer, upsert, notify, plain, imageFiles, mediaUrl } from './core.js';
+  engineOf, engineLabel, ago, fmtTime, statePill, openDrawer, upsert, notify, plain, imageFiles, mediaUrl, toast } from './core.js';
 import { markdown } from './library.js';
 import { openTaskDrawer, newTaskModal } from './tasks.js';
 import { askCard, askUi } from './review.js';
@@ -39,6 +39,7 @@ export function chatView(role, { back = false } = {}) {
   const head = h('header', { class: 'chat-head' });
   const list = h('div', { class: 'chat-list', role: 'log', 'aria-live': 'polite', 'aria-label': 'Conversation with ' + label });
   const typing = h('div', { class: 'typing-slot' });
+  let arch = null; // a past chat being read: {id, label, messages}
   let headSig = ''; let listSig = ''; let typingSig = ''; let first = true; let stick = true;
 
   const attach = (draftAttach[role] ||= []);
@@ -70,10 +71,30 @@ export function chatView(role, { back = false } = {}) {
     notify();
   }
 
+  async function openPast() {
+    const body = h('div', { class: 'stack' }, empty('Loading'));
+    const close = openDrawer(label + ': past chats', body);
+    try {
+      const r = await api('GET', `/api/threads/${encodeURIComponent(role)}/archives`);
+      const list2 = Array.isArray(r) ? r : r.archives || [];
+      body.replaceChildren(list2.length ? h('div', { class: 'tlist' }, list2.map((a) => {
+        const span = fmtTime(a.startedAt) + (a.endedAt ? ' to ' + fmtTime(a.endedAt) : '');
+        return h('button', { type: 'button', class: 'trow', onclick: async () => {
+          try {
+            const m = await api('GET', `/api/messages?role=${encodeURIComponent(role)}&archive=${encodeURIComponent(a.id)}`);
+            arch = { id: a.id, label: span, messages: Array.isArray(m) ? m : m.messages || [] };
+            close(); listSig = ''; headSig = ''; update();
+          } catch (e) { toast(e.message, 'error'); }
+        } },
+        h('span', { class: 'trow-main' }, h('span', { class: 'trow-title' }, plain(a.preview || 'Conversation')), h('span', { class: 'trow-meta muted' }, span + ' · ' + a.count + ' message' + (a.count === 1 ? '' : 's'))));
+      })) : empty('No past chats yet. Start fresh archives the current conversation here.'));
+    } catch (e) { body.replaceChildren(empty(e.message)); }
+  }
+
   function paintHead() {
     const st = roleStatus(role);
     const e = engineOf(role);
-    const sig = JSON.stringify([st.state, st.task?.id, st.task?.title, st.queued, e.engine, e.model]);
+    const sig = JSON.stringify([st.state, st.task?.id, st.task?.title, st.queued, e.engine, e.model, arch?.id || '']);
     if (sig === headSig) return;
     headSig = sig;
     head.replaceChildren(...[
@@ -90,13 +111,15 @@ export function chatView(role, { back = false } = {}) {
       h('div', { class: 'chat-actions' },
         btn('New task', () => newTaskModal(role), { kind: 'sm', icon: 'plus' }),
         btn('Lessons', () => openLessons(role), { kind: 'sm', icon: 'library' }),
+        btn('Past chats', () => openPast(), { kind: 'sm', icon: 'clock' }),
         btn('Start fresh', async () => {
           if (await act(() => api('POST', `/api/messages/${encodeURIComponent(role)}/reset`, {}), 'Fresh conversation')) { await reloadMessages(role).catch(() => {}); stick = true; }
-        }, { kind: 'sm', icon: 'refresh', title: 'Adds a divider. Agents ignore everything above it.' }),
+        }, { kind: 'sm', icon: 'refresh', title: 'Archives this conversation. It stays under Past chats.' }),
         st.task ? btn('Stop', () => { if (confirm('Stop the running task?')) act(() => api('POST', `/api/tasks/${st.task.id}/cancel`), 'Stopped'); }, { kind: 'sm danger', icon: 'stop' }) : null)].filter(Boolean));
   }
 
   function paintList() {
+    if (arch) { paintArchive(); return; }
     const msgs = store.messages[role];
     if (!msgs) { if (listSig !== 'loading') { listSig = 'loading'; list.replaceChildren(empty('Loading')); } return; }
     const byMsg = new Map();
@@ -116,7 +139,14 @@ export function chatView(role, { back = false } = {}) {
     if (sig === listSig) return;
     listSig = sig;
     const near = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
-    const out = rows.map(({ m, cards }) => {
+    const out = rows.map(({ m, cards }) => msgNode(m, cards));
+    if (!out.length) out.push(empty(`No messages yet. Say what you need and ${label} picks it up in turn.`));
+    for (const a of asks) out.push(h('div', { class: 'msg agent' }, avatar(role, 28), h('div', { class: 'msg-col wide' }, askCard(a))));
+    list.replaceChildren(...out);
+    if (first || stick || near) { list.scrollTop = list.scrollHeight; first = false; stick = false; }
+  }
+
+  function msgNode(m, cards) {
       if (m.from === 'system') return h('div', { class: 'divider' }, h('span', {}, m.text));
       const mine = m.from === 'owner';
       return h('div', { class: 'msg ' + (mine ? 'owner' : 'agent') },
@@ -126,11 +156,15 @@ export function chatView(role, { back = false } = {}) {
             Array.isArray(m.attachPaths) && m.attachPaths.length ? h('div', { class: 'attach-grid' }, m.attachPaths.map((p) => h('a', { href: mediaUrl(p), target: '_blank', rel: 'noopener' }, h('img', { class: 'md-img', src: mediaUrl(p), alt: 'Attached screenshot', loading: 'lazy' })))) : null),
           cards.map(taskChip),
           h('div', { class: 'msg-meta muted' }, (mine ? 'You' : label) + ' · ' + ago(m.createdAt) + (ago(m.createdAt) === 'just now' ? '' : ' ago'))));
-    });
-    if (!out.length) out.push(empty(`No messages yet. Say what you need and ${label} picks it up in turn.`));
-    for (const a of asks) out.push(h('div', { class: 'msg agent' }, avatar(role, 28), h('div', { class: 'msg-col wide' }, askCard(a))));
-    list.replaceChildren(...out);
-    if (first || stick || near) { list.scrollTop = list.scrollHeight; first = false; stick = false; }
+  }
+
+  function paintArchive() {
+    const sig = 'arch:' + arch.id + ':' + arch.messages.length;
+    if (sig === listSig) return;
+    listSig = sig;
+    list.replaceChildren(h('div', { class: 'arch-banner' }, h('span', {}, 'Past chat: ' + arch.label), btn('Back to the current chat', () => { arch = null; listSig = ''; headSig = ''; stick = true; update(); }, { kind: 'sm primary', icon: 'back' })),
+      ...(arch.messages.length ? arch.messages.map((m) => msgNode(m, [])) : [empty('This past chat is empty')]));
+    list.scrollTop = 0;
   }
 
   function paintTyping() {
@@ -140,12 +174,13 @@ export function chatView(role, { back = false } = {}) {
     typingSig = sig;
     typing.replaceChildren(st.task ? h('div', { class: 'typing', role: 'status' },
       h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
-      h('span', {}, 'Working · a new message waits its turn')) : '');
+      h('span', {}, 'Working · a new message waits until the agent finishes')) : '');
     if (st.task) list.scrollTop = list.scrollHeight;
   }
 
   function update() {
     paintHead(); paintList(); paintTyping();
+    input.disabled = !!arch; input.placeholder = arch ? 'Go back to the current chat to write' : `Message ${label}…`;
     if (node.isConnected && store.threads[role]?.unread > 0 && document.visibilityState === 'visible') markRead(role);
   }
 
@@ -154,7 +189,7 @@ export function chatView(role, { back = false } = {}) {
       h('div', { class: 'composer' },
         h('button', { type: 'button', class: 'btn icon', title: 'Add screenshots (or paste / drop them)', 'aria-label': 'Add screenshots (or paste / drop them)', onclick: () => picker.click() }, ic('image', 14)),
         picker, input, h('button', { type: 'button', class: 'btn primary', onclick: send, 'aria-label': 'Send' }, ic('send', 14), h('span', { class: 'hide-narrow' }, 'Send'))),
-      h('div', { class: 'hint composer-hint' }, 'Enter to send · Shift+Enter for a new line · Ctrl+V pastes screenshots')));
+      h('div', { class: 'hint composer-hint' }, 'Enter or Ctrl+Enter to send · Shift+Enter for a new line · Ctrl+V pastes screenshots')));
   if (!store.messages[role]) loadMessages(role);
   update();
   setTimeout(() => { markRead(role); grow(); }, 0);

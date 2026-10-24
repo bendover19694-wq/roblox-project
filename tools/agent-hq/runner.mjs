@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { getTask, updateTask, listTasks, createTask, nextRunnable, getSetting, setSetting, issueTaskToken } from './db.mjs';
+import { getTask, updateTask, listTasks, createTask, nextRunnable, getSetting, setSetting, issueTaskToken, listReferences } from './db.mjs';
 import { buildBrief, loadRoles } from './briefs.mjs';
 import { detectEngines, spawnEngine } from './engines.mjs';
 
@@ -52,7 +52,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
       }), { mode: 0o600 }); // holds the HQ token; owner-only, deleted when the task ends
       child = spawnEngine({
         engine, exe, model, mcpConfigPath, cwd: root,
-        brief: buildBrief({ task, role: task.role, root, db, taskToken, memoryDir }),
+        brief: buildBrief({ task, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) }),
         allowedTools: role?.allowedTools ?? [],
         env: { ...process.env, HQ_ECHO_MS: String(echoMs) },
       });

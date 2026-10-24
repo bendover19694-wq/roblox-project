@@ -293,7 +293,7 @@ test('conversations: any role message queues a task; reset marker; threads and u
   let th = (await api('GET', '/api/threads')).json;
   assert.equal(th.length, 16);
   const b = th.find((x) => x.role === 'builder');
-  assert.equal(b.unread, 1);
+  assert.equal(b.unread, 0); // the earlier agent note moved into the archive
   assert.equal(b.last.text, 'New conversation');
   assert.equal(b.lastReadAt, null);
   assert.equal(th.find((x) => x.role === 'scout').last, null);
@@ -478,7 +478,7 @@ test('stage requests: next only, live forbidden, approve moves the stage, mark-l
   assert.equal((await api('POST', `/api/stage-requests/${r.json.id}/decide`, { state: 'approved' })).status, 409);
   // a rejected request leaves the game where it is
   const r2 = await req('art');
-  await api('POST', `/api/stage-requests/${r2.json.id}/decide`, { state: 'rejected' });
+  await api('POST', `/api/stage-requests/${r2.json.id}/decide`, { state: 'rejected', reason: 'not yet' });
   assert.equal((await api('GET', '/api/games')).json[0].stage, 'balanced');
   // mark-live only from ready
   assert.equal((await api('POST', '/api/games/space-agency/mark-live')).status, 409);
@@ -999,7 +999,7 @@ test('agent routes are limited by role: stage requests, metrics, pitches, assets
   assert.equal((await stage(null, { taskId: w.producer.id })).status, 403); // id without the token
   const sr = await stage(w.producer);
   assert.deepEqual([sr.status, sr.json.role], [200, 'producer']); // role comes from the task, not the body
-  await api('POST', `/api/stage-requests/${sr.json.id}/decide`, { state: 'rejected' });
+  await api('POST', `/api/stage-requests/${sr.json.id}/decide`, { state: 'rejected', reason: 'no' });
   assert.equal((await stage(w.lead)).json.role, 'lead');
 
   const metric = (who) => agent('POST', '/api/games/space-agency/metrics', { key: 'd1', value: 12, source: 'owner', ...(who ? id(who) : {}) });
@@ -1035,5 +1035,518 @@ test('agent gate tasks and lane gate stay on agent routes', async () => {
   assert.equal(claimed.task.id, gate.id);
   assert.equal((await agent('POST', `/api/tasks/${gate.id}/complete`, { summary: 'PASS fine', taskId: gate.id, taskToken: claimed.taskToken })).status, 200);
   assert.equal((await api('GET', `/api/tasks/${t.id}`)).json.state, 'done');
+  await s.close();
+});
+
+// ---------- r6: review depth, references, publish gate, stage rework, back-to-you, chats, live stats ----------
+const upload = async (api) => (await api('POST', '/api/uploads', { name: 'a.png', mime: 'image/png', dataBase64: PNG_B64 })).json.path;
+const reviewAsk = async (api, role, title, extra = {}) => {
+  const t = await reviewTask(api, role, title);
+  const a = (await api('POST', '/api/asks', { taskId: t.id, role, kind: 'review', title: `ask ${title}`, ...extra })).json;
+  return { t, a };
+};
+
+test('review answers: approve with a note, reject and hold with a reason, changes, free text, reference items', async () => {
+  const { s, api } = await boot({ roles: rolesWith([]) });
+  const answer = (id, a) => api('POST', `/api/asks/${id}/answer`, { answer: a });
+  // approve with a note
+  const x1 = await reviewAsk(api, 'scout', 'one');
+  const ap = (await answer(x1.a.id, 'approve:Looks good, keep the glow')).json;
+  assert.deepEqual([ap.verdict, ap.verdictNote, ap.state], ['approved', 'Looks good, keep the glow', 'answered']);
+  assert.equal((await api('GET', `/api/tasks/${x1.t.id}`)).json.state, 'done');
+  assert.ok((await api('GET', '/api/messages?role=scout')).json.some((m) => /Approved: ask one\. Note: Looks good, keep the glow/.test(m.text)));
+  // reject with a reason cancels the task and says why
+  const x2 = await reviewAsk(api, 'scout', 'two');
+  const rj = (await answer(x2.a.id, 'reject:Wrong palette, use the house blue')).json;
+  assert.deepEqual([rj.verdict, rj.verdictNote], ['rejected', 'Wrong palette, use the house blue']);
+  assert.equal((await api('GET', `/api/tasks/${x2.t.id}`)).json.state, 'canceled');
+  assert.ok((await api('GET', '/api/messages?role=scout')).json.some((m) => /Rejected: ask two\. Reason: Wrong palette/.test(m.text)));
+  // hold needs a reason, parks the item, keeps the task in review, and can be decided later
+  const x3 = await reviewAsk(api, 'scout', 'three');
+  assert.equal((await answer(x3.a.id, 'hold:')).status, 400);
+  assert.equal((await answer(x3.a.id, 'hold')).status, 400);
+  const hd = (await answer(x3.a.id, 'hold:Waiting for the shop design')).json;
+  assert.deepEqual([hd.verdict, hd.verdictNote], ['held', 'Waiting for the shop design']);
+  assert.equal((await api('GET', `/api/tasks/${x3.t.id}`)).json.state, 'review');
+  assert.deepEqual((await api('GET', '/api/asks?verdict=held')).json.map((a) => a.id), [x3.a.id]);
+  const later = (await answer(x3.a.id, 'approve')).json; // a held ask is decided later
+  assert.equal(later.verdict, 'approved');
+  assert.equal((await answer(x3.a.id, 'approve')).status, 409); // but only once
+  // changes: text required, queues rework with a higher count
+  const x4 = await reviewAsk(api, 'scout', 'four');
+  assert.equal((await answer(x4.a.id, 'changes:')).status, 400);
+  const ch = (await answer(x4.a.id, 'changes:Bigger, and add the logo')).json;
+  assert.deepEqual([ch.verdict, ch.verdictNote], ['changes', 'Bigger, and add the logo']);
+  const rework = (await tasksOf(api, '?role=scout')).find((x) => x.title === 'Changes: four');
+  assert.deepEqual([rework.body, rework.reworkCount, rework.parentId], ['Bigger, and add the logo', 1, x4.t.id]);
+  // other words are still refused on review asks
+  const x5 = await reviewAsk(api, 'scout', 'five');
+  assert.equal((await answer(x5.a.id, 'maybe')).status, 400);
+  // free text on a decision: option, or "say it in your own words"
+  const d1 = (await api('POST', '/api/asks', { role: 'lead', kind: 'decision', title: 'Which?', options: [{ id: 'a', label: 'Option A' }] })).json;
+  await answer(d1.id, 'Neither, use the old flow please');
+  assert.ok((await api('GET', '/api/messages?role=lead')).json.some((m) => m.from === 'owner' && /Answer to "Which\?": Neither, use the old flow/.test(m.text)));
+  // reference-only items need no decision
+  const rf = (await api('POST', '/api/asks', { role: 'scout', kind: 'reference', title: 'FYI: charts moved' })).json;
+  assert.equal(rf.kind, 'reference');
+  const rfa = (await answer(rf.id, 'ok')).json;
+  assert.deepEqual([rfa.state, rfa.verdict], ['answered', null]);
+  await s.close();
+});
+
+test('reject-all and empty-the-queue', async () => {
+  const { s, api, agent } = await boot({ roles: rolesWith([]) });
+  const items = [];
+  for (const n of [1, 2, 3]) items.push(await reviewAsk(api, 'scout', `batch ${n}`));
+  const dec = (await api('POST', '/api/asks', { role: 'lead', kind: 'decision', title: 'a decision' })).json.id;
+  assert.equal((await agent('POST', '/api/asks/reject-all', { ids: [] })).status, 403);
+  assert.equal((await agent('POST', '/api/asks/empty', { ids: [] })).status, 403);
+  assert.equal((await api('POST', '/api/asks/reject-all', { ids: 'x' })).status, 400);
+  const ids = items.map((i) => i.a.id);
+  const ra = (await api('POST', '/api/asks/reject-all', { ids: [ids[0], ids[1], dec, 'a_000000000000'], reason: 'Off brand' })).json;
+  assert.deepEqual(ra.rejected, [ids[0], ids[1]]);
+  assert.deepEqual(ra.skipped, [dec, 'a_000000000000']);
+  const rejected = (await api('GET', '/api/asks?verdict=rejected')).json;
+  assert.deepEqual(rejected.map((a) => a.verdictNote), ['Off brand', 'Off brand']);
+  assert.equal((await api('GET', `/api/tasks/${items[0].t.id}`)).json.state, 'canceled');
+  // empty: dismissed with no verdict, tasks untouched, works on any kind
+  const em = (await api('POST', '/api/asks/empty', { ids: [ids[2], dec, ids[0]] })).json;
+  assert.deepEqual(em.dismissed, [ids[2], dec]);
+  assert.deepEqual(em.skipped, [ids[0]]);
+  const left = (await api('GET', '/api/state')).json.asks.filter((a) => [ids[2], dec].includes(a.id));
+  assert.ok(left.every((a) => a.state === 'dismissed' && a.verdict === null));
+  assert.equal((await api('GET', `/api/tasks/${items[2].t.id}`)).json.state, 'review');
+  await s.close();
+});
+
+test('visual bar: pin, list, delete, validation, owner only, shown in a designer brief', async () => {
+  const { s, api, agent } = await boot();
+  const img = await upload(api);
+  const bad = (b) => api('POST', '/api/references', b);
+  assert.equal((await bad({ mediaPath: img, category: 'wallpapers' })).status, 400);
+  assert.equal((await bad({ mediaPath: '../CLAUDE.md', category: 'screens' })).status, 400);
+  assert.equal((await bad({ mediaPath: 'uploads/000000000000.png', category: 'screens' })).status, 400);
+  assert.equal((await bad({ category: 'screens' })).status, 400);
+  assert.equal((await agent('POST', '/api/references', { mediaPath: img, category: 'screens' })).status, 403);
+  const r = await bad({ mediaPath: img, category: 'ui-icons', note: 'the coin icon' });
+  assert.equal(r.status, 200);
+  assert.match(r.json.id, /^r_[0-9a-f]{12}$/);
+  assert.deepEqual([r.json.mediaPath, r.json.category, r.json.note], [img, 'ui-icons', 'the coin icon']);
+  assert.equal((await bad({ mediaPath: img, category: 'ui-icons' })).json.id, r.json.id); // pinning twice keeps one
+  assert.equal((await bad({ mediaPath: img, category: 'screens' })).status, 200); // same image, another category
+  const list = (await agent('GET', '/api/references')).json;
+  assert.equal(list.length, 2);
+  // designer and ui briefs list the pins, others do not need them
+  const d = (await api('POST', '/api/tasks', { title: 'Concept: shop', role: 'designer' })).json;
+  const brief = (await api('GET', `/api/tasks/${d.id}/brief`)).json.brief;
+  assert.ok(brief.includes(img), 'the designer brief lists the pinned image');
+  assert.equal((await agent('DELETE', `/api/references/${r.json.id}`)).status, 403);
+  assert.equal((await api('DELETE', `/api/references/${r.json.id}`)).status, 200);
+  assert.equal((await api('DELETE', `/api/references/${r.json.id}`)).status, 404);
+  assert.equal((await api('GET', '/api/references')).json.length, 1);
+  await s.close();
+});
+
+test('stage requests: hold, reject with a reason and failed criteria, rework count, kicked back', async () => {
+  const { s, api, agent } = await boot();
+  const req = (toStage) => api('POST', '/api/games/space-agency/stage-requests', { toStage, evidence: 'ev', role: 'producer' });
+  const decide = (id, b) => api('POST', `/api/stage-requests/${id}/decide`, b);
+  const r1 = (await req('balanced')).json;
+  assert.equal((await decide(r1.id, { state: 'rejected' })).status, 400); // a reject always says why
+  assert.equal((await decide(r1.id, { state: 'held' })).status, 400);
+  assert.equal((await decide(r1.id, { state: 'rejected', reason: 'x', criteriaFailed: ['g5'] })).status, 400);
+  assert.equal((await decide(r1.id, { state: 'rejected', reason: 'x', criteriaFailed: ['G123'] })).status, 400);
+  assert.equal((await decide(r1.id, { state: 'rejected', reason: 'x', criteriaFailed: 'G5' })).status, 400);
+  assert.equal((await agent('POST', `/api/stage-requests/${r1.id}/decide`, { state: 'held', reason: 'x' })).status, 403);
+  // hold: parked, still listed, blocks a duplicate, game stays
+  const held = (await decide(r1.id, { state: 'held', reason: 'Waiting for the phone pass', criteriaFailed: ['S4'] })).json;
+  assert.deepEqual([held.state, held.reason, held.criteriaFailed], ['held', 'Waiting for the phone pass', ['S4']]);
+  assert.equal((await req('balanced')).status, 409);
+  assert.deepEqual((await api('GET', '/api/state')).json.stageRequests.map((x) => x.state), ['held']);
+  assert.equal((await api('GET', '/api/games')).json[0].reworkCount, 0);
+  // a held request can be rejected later: rework count goes up and it lands in "kicked back"
+  const rej = (await decide(r1.id, { state: 'rejected', reason: 'Economy pacing is off', criteriaFailed: ['G5', 'S4'] })).json;
+  assert.deepEqual([rej.state, rej.reason, rej.criteriaFailed], ['rejected', 'Economy pacing is off', ['G5', 'S4']]);
+  assert.equal((await decide(r1.id, { state: 'approved' })).status, 409);
+  const g = (await api('GET', '/api/games')).json[0];
+  assert.deepEqual([g.stage, g.reworkCount], ['built', 1]);
+  const kicked = (await api('GET', '/api/stage-requests?state=rejected')).json;
+  assert.deepEqual(kicked.map((x) => [x.id, x.reason, x.criteriaFailed]), [[r1.id, 'Economy pacing is off', ['G5', 'S4']]]);
+  assert.ok((await api('GET', '/api/messages?role=lead')).json.some((m) => /rejected: .*stays at built\. Reason: Economy pacing is off\. Failed: G5, S4/.test(m.text)));
+  // a held request approved later moves the game; the count stays
+  const r2 = (await req('balanced')).json;
+  await decide(r2.id, { state: 'held', reason: 'later' });
+  assert.equal((await decide(r2.id, { state: 'approved' })).json.state, 'approved');
+  const g2 = (await api('GET', '/api/games')).json[0];
+  assert.deepEqual([g2.stage, g2.reworkCount], ['balanced', 1]);
+  assert.deepEqual((await api('GET', '/api/stage-requests?state=held')).json, []);
+  await s.close();
+});
+
+test('back to you: looks good, needs changes, only for a finished non-gate task', async () => {
+  const { s, api, agent } = await boot({ roles: rolesWith([]) });
+  const verdict = (id, b) => api('POST', `/api/tasks/${id}/verdict`, b);
+  const queued = (await api('POST', '/api/tasks', { title: 'not yet', role: 'scout' })).json;
+  assert.equal((await verdict(queued.id, { verdict: 'approve' })).status, 409); // not finished
+  const t = await reviewTask(api, 'scout', 'Find ideas');
+  assert.equal((await agent('POST', `/api/tasks/${t.id}/verdict`, { verdict: 'approve' })).status, 403);
+  assert.equal((await verdict(t.id, { verdict: 'meh' })).status, 400);
+  assert.equal((await verdict(t.id, { verdict: 'changes' })).status, 400); // needs a note
+  assert.equal((await api('GET', `/api/tasks/${t.id}`)).json.state, 'review');
+  const ok = (await verdict(t.id, { verdict: 'approve', note: 'great' })).json;
+  assert.deepEqual([ok.task.state, ok.rework], ['done', null]);
+  assert.ok((await api('GET', '/api/messages?role=scout')).json.some((m) => /Looks good: Find ideas\. Note: great/.test(m.text)));
+  assert.equal((await verdict(t.id, { verdict: 'approve' })).status, 409); // already done
+  // needs changes: a rework task for the same role, note included, attempt and rework count up
+  const t2 = await reviewTask(api, 'scout', 'Pitch three games');
+  const ch = (await verdict(t2.id, { verdict: 'changes', note: 'Make them all multiplayer' })).json;
+  assert.equal(ch.task.state, 'done');
+  assert.deepEqual([ch.rework.title, ch.rework.role, ch.rework.state, ch.rework.attempt, ch.rework.reworkCount, ch.rework.parentId, ch.rework.createdBy],
+    ['Rework: Pitch three games', 'scout', 'queued', 2, 1, t2.id, 'owner']);
+  assert.match(ch.rework.body, /Owner feedback:\nMake them all multiplayer/);
+  // reworking the rework keeps counting and does not stack prefixes
+  await work(api, ch.rework.id, 'second try');
+  const again = (await verdict(ch.rework.id, { verdict: 'changes', note: 'Still not multiplayer' })).json;
+  assert.deepEqual([again.rework.title, again.rework.attempt, again.rework.reworkCount], ['Rework: Pitch three games', 3, 2]);
+  // a gate task is never "back to you"
+  const gated = await boot({ roles: rolesWith(['reviewer']) });
+  const b = await working(gated.api, 'builder');
+  await gated.agent('POST', `/api/tasks/${b.id}/complete`, { summary: 'changed', ...id(b) });
+  const gate = (await tasksOf(gated.api)).find((x) => x.gateFor === b.id);
+  assert.equal((await gated.api('POST', `/api/tasks/${gate.id}/verdict`, { verdict: 'approve' })).status, 409);
+  await gated.s.close();
+  await s.close();
+});
+
+test('gate fix and rework carry the rework count', async () => {
+  const { s, api, agent } = await boot({ roles: rolesWith(['reviewer']) });
+  const b = await working(api, 'builder');
+  await agent('POST', `/api/tasks/${b.id}/complete`, { summary: 'done', ...id(b) });
+  const gate = (await tasksOf(api)).find((x) => x.gateFor === b.id);
+  const claimed = (await agent('POST', '/api/tasks/next', { engine: 'app' })).json;
+  await agent('POST', `/api/tasks/${gate.id}/complete`, { summary: 'FAIL: nope', taskId: gate.id, taskToken: claimed.taskToken });
+  const fix = (await tasksOf(api)).find((x) => x.title === 'Fix: builder job');
+  assert.deepEqual([fix.attempt, fix.reworkCount], [2, 1]);
+  await s.close();
+});
+
+test('past chats: start fresh archives, list archives, read an old chat, search', async () => {
+  const { s, api, agent } = await boot({ roles: rolesWith([]) });
+  await api('POST', '/api/messages', { role: 'scout', text: 'Find me a tycoon with pets' });
+  const t = (await tasksOf(api, '?role=scout'))[0];
+  const c = await api('POST', `/api/tasks/${t.id}/claim`, { engine: 'app' });
+  await agent('POST', '/api/messages', { text: 'Found three tycoon ideas', taskId: t.id, taskToken: c.json.taskToken });
+  assert.equal((await api('GET', '/api/messages?role=scout')).json.length, 2);
+  assert.deepEqual((await api('GET', '/api/threads/scout/archives')).json, []);
+  const r1 = (await api('POST', '/api/messages/scout/reset')).json;
+  assert.match(r1.archivedAs, /^ar_[0-9a-f]{12}$/);
+  assert.equal(r1.text, 'New conversation');
+  // the current chat is just the marker; the old one is under past chats
+  assert.deepEqual((await api('GET', '/api/messages?role=scout')).json.map((m) => m.text), ['New conversation']);
+  const list = (await api('GET', '/api/threads/scout/archives')).json;
+  assert.equal(list.length, 1);
+  assert.deepEqual([list[0].id, list[0].count, list[0].preview], [r1.archivedAs, 2, 'Find me a tycoon with pets']);
+  assert.ok(list[0].startedAt <= list[0].endedAt);
+  const old = (await api('GET', `/api/messages?role=scout&archive=${r1.archivedAs}`)).json;
+  assert.deepEqual(old.map((m) => m.text), ['Find me a tycoon with pets', 'Found three tycoon ideas']);
+  assert.equal((await api('GET', '/api/messages?role=scout&archive=nope')).status, 400);
+  // a second reset archives only what was said since
+  await api('POST', '/api/messages', { role: 'scout', text: 'Now something about robots' });
+  const r2 = (await api('POST', '/api/messages/scout/reset')).json;
+  assert.notEqual(r2.archivedAs, r1.archivedAs);
+  assert.equal((await api('GET', '/api/threads/scout/archives')).json.length, 2);
+  assert.equal((await api('POST', '/api/messages/builder/reset')).json.archivedAs, null); // nothing to archive
+  // thread summaries only look at the current chat
+  const th = (await api('GET', '/api/threads')).json.find((x) => x.role === 'scout');
+  assert.equal(th.last.text, 'New conversation');
+  // palette search covers current and archived chats, matches literally, ignores system lines
+  const hit = (await api('GET', '/api/messages/search?q=tycoon')).json;
+  assert.deepEqual(hit.map((x) => x.text).sort(), ['Find me a tycoon with pets', 'Found three tycoon ideas']);
+  assert.ok(hit.every((x) => x.role === 'scout' && x.archive === r1.archivedAs && x.snippet.toLowerCase().includes('tycoon')));
+  assert.equal((await api('GET', '/api/messages/search?q=Robots')).json.length, 1);
+  assert.deepEqual((await api('GET', '/api/messages/search?q=%25')).json, []); // a percent sign is not a wildcard
+  assert.deepEqual((await api('GET', '/api/messages/search?q=a')).json, []);
+  assert.deepEqual((await api('GET', '/api/messages/search?q=New%20conversation')).json, []);
+  await s.close();
+});
+
+test('publish gate: two steps, typed slug, expiry, single use, owner only', async () => {
+  let clock = Date.parse('2026-10-24T10:00:00Z');
+  const { s, api, agent } = await boot({ now: () => clock });
+  const gate = (slug = 'space-agency') => ({
+    get: () => api('GET', `/api/games/${slug}/gate`),
+    start: (action) => api('POST', `/api/games/${slug}/gate/start`, { action }),
+    confirm: (challengeId, typed) => api('POST', `/api/games/${slug}/gate/confirm`, { challengeId, typed }),
+  });
+  const g = gate();
+  // everything is owner only, agents included in reads
+  for (const [m, u, b] of [['GET', '/gate'], ['POST', '/gate/start', { action: 'live' }], ['POST', '/gate/confirm', { challengeId: 'c_x', typed: 'space-agency' }],
+    ['POST', '/gate/checklist', { id: 'phone', done: true }], ['POST', '/ad-note', { note: 'x' }]]) {
+    const r = await agent(m, `/api/games/space-agency${u}`, b);
+    assert.equal(r.status, 403, `${m} ${u}`);
+  }
+  // not ready: nothing to start
+  assert.equal((await g.start('live')).status, 409);
+  assert.equal((await g.start('public')).status, 409);
+  assert.equal((await g.start('bogus')).status, 400);
+  // walk the game to ready through stage requests
+  for (const st of ['balanced', 'art', 'ready']) {
+    const r = (await api('POST', '/api/games/space-agency/stage-requests', { toStage: st, evidence: 'e', role: 'producer' })).json;
+    await api('POST', `/api/stage-requests/${r.id}/decide`, { state: 'approved' });
+  }
+  // step 1 does nothing by itself
+  const c = (await g.start('live')).json;
+  assert.match(c.challengeId, /^c_[0-9a-f]{12}$/);
+  assert.equal(c.expiresAt, new Date(clock + 2 * 60000).toISOString());
+  assert.equal((await api('GET', '/api/games')).json[0].stage, 'ready');
+  // step 2 needs the exact slug
+  for (const typed of ['', 'Space-Agency', 'space-agency ', undefined]) { // 4 wrong tries: a 5th would burn the challenge
+    assert.equal((await g.confirm(c.challengeId, typed)).status, 400, `typed ${JSON.stringify(typed)}`);
+  }
+  assert.equal((await g.confirm('c_000000000000', 'space-agency')).status, 404);
+  assert.equal((await gate('kitchen-rush').confirm(c.challengeId, 'kitchen-rush')).status, 404); // other game, other slug: not found
+  assert.equal((await api('GET', '/api/games')).json[0].stage, 'ready');
+  // an expired challenge is refused, even with the right slug
+  clock += 2 * 60000 + 1;
+  const late = await g.confirm(c.challengeId, 'space-agency');
+  assert.equal(late.status, 410);
+  assert.equal((await api('GET', '/api/games')).json[0].stage, 'ready');
+  assert.equal((await g.confirm(c.challengeId, 'space-agency')).status, 404); // and it is gone
+  // too many wrong tries burn the challenge
+  const c2 = (await g.start('live')).json;
+  for (let i = 0; i < 5; i++) await g.confirm(c2.challengeId, 'nope');
+  assert.equal((await g.confirm(c2.challengeId, 'space-agency')).status, 404);
+  // the right slug applies it once
+  const c3 = (await g.start('live')).json;
+  const ok = await g.confirm(c3.challengeId, 'space-agency');
+  assert.deepEqual([ok.status, ok.json.action, ok.json.game.stage], [200, 'live', 'live']);
+  assert.equal((await g.confirm(c3.challengeId, 'space-agency')).status, 404); // single use
+  assert.ok((await api('GET', '/api/messages?role=lead')).json.some((m) => /is live \(confirmed by the owner at the publish gate\)/.test(m.text)));
+  assert.equal((await g.start('live')).status, 409); // already live
+  // public flag: two steps again, sets the time
+  assert.equal((await api('GET', '/api/games')).json[0].isPublic, false);
+  const p = (await g.start('public')).json;
+  assert.equal((await g.confirm(p.challengeId, 'wrong')).status, 400);
+  const pub = (await g.confirm(p.challengeId, 'space-agency')).json;
+  assert.deepEqual([pub.action, pub.game.isPublic, pub.game.publicSinceUtc], ['public', true, new Date(clock).toISOString()]);
+  // checklist and the advisory ad note
+  let view = (await g.get()).json;
+  assert.deepEqual(view.checklist.map((i) => [i.id, i.done]), [['phone', false], ['store-page', false], ['policy', false]]);
+  assert.equal(view.isPublic, true);
+  view = (await api('POST', '/api/games/space-agency/gate/checklist', { id: 'phone', done: true })).json;
+  assert.equal(view.checklist.find((i) => i.id === 'phone').done, true);
+  assert.equal((await api('POST', '/api/games/space-agency/gate/checklist', { id: 'nope', done: true })).status, 400);
+  assert.equal((await api('POST', '/api/games/space-agency/gate/checklist', { id: 'phone', done: 'yes' })).status, 400);
+  assert.equal((await api('POST', '/api/games/space-agency/ad-note', { note: '' })).status, 400);
+  await api('POST', '/api/games/space-agency/ad-note', { note: 'Maybe 500 Robux next week' });
+  const notes = (await api('POST', '/api/games/space-agency/ad-note', { note: 'Wait for D1 data' })).json.adNotes;
+  assert.deepEqual(notes.map((n) => n.note), ['Wait for D1 data', 'Maybe 500 Robux next week']);
+  assert.equal((await g.get()).json.adNotes.length, 2);
+  // the gate data stays off the game row
+  assert.equal('gateData' in (await api('GET', '/api/games')).json[0], false);
+  await s.close();
+});
+
+// ----- settings, Open Cloud, background refresh -----
+const STATS_DAYS = {
+  '2026-10-22': { date: '2026-10-22', stats: { uniqueNew: 100, uniqueReturning: 20, joins: 140, payers: 4, sessions: { new: { count: 100, seconds: 12000, hist: [30, 40, 20, 10, 0, 0] }, returning: { count: 20, seconds: 6000 } } } },
+  '2026-10-23': { date: '2026-10-23', stats: { uniqueNew: 80, uniqueReturning: 40, joins: 120, payers: 2, returningByAge: { 1: 14 }, sessions: { new: { count: 80, seconds: 9000 }, returning: { count: 40, seconds: 12000 } } } },
+};
+const liveRecord = (clock) => ({ at: Math.floor(clock / 1000), servers: { a: { at: Math.floor(clock / 1000), playing: 12, peak: 15, fps: 52, ping: 90, version: 'v7' } } });
+const OC_KEY = 'oc-test-key-0123456789abcdef';
+
+test('settings: marketEveryHours validation; openCloud is write-only and never echoed', async () => {
+  const { s, api, agent, base, dir } = await boot();
+  assert.equal((await api('GET', '/api/state')).json.settings.marketEveryHours, 6);
+  for (const v of [-1, 49, 1.5, 'x', null]) assert.equal((await api('POST', '/api/settings', { key: 'marketEveryHours', value: v })).status, 400, String(v));
+  assert.equal((await api('POST', '/api/settings', { key: 'marketEveryHours', value: 0 })).status, 200);
+  assert.equal((await api('GET', '/api/settings')).json.marketEveryHours, 0);
+  // openCloud
+  assert.deepEqual((await api('GET', '/api/settings')).json.openCloud, { configured: false });
+  const oc = (value) => api('POST', '/api/settings', { key: 'openCloud', value });
+  assert.equal((await oc('nope')).status, 400);
+  assert.equal((await oc({ apiKey: 'short', universeId: '123' })).status, 400);
+  assert.equal((await oc({ apiKey: 'has a space in the key 12345', universeId: '123' })).status, 400);
+  assert.equal((await oc({ apiKey: OC_KEY, universeId: 'abc' })).status, 400);
+  assert.equal((await agent('POST', '/api/settings', { key: 'openCloud', value: { apiKey: OC_KEY, universeId: '123' } })).status, 403);
+  assert.equal((await api('GET', '/api/state')).json.settings.openCloud.configured, false);
+  const ev = await fetch(`${base}/api/events?token=${s.ownerToken}`);
+  let streamed = '';
+  const reader = ev.body.getReader();
+  const dec = new TextDecoder();
+  (async () => { try { for (;;) { const { value, done } = await reader.read(); if (done) break; streamed += dec.decode(value); } } catch { /* closed */ } })();
+  const saved = await oc({ apiKey: OC_KEY, universeId: '777' });
+  assert.deepEqual([saved.status, saved.json], [200, { key: 'openCloud', value: { configured: true } }]);
+  assert.equal(fs.existsSync(path.join(dir, 'opencloud.json')), true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'opencloud.json'), 'utf8')).apiKey, OC_KEY);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(dir, 'opencloud.json')).mode & 0o777, 0o600);
+  assert.equal((await api('GET', '/api/games')).json[0].universeId, '777'); // the first game without one claims it
+  await sleep(150);
+  const dumps = [
+    JSON.stringify((await api('GET', '/api/state')).json), JSON.stringify((await agent('GET', '/api/state')).json), JSON.stringify((await api('GET', '/api/settings')).json),
+    JSON.stringify((await api('GET', '/api/games')).json), JSON.stringify((await api('GET', '/api/games/space-agency/live')).json), streamed,
+    JSON.stringify(saved.json), JSON.stringify((await api('GET', '/api/tasks')).json), await (await fetch(`${base}/`)).text(),
+  ];
+  for (const d of dumps) assert.ok(!d.includes(OC_KEY), 'the Open Cloud key leaked');
+  assert.equal((await api('GET', '/api/state')).json.settings.openCloud.configured, true);
+  assert.ok(streamed.includes('"configured":true'));
+  assert.equal((await fetch(`${base}/media/opencloud.json`)).status, 404);
+  assert.equal((await fetch(`${base}/static/../opencloud.json`)).status, 404);
+  // clearing it removes the file
+  assert.deepEqual((await oc(null)).json.value, { configured: false });
+  assert.equal(fs.existsSync(path.join(dir, 'opencloud.json')), false);
+  await reader.cancel();
+  await s.close();
+});
+
+test('live telemetry: fetcher with fake data, derived metrics, errors never show the key', async () => {
+  let clock = Date.parse('2026-10-24T09:30:00Z');
+  const calls = [];
+  const { s, api } = await boot({
+    now: () => clock,
+    fetchLive: async () => { throw new Error('game is private'); }, // the public API cannot see a private game
+    fetchLiveStats: async (a) => { calls.push(a); return { live: liveRecord(clock), days: STATS_DAYS }; },
+  });
+  // nothing configured: empty view, refresh asks for a universe id
+  let v = (await api('GET', '/api/games/space-agency/live')).json;
+  assert.deepEqual([v.live, v.days, v.stats.hasData, v.stats.empty], [null, [], false, { noDays: true, noLive: true }]);
+  assert.equal((await api('POST', '/api/games/space-agency/live/refresh')).status, 400);
+  await api('POST', '/api/settings', { key: 'openCloud', value: { apiKey: OC_KEY, universeId: '555' } });
+  const r = await api('POST', '/api/games/space-agency/live/refresh');
+  assert.equal(r.status, 200);
+  assert.equal(calls.length, 1);
+  assert.deepEqual([calls[0].apiKey, calls[0].universeId, calls[0].dates.length, calls[0].dates[0]], [OC_KEY, '555', 14, '2026-10-24']);
+  assert.deepEqual(r.json.errors, ['Roblox live numbers failed: game is private']); // the public step failed, Open Cloud worked
+  assert.equal(r.json.live.servers.a.playing, 12);
+  assert.deepEqual(r.json.days.map((d) => d.date), ['2026-10-22', '2026-10-23']);
+  assert.equal(r.json.stats.live.playing, 12);
+  assert.equal(r.json.stats.live.worstPingMs, 90);
+  assert.equal(r.json.metrics.d1, 14); // derived from the day aggregates: 14 of the 100 new players came back
+  assert.equal(r.json.metrics.payingPct, 2.5); // 6 payers over 240 daily players
+  assert.equal(r.json.stats.hasData, true);
+  // a manual number still fills what the game does not report; derived numbers win when present
+  await api('POST', '/api/games/space-agency/metrics', { key: 'd1', value: 5 });
+  await api('POST', '/api/games/space-agency/metrics', { key: 'firstMinute', value: 40 });
+  v = (await api('GET', '/api/games/space-agency/live')).json;
+  assert.equal(v.metrics.d1, 14);
+  assert.equal(v.metrics.firstMinute, 16.7); // derived (30 of 180 first sessions under a minute) beats the manual 40
+  // stored, so the view survives a restart without calling the fetcher again
+  assert.equal(calls.length, 1);
+  assert.equal(s.db.prepare("SELECT COUNT(*) n FROM game_stats WHERE game='space-agency'").get().n, 3);
+  // errors carry no key and give a 502 when nothing worked
+  const failing = await boot({
+    fetchLive: async () => { throw new Error('private'); },
+    fetchLiveStats: async ({ apiKey }) => { throw new Error(`HTTP 403 for key ${apiKey}`); },
+  });
+  await failing.api('POST', '/api/settings', { key: 'openCloud', value: { apiKey: OC_KEY, universeId: '555' } });
+  const bad = await failing.api('POST', '/api/games/space-agency/live/refresh');
+  assert.equal(bad.status, 502);
+  assert.ok(!JSON.stringify(bad.json).includes(OC_KEY));
+  assert.match(bad.json.error, /Open Cloud stats failed: HTTP 403 for key \[key\]/);
+  await failing.s.close();
+  await s.close();
+});
+
+test('Open Cloud fetcher reads HQStats entries with the key header and tolerates missing days', async () => {
+  const { realFetchLiveStats } = await import('../server.mjs');
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    seen.push([String(url), opts.headers['x-api-key']]);
+    const key = new URL(url).searchParams.get('entryKey');
+    if (key === 'live') return new Response(JSON.stringify({ at: 1, servers: {} }), { status: 200 });
+    if (key === 'day-2026-10-23') return new Response(JSON.stringify(STATS_DAYS['2026-10-23']), { status: 200 });
+    return new Response('{"error":"NOT_FOUND"}', { status: 404 });
+  };
+  try {
+    const got = await realFetchLiveStats({ apiKey: OC_KEY, universeId: '555', dates: ['2026-10-24', '2026-10-23'] });
+    assert.deepEqual(got.live, { at: 1, servers: {} });
+    assert.equal(got.days['2026-10-24'], null);
+    assert.equal(got.days['2026-10-23'].stats.uniqueNew, 80);
+    assert.equal(seen.length, 3);
+    assert.ok(seen.every(([, k]) => k === OC_KEY));
+    const u = new URL(seen[0][0]);
+    assert.deepEqual([u.origin, u.pathname, u.searchParams.get('datastoreName')], ['https://apis.roblox.com', '/datastores/v1/universes/555/standard-datastores/datastore/entries/entry', 'HQStats']);
+    assert.deepEqual(seen.map(([x]) => new URL(x).searchParams.get('entryKey')), ['day-2026-10-24', 'day-2026-10-23', 'live']);
+    // a refused key is a clear error that never contains the key
+    globalThis.fetch = async () => new Response('{}', { status: 403 });
+    await assert.rejects(realFetchLiveStats({ apiKey: OC_KEY, universeId: '555', dates: ['2026-10-24'] }), (e) => /refused the key \(HTTP 403\)/.test(e.message) && !e.message.includes(OC_KEY));
+    globalThis.fetch = async () => new Response('oops', { status: 500 });
+    await assert.rejects(realFetchLiveStats({ apiKey: OC_KEY, universeId: '555', dates: [] }), /HTTP 500/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('background refresh: market every marketEveryHours, live numbers every 15 minutes, injectable clock', async () => {
+  let clock = Date.parse('2026-10-24T00:00:00Z');
+  let chartCalls = 0; let failCharts = false; let liveCalls = 0;
+  const { s, api } = await boot({
+    now: () => clock,
+    fetchCharts: async () => { chartCalls++; if (failCharts) throw new Error('down'); return { fetchedAt: new Date(clock).toISOString(), sorts: [{ id: 'top', name: 'Top', games: [{ universeId: 1, name: 'A', playerCount: 10, up: 1, down: 1, genre: '', sponsored: false }] }] }; },
+    fetchers: { details: async () => ({}) },
+    fetchLive: async () => { throw new Error('private'); },
+    fetchLiveStats: async () => { liveCalls++; return { live: liveRecord(clock), days: {} }; },
+  });
+  const tick = () => s.runTimers();
+  await tick();
+  assert.equal(chartCalls, 1); // first run: nothing fetched yet, so refresh
+  assert.equal((await api('GET', '/api/market')).json.latest.sorts.length, 1);
+  await tick();
+  assert.equal(chartCalls, 1); // not due
+  clock += 5 * 3600000 + 59 * 60000;
+  await tick();
+  assert.equal(chartCalls, 1); // 6 h minus a minute
+  clock += 2 * 60000;
+  await tick();
+  assert.equal(chartCalls, 2); // due
+  // a failing source does not throw, and is not retried until the next window
+  failCharts = true;
+  clock += 7 * 3600000;
+  await tick();
+  assert.equal(chartCalls, 3);
+  await tick();
+  assert.equal(chartCalls, 3);
+  failCharts = false;
+  // the interval is a setting; 0 turns it off
+  await api('POST', '/api/settings', { key: 'marketEveryHours', value: 1 });
+  clock += 61 * 60000;
+  await tick();
+  assert.equal(chartCalls, 4);
+  await api('POST', '/api/settings', { key: 'marketEveryHours', value: 0 });
+  clock += 48 * 3600000;
+  await tick();
+  assert.equal(chartCalls, 4);
+  // live numbers only when Open Cloud is configured, then every 15 minutes
+  assert.equal(liveCalls, 0);
+  await api('POST', '/api/settings', { key: 'openCloud', value: { apiKey: OC_KEY, universeId: '42' } });
+  await tick();
+  assert.equal(liveCalls, 1);
+  clock += 14 * 60000;
+  await tick();
+  assert.equal(liveCalls, 1);
+  clock += 2 * 60000;
+  await tick();
+  assert.equal(liveCalls, 2);
+  assert.equal((await api('GET', '/api/games/space-agency/live')).json.live.servers.a.playing, 12);
+  await s.close();
+});
+
+test('market titles route analyses the titles on the latest charts', async () => {
+  const g = (id, name) => ({ universeId: id, name, playerCount: 100, up: 1, down: 1, genre: '', sponsored: false });
+  const { s, api } = await boot({
+    fetchCharts: async () => ({ fetchedAt: '2026-10-24T00:00:00.000Z', sorts: [
+      { id: 'a', name: 'A', games: [g(1, 'Build a Boat'), g(2, 'Escape Tsunami'), g(3, 'Pet Simulator')] },
+      { id: 'b', name: 'B', games: [g(1, 'Build a Boat'), g(4, 'Steal a Brainrot')] },
+    ] }),
+    fetchers: { details: async () => ({}) },
+  });
+  const empty = (await api('GET', '/api/market/titles')).json;
+  assert.equal(empty.sample, 0);
+  await api('POST', '/api/market/refresh');
+  const t = (await api('GET', '/api/market/titles')).json;
+  assert.equal(t.sample, 4); // the same game on two charts counts once
+  assert.equal(t.verbArticleNoun.count, 2); // Build a Boat, Steal a Brainrot
+  assert.ok(t.commonFirstWords.some((w) => w.word === 'Build'));
   await s.close();
 });

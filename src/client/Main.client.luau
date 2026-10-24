@@ -7,6 +7,7 @@ local StarterGui = game:GetService("StarterGui")
 
 local Tuning = require(ReplicatedStorage.Shared.Config.Tuning)
 local App = require(script.Parent.App)
+local DeviceReport = require(script.Parent.DeviceReport)
 local UI = script.Parent.UI
 local Advisor = require(UI.Advisor)
 local Hud = require(UI.Hud)
@@ -30,6 +31,7 @@ task.delay(1, function()
 end)
 
 Map.start()
+DeviceReport.start()
 local canvas = Hud.start()
 Panels.start(canvas)
 Wizard.start(canvas)

@@ -1,11 +1,12 @@
 // Market: 1 charts, 2 corpus, 3 benchmarks, 4 breakouts.
 import { h, ic, store, api, act, btn, empty, pageHead, ago, fmtTime, notify, toast } from './core.js';
-import { chip, segmented, num } from './games.js';
+import { chip, segmented, num, tile, hbars } from './charts.js';
+import { openLightbox } from './lightbox.js';
 
 let step = 'charts';
 let sel = '';
 let refreshing = false;
-const data = { market: undefined, corpus: undefined, benchmarks: undefined, breakouts: undefined };
+const data = { market: undefined, corpus: undefined, benchmarks: undefined, breakouts: undefined, titles: undefined };
 const busy = new Set();
 
 const rowsOf = (r, ...keys) => (Array.isArray(r) ? r : keys.map((k) => r?.[k]).find(Array.isArray) || []);
@@ -20,6 +21,7 @@ async function load(key, path, shape) {
 const loaders = {
   market: () => load('market', '/api/market', (r) => (r && (r.latest || r.sorts) ? r : null)),
   corpus: () => load('corpus', '/api/market/corpus', (r) => rowsOf(r, 'games', 'rows')),
+  titles: () => load('titles', '/api/market/titles', (r) => (r && typeof r.sample === 'number' ? r : null)),
   benchmarks: () => load('benchmarks', '/api/market/benchmarks', (r) => rowsOf(r, 'rows', 'benchmarks')),
   breakouts: () => load('breakouts', '/api/market/breakouts', (r) => ({ rows: rowsOf(r, 'rows', 'breakouts'), at: r?.at || null })),
 };
@@ -28,7 +30,7 @@ const need = (key) => { if (data[key] === undefined) { loaders[key](); return tr
 async function refresh() {
   refreshing = true; notify();
   const r = await act(() => api('POST', '/api/market/refresh'), 'Charts refreshed');
-  if (r) await Promise.all([loaders.market(), loaders.breakouts()]);
+  if (r) { data.titles = undefined; await Promise.all([loaders.market(), loaders.breakouts(), loaders.titles()]); }
   refreshing = false; notify();
 }
 
@@ -49,7 +51,7 @@ function delta(v, { pct = false, flip = false } = {}) {
   const body = (n > 0 ? '+' : '') + (pct ? n.toFixed(1) + '%' : n.toLocaleString());
   return h('span', { class: good ? 'pg-up' : 'pg-down' }, body);
 }
-const th = (cols) => h('thead', {}, h('tr', {}, cols.map(([c, numeric]) => h('th', { class: numeric ? 'num' : '', scope: 'col' }, c))));
+const th = (cols) => h('thead', {}, h('tr', {}, cols.map(([c, numeric, help]) => h('th', { class: numeric ? 'num' : '', scope: 'col', title: help || null }, c, help ? h('span', { class: 'pg-help' }, help) : null))));
 const likeText = (r) => (r.likePct != null ? Math.round(r.likePct <= 1 ? r.likePct * 100 : r.likePct) + '%' : r.up != null && r.up + r.down ? Math.round((r.up / (r.up + r.down)) * 100) + '%' : 'n/a');
 
 // ---- 1 charts ----
@@ -116,14 +118,38 @@ function corpusStep() {
   return h('div', { class: 'stack' },
     h('p', { class: 'pg-note' }, 'Games we study as references: what they look like and how they present themselves. Add any game by its universe id (the number from its Roblox page API or creator page).'),
     h('div', { class: 'row gap wrap' }, input, btn('Add game', add, { kind: 'primary', icon: 'plus' })),
-    list.length ? h('div', { class: 'pg-corpus' }, list.map((g) => h('article', { class: 'pg-game' },
-      safe(g.thumbnail) ? h('img', { class: 'thumb', src: safe(g.thumbnail), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : h('div', { class: 'thumb' }),
+    list.length ? h('div', { class: 'pg-corpus' }, list.map((g) => {
+      const shots = [...new Set([...(Array.isArray(g.thumbnails) ? g.thumbnails : []), g.thumbnail])].filter((u) => safe(u));
+      return h('article', { class: 'pg-game' },
+      shots.length ? h('img', { class: 'thumb', src: shots[0], alt: g.name ? g.name + ' screenshot' : '', loading: 'lazy', referrerpolicy: 'no-referrer', style: 'cursor:zoom-in', title: 'Click to enlarge' + (shots.length > 1 ? ` (${shots.length} images)` : ''),
+        onclick: () => openLightbox(shots.map((u, i) => ({ src: u, title: `${g.name || g.universeId} ${i + 1}` })), 0) }) : h('div', { class: 'thumb' }),
       h('div', { class: 'info' },
         h('div', { class: 'row1' }, safe(g.icon) ? h('img', { class: 'icon', src: safe(g.icon), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : h('span', { class: 'icon' }), h('span', { class: 'nm', title: g.name }, g.name || 'Game ' + g.universeId)),
         h('span', { class: 'muted mono' }, g.universeId),
         h('div', { class: 'row gap' },
           btn('Ask scout', () => askScout(g.name || g.universeId, g.universeId), { kind: 'sm' }),
-          btn('Remove', async () => { if (await act(() => api('DELETE', `/api/market/corpus/${encodeURIComponent(g.universeId)}`), 'Removed')) await loaders.corpus(); }, { kind: 'sm', icon: 'trash' })))))) : empty('No reference games yet. Add one above.'));
+          btn('Remove', async () => { if (await act(() => api('DELETE', `/api/market/corpus/${encodeURIComponent(g.universeId)}`), 'Removed')) await loaders.corpus(); }, { kind: 'sm', icon: 'trash' }))));
+    })) : empty('No reference games yet. Add one above.'));
+}
+
+// ---- title analysis ----
+function titlesStep() {
+  if (need('titles')) return empty('Reading the titles');
+  const t = data.titles;
+  if (!t) return empty('No title analysis yet. Refresh the charts first.');
+  const pc = (x) => (x ? `${x.pct}% (${x.count})` : null);
+  return h('div', { class: 'stack' },
+    h('p', { class: 'pg-note' }, `How the games on the charts are named, across ${num(t.sample)} titles in the latest snapshot. Use it to name ours like the winners, not to copy them.`),
+    h('div', { class: 'pg-tiles' },
+      tile('Titles read', num(t.sample)), tile('Verb, article, noun', pc(t.verbArticleNoun), 'like "Steal a Brainrot"'),
+      tile('Verb first, no article', pc(t.verbInitialNoArticle), 'like "Grow Garden"'), tile('With an emoji or symbol', pc(t.withEmoji)),
+      tile('Words per title', t.words?.mean != null ? String(t.words.mean) : null, 'average'), tile('Characters per title', t.length?.mean != null ? String(t.length.mean) : null, 'average')),
+    h('div', { class: 'pg-grid2' },
+      hbars('Words in the title', (t.words?.histogram || []).map((r) => ({ label: r.words + (r.words === 1 ? ' word' : ' words'), value: r.count })), { note: 'No titles.' }),
+      hbars('Title length (characters)', (t.length?.buckets || []).map((r) => ({ label: r.label, value: r.count })), { note: 'No titles.' }),
+      hbars('Most common first words', (t.commonFirstWords || []).map((r) => ({ label: r.word, value: r.count })), { note: 'No titles.' })),
+    h('div', { class: 'pg-foot' },
+      h('p', { class: 'pg-note' }, 'A title counts as verb-first when its first word is an action word from a built-in list, so treat the shares as a guide, not an exact count. Emoji and symbols are counted when the title contains any.')));
 }
 
 // ---- 3 benchmarks ----
@@ -150,7 +176,7 @@ function breakStep() {
     h('p', { class: 'pg-note' }, 'Young games that are growing fast: under 300,000 visits, over 500 players right now, and new or first seen in the last 7 days. Players per 1K visits shows how sticky the game is (higher means players stay). Growth is the latest player count divided by the earliest one we saw.'),
     b.at ? h('p', { class: 'muted' }, 'Computed ' + when(b.at)) : null,
     b.rows.length ? h('div', { class: 'pg-scroll' }, h('table', { class: 'pg-tbl' },
-      th([['Game'], ['Playing', true], ['Peak', true], ['Visits', true], ['Age (days)', true], ['Players per 1K visits', true], ['Growth', true], ['Likes', true], ['Genre'], ['First seen'], ['']]),
+      th([['Game'], ['Playing', true, 'players now'], ['Peak', true, 'highest in 7 days'], ['Visits', true, 'lifetime'], ['Age (days)', true, 'since created'], ['Per 1K visits', true, 'players per 1K visits: high means young and pushed'], ['Growth', true, 'since first seen'], ['Likes', true], ['Genre'], ['First seen'], ['']]),
       h('tbody', {}, b.rows.map((r) => h('tr', {},
         h('td', { class: 'wrapc' }, r.name), h('td', { class: 'num' }, num(r.playing)), h('td', { class: 'num' }, num(r.peak)), h('td', { class: 'num' }, num(r.visits)),
         h('td', { class: 'num' }, r.ageDays ?? 'n/a'), h('td', { class: 'num' }, r.perThousandVisits != null ? Number(r.perThousandVisits).toFixed(1) : 'n/a'),
@@ -162,11 +188,11 @@ function breakStep() {
 export function render() {
   if (step !== 'breakouts') need('breakouts');
   if (step !== 'charts') need('market');
-  const items = [['charts', '1 · Charts'], ['corpus', '2 · Corpus'], ['benchmarks', '3 · Benchmarks'], ['breakouts', '4 · Breakouts']];
+  const items = [['charts', '1 · Charts'], ['corpus', '2 · Corpus'], ['titles', '3 · Titles'], ['benchmarks', '4 · Benchmarks'], ['breakouts', '5 · Breakouts']];
   const fetched = data.market?.latest?.fetchedAt;
   const sub = `Charts ${fetched ? when(fetched) : 'not fetched yet'} · breakouts ${data.breakouts?.at ? when(data.breakouts.at) : 'not computed yet'}. All public Roblox data.`;
   return h('div', { class: 'page' },
     pageHead('Market', sub, btn(refreshing ? 'Refreshing' : 'Refresh', refresh, { icon: 'refresh', disabled: refreshing })),
     segmented(items, step, (id) => { step = id; notify(); }),
-    step === 'charts' ? chartsStep() : step === 'corpus' ? corpusStep() : step === 'benchmarks' ? benchStep() : breakStep());
+    step === 'charts' ? chartsStep() : step === 'corpus' ? corpusStep() : step === 'titles' ? titlesStep() : step === 'benchmarks' ? benchStep() : breakStep());
 }

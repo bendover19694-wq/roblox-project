@@ -102,7 +102,7 @@ export async function loadState() {
   if (s.studio) store.studio = s.studio;
   if (s.engines) store.engines = s.engines;
   if (s.lanes) store.lanes = s.lanes;
-  if (Array.isArray(s.stageRequests)) store.stageRequests = s.stageRequests.filter((r) => r.state === 'open');
+  if (Array.isArray(s.stageRequests)) store.stageRequests = s.stageRequests.filter((r) => r.state === 'open' || r.state === 'held');
   store.loaded = true;
   notify();
   loadThreads();
@@ -135,7 +135,7 @@ function dispatch(type, p) {
     refreshSoon();
   } else if (type === 'stage') {
     store.stageRequests = store.stageRequests.filter((r) => r.id !== p?.id);
-    if (p?.state === 'open') store.stageRequests.unshift(p);
+    if (p?.state === 'open' || p?.state === 'held') store.stageRequests.unshift(p);
   }
   else if (type === 'message') {
     if (p && store.messages[p.role] && !store.messages[p.role].some((m) => m.id === p.id)) store.messages[p.role].push(p);

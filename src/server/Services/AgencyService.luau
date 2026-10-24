@@ -20,6 +20,7 @@ local Rockets = require(ReplicatedStorage.Shared.Config.Rockets)
 local Tuning = require(ReplicatedStorage.Shared.Config.Tuning)
 local DataService = require(script.Parent.DataService)
 local Progression = require(script.Parent.Progression)
+local StatsService = require(script.Parent.StatsService)
 local Telemetry = require(script.Parent.Telemetry)
 
 local AgencyService = {}
@@ -481,6 +482,7 @@ local function processReceipt(info: any): Enum.ProductPurchaseDecision
 		end
 		Receipts.record(p.receipts, key, os.time())
 		Telemetry.custom(player, "ProductBought", info.CurrencySpent)
+		StatsService.robux(player, info.ProductId, info.CurrencySpent) -- read-only: aggregate Robux, grants nothing
 	end
 	if not DataService.save(player) then
 		-- The receipt is recorded in memory, so a retry in this server won't grant twice.
@@ -506,6 +508,7 @@ function AgencyService.start()
 		if action ~= "createAgency" and p.agency.name == "" then
 			return false, "Create your agency first"
 		end
+		StatsService.action(player, tostring(action)) -- read-only: remembers the last thing the player did
 		local ok, result, message = pcall(handler, player, p, ...)
 		if not ok then
 			warn("[AgencyService] action failed: ", action, result)

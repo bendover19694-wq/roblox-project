@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { velocity, computeBreakouts, fetchGameDetails, fetchIcons, fetchThumbnails, fetchCharts, loadBenchmarks } from '../market.mjs';
+import { velocity, computeBreakouts, fetchGameDetails, fetchIcons, fetchThumbnails, fetchCharts, loadBenchmarks, titleAnalysis } from '../market.mjs';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 const g = (universeId, name, playerCount, up = 90, down = 10) => ({ universeId, name, playerCount, up, down, genre: 'Action', sponsored: false });
@@ -110,7 +110,7 @@ test('fetchIcons and fetchThumbnails map universe ids to image urls', async () =
 
   const thumbs = fakeFetch(() => ({ data: [{ universeId: 1, thumbnails: [{ state: 'Completed', imageUrl: 'https://t/a.png' }, { state: 'Completed', imageUrl: 'https://t/b.png' }] }, { universeId: 2, thumbnails: [] }] }));
   assert.deepEqual(await fetchThumbnails([1, 2], thumbs.fetcher), { 1: 'https://t/a.png' });
-  assert.match(thumbs.calls[0], /multiget\/thumbnails\?universeIds=1,2&size=768x432&format=Png/);
+  assert.ok(thumbs.calls[0].includes('thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=1,2&countPerUniverse=3&defaults=true&size=768x432&format=Png&isCircular=false'), thumbs.calls[0]);
 });
 
 test('a failed request throws', async () => {
@@ -142,4 +142,39 @@ test('benchmarks.json: every row has a source and label, and cited repo files ex
   for (const need of ['first-action', 'first-reward', 'onboarding-grasp', 'second-goal', 'session-length', 'd1', 'd7', 'like-ratio', 'play-through', 'paying-share', 'arpdau', 'error-rate']) {
     assert.ok(ids.has(need), need);
   }
+});
+
+test('titleAnalysis: patterns, emoji, word counts, lengths, first words', () => {
+  const titles = [
+    'Steal a Brainrot', 'Grow a Garden', 'Escape Tsunami For Brainrots!', 'Fisch', 'Dress To Impress',
+    '99 Nights in the Forest', '🔥 Blade Ball', '[UPDATE] Murder Mystery 2', 'Catch Fish', 'Brookhaven 🏡RP',
+  ];
+  const a = titleAnalysis(titles);
+  assert.equal(a.sample, 10);
+  assert.deepEqual(a.verbArticleNoun, { count: 2, pct: 20 });
+  assert.deepEqual(a.verbInitialNoArticle, { count: 3, pct: 30 });
+  assert.deepEqual(a.withEmoji, { count: 3, pct: 30 });
+  assert.equal(a.words.mean, 2.8);
+  assert.deepEqual(a.words.histogram, [{ words: 1, count: 1 }, { words: 2, count: 3 }, { words: 3, count: 4 }, { words: 4, count: 1 }, { words: 5, count: 1 }]);
+  assert.equal(a.length.mean, 16.3);
+  assert.deepEqual(a.length.buckets, [
+    { label: '1 to 8', count: 1 }, { label: '9 to 14', count: 4 }, { label: '15 to 20', count: 2 },
+    { label: '21 to 30', count: 3 }, { label: '31+', count: 0 },
+  ]);
+  assert.equal(a.commonFirstWords.length, 10);
+  assert.deepEqual(a.commonFirstWords[0], { word: '99', count: 1 });
+});
+
+test('titleAnalysis: first words are ranked by count, and empty input is safe', () => {
+  const a = titleAnalysis(['Steal a Cat', 'steal a Dog', 'Steal Food', 'Grow a Tree', '', '  ', null]);
+  assert.equal(a.sample, 4);
+  assert.deepEqual(a.commonFirstWords[0], { word: 'Steal', count: 3 });
+  assert.deepEqual(a.verbArticleNoun, { count: 3, pct: 75 });
+  assert.deepEqual(a.verbInitialNoArticle, { count: 1, pct: 25 });
+  const none = titleAnalysis([]);
+  assert.equal(none.sample, 0);
+  assert.equal(none.verbArticleNoun.pct, null);
+  assert.equal(none.words.mean, null);
+  assert.deepEqual(none.commonFirstWords, []);
+  assert.equal(titleAnalysis(undefined).sample, 0);
 });

@@ -1,5 +1,5 @@
 // Ctrl K command palette: pages, roles, tasks, pitches, games, a few actions.
-import { h, ic, store, api, act, roleLabel, avatar, plain, gameName, go } from './core.js';
+import { h, ic, store, api, act, roleLabel, avatar, plain, gameName, go, ago } from './core.js';
 import { openTaskDrawer, newTaskModal } from './tasks.js';
 
 const PAGES = [['Home', 'home', 'home'], ['Lead', 'lead', 'lead'], ['Team', 'team', 'team'], ['Tasks', 'tasks', 'tasks'], ['Review', 'review', 'review'],
@@ -28,10 +28,10 @@ function filter(all, q) {
   const toks = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!toks.length) return all.filter((i) => ['Pages', 'Actions', 'Agents'].includes(i.g)).slice(0, 24);
   return all
-    .map((i) => ({ i, hay: (i.label + ' ' + i.sub).toLowerCase(), l: i.label.toLowerCase() }))
+    .map((i) => ({ i, hay: (i.g === 'Conversations' ? i.label : i.label + ' ' + i.sub).toLowerCase(), l: i.label.toLowerCase() }))
     .filter((x) => toks.every((t) => x.hay.includes(t)))
     .sort((a, b) => (b.l.startsWith(toks[0]) - a.l.startsWith(toks[0])))
-    .slice(0, 30).map((x) => x.i);
+    .map((x) => x.i).reduce((acc, i) => { if (i.g !== 'Conversations' || acc.conv < 8) acc.list.push(i); if (i.g === 'Conversations') acc.conv++; return acc; }, { list: [], conv: 0 }).list.slice(0, 30);
 }
 
 export function closePalette() { openState?.close(); }
@@ -39,10 +39,12 @@ export function closePalette() { openState?.close(); }
 export function openPalette() {
   if (openState) { openState.input.focus(); return; }
   const all = items();
+  let hits = []; // conversation matches from the server, past chats included
+  let timer = 0; let seq = 0;
   let shown = [];
   let sel = 0;
   const list = h('div', { class: 'pal-list', role: 'listbox', id: 'pal-list' });
-  const input = h('input', { class: 'pal-input', type: 'text', placeholder: 'Search pages, agents, tasks, pitches, games…', role: 'combobox', 'aria-expanded': 'true', 'aria-controls': 'pal-list', autocomplete: 'off', spellcheck: 'false' });
+  const input = h('input', { class: 'pal-input', type: 'text', placeholder: 'Search pages, agents, tasks, pitches, games, conversations…', role: 'combobox', 'aria-expanded': 'true', 'aria-controls': 'pal-list', autocomplete: 'off', spellcheck: 'false' });
   const root = document.getElementById('overlay');
 
   function close() {
@@ -52,7 +54,7 @@ export function openPalette() {
   }
   function run(i) { close(); setTimeout(() => i.run(), 0); }
   function paint() {
-    shown = filter(all, input.value);
+    shown = [...filter(all, input.value), ...hits];
     sel = Math.min(sel, Math.max(0, shown.length - 1));
     let last = '';
     list.replaceChildren(...(shown.length ? shown.flatMap((i, idx) => {
@@ -75,7 +77,21 @@ export function openPalette() {
     else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(0, sel - 1); mark(); }
     else if (e.key === 'Enter') { e.preventDefault(); if (shown[sel]) run(shown[sel]); }
   }
-  input.addEventListener('input', () => { sel = 0; paint(); });
+  function searchChats() {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2) { if (hits.length) { hits = []; paint(); } return; }
+    timer = setTimeout(async () => {
+      const mine = ++seq;
+      try {
+        const r = await api('GET', '/api/messages/search?q=' + encodeURIComponent(q));
+        if (mine !== seq || !openState) return;
+        hits = (Array.isArray(r) ? r : r.results || []).slice(0, 8).map((m) => ({ g: 'Conversations', label: plain(m.snippet || m.text).slice(0, 100), sub: `${roleLabel(m.role)} · ${m.from === 'owner' ? 'you' : 'agent'}${m.archive ? ' · past chat' : ''} · ${ago(m.createdAt)}`, role: m.role, run: () => go(m.role === 'lead' ? '#/lead' : '#/team/' + m.role) }));
+        paint();
+      } catch { /* older server: no message search */ }
+    }, 200);
+  }
+  input.addEventListener('input', () => { sel = 0; paint(); searchChats(); });
   const back = h('div', { class: 'backdrop top', onmousedown: (e) => { if (e.target === back) close(); } },
     h('div', { class: 'palette', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Search or jump to' },
       h('div', { class: 'pal-head' }, ic('search', 16), input, h('kbd', {}, 'Esc')), list,

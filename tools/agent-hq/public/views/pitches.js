@@ -1,6 +1,6 @@
 // Pitches: decision cards, compare side by side, owner ideas.
 import { h, store, api, act, btn, field, empty, pageHead, ago, upsert, openModal, notify, toast } from './core.js';
-import { chip, tile, segmented, num } from './games.js';
+import { chip, tile, segmented, num } from './charts.js';
 
 let tab = 'needs';
 const picked = new Set();
@@ -13,12 +13,27 @@ const TABS = [
   ['history', 'History', (p) => ['approved', 'declined', 'withdrawn'].includes(state(p))],
 ];
 
+export const FORMATS = ['Collect & upgrade', 'Steal & escape', 'Survive & extract', 'Build & defend', 'Find the hidden', 'Race & rank', 'Tycoon & expand', 'Guess & reveal', 'Clean & restore', 'Raise & evolve'];
 const arr = (x) => (Array.isArray(x) ? x : x ? [x] : []);
 const text = (x) => (x == null ? '' : typeof x === 'string' ? x : JSON.stringify(x));
 const pct = (v) => (v == null ? null : (v <= 1 ? Math.round(v * 100) : Math.round(v)) + '%');
 const g = (p) => (p.game && typeof p.game === 'object' ? p.game : {});
 const ev = (p) => (p.evidence && typeof p.evidence === 'object' ? p.evidence : { summary: text(p.evidence), links: [] });
 const bld = (p) => (p.building && typeof p.building === 'object' ? p.building : {});
+// Fields a pitch needs before it can be decided. The Scout has to fix the rest.
+function problems(p) {
+  if (Array.isArray(p.schemaErrors) && p.schemaErrors.length) return p.schemaErrors.map(String);
+  const miss = [];
+  if (!p.oneLiner) miss.push('one-liner');
+  if (!p.format) miss.push('game type');
+  if (!p.window) miss.push('window');
+  if (!p.edge) miss.push('how we are different');
+  if (!arr(p.competitors).length) miss.push('competitors');
+  if (!(g(p).howItPlays || p.coreLoop)) miss.push('how it plays');
+  if (!ev(p).summary && !arr(ev(p).links).length) miss.push('evidence');
+  if (!arr(p.risks).length) miss.push('risks');
+  return miss;
+}
 const best = (list, key) => list.map((c) => c[key]).filter((v) => v != null && !Number.isNaN(Number(v))).reduce((a, v) => (a == null || v > a ? v : a), null);
 
 function decide(p, body, okMsg) {
@@ -52,6 +67,8 @@ function editApprove(p) {
     ['goal10to15', 'Goal at 10 to 15 minutes', gm.goal10to15, 2000, true], ['monetization', 'How it makes money', gm.monetization, 2000, true],
     ['clipMoment', 'The clip moment', gm.clipMoment, 2000, true], ['iconIdea', 'Icon idea', gm.iconIdea, 2000, true],
   ];
+  const fmt = h('select', { class: 'select' }, [h('option', { value: '' }, 'Choose a game type'), ...[...new Set([...(p.format ? [p.format] : []), ...FORMATS])].map((f) => h('option', { value: f }, f))]);
+  fmt.value = p.format || '';
   const inputs = F.map(([k, label, v, max, multi]) => [k, multi ? h('textarea', { class: 'pg-input', rows: 3, maxlength: max, value: v || '' }) : h('input', { class: 'pg-input', maxlength: max, value: v || '' })]);
   let close;
   const form = h('form', { class: 'pg-form', onsubmit: async (e) => {
@@ -61,10 +78,12 @@ function editApprove(p) {
       const v = el.value.trim();
       if (['title', 'oneLiner', 'edge'].includes(k)) { if (v !== (p[k] || '')) edits[k] = v; } else if (v !== (gm[k] || '')) game[k] = v;
     });
+    if (fmt.value !== (p.format || '')) edits.format = fmt.value;
     if (JSON.stringify(game) !== JSON.stringify(gm)) edits.game = game;
     if (!(edits.title ?? p.title)) { toast('A pitch needs a title', 'error'); return; }
     if (await decide(p, { state: 'approved', edits }, 'Approved with your edits, the Lead will plan it')) close();
   } },
+  field('Game type', fmt),
   F.map(([k, label], i) => field(label, inputs[i][1])),
   h('div', { class: 'row gap end' }, btn('Approve with these edits', null, { kind: 'primary', icon: 'check' })));
   form.querySelector('button').type = 'submit';
@@ -90,32 +109,37 @@ function card(p) {
   const lk = best(cmp, 'likeRatio');
   const toneW = { early: 'ok', mid: 'warn', late: 'err' }[p.window];
   const checked = picked.has(p.id);
+  const miss = open ? problems(p) : [];
+  const custom = arr(b.gaps);
   return h('article', { class: 'pg-card pg-pitch', 'data-id': p.id },
     h('div', { class: 'head' },
       p.window ? chip(p.window + ' window', toneW) : null,
-      p.format ? chip(p.format) : null,
+      p.format ? chip(p.format, 'accent') : null,
       p.origin === 'owner' ? chip('your idea', 'accent') : p.origin === 'scout' ? chip('rising format') : null,
       chip(st, st === 'approved' ? 'ok' : st === 'declined' || st === 'withdrawn' ? 'err' : st === 'proposed' ? 'warn' : null),
       h('span', { class: 'muted push' }, ago(p.createdAt) + (ago(p.createdAt) === 'just now' ? '' : ' ago'))),
+    miss.length ? h('div', { class: 'pg-banner' }, h('strong', {}, 'This pitch cannot be decided yet. '), `It is missing: ${miss.join(', ')}. The Scout has to fix it; use Send to Scout.`) : null,
     h('h3', { class: 'title' }, p.title),
     p.oneLiner ? h('p', { class: 'one' }, p.oneLiner) : null,
     p.edge || comps.length ? h('div', { class: 'pg-kv' }, h('h4', {}, 'How we are different'),
       p.edge ? h('p', {}, p.edge) : null,
       comps.length ? h('div', { class: 'row gap wrap', style: 'margin-top:6px' }, comps.slice(0, 4).map((c) => chip('vs ' + c.name))) : null) : null,
     cmp.length || p.money || p.saturationCount != null ? h('div', { class: 'pg-tiles' },
-      tile('Top earning rank', p.money?.topEarningRank != null ? '#' + num(p.money.topEarningRank) : null),
+      tile('Money (top earning)', p.money?.topEarningRank != null ? '#' + num(p.money.topEarningRank) : null),
       tile('Top comparable playing', best(cmp, 'playing') != null ? num(best(cmp, 'playing')) : null),
       tile('Its likes', lk != null ? pct(lk) : null, '80% and up gets recommended', lk != null ? (lk >= (lk <= 1 ? 0.8 : 80) ? 'ok' : 'warn') : null),
-      tile('Upvotes per day', best(cmp, 'upvotesPerDay') != null ? num(best(cmp, 'upvotesPerDay')) : null),
+      tile('Growth (upvotes/day)', best(cmp, 'upvotesPerDay') != null ? num(best(cmp, 'upvotesPerDay')) : null),
       tile('Similar games on the charts', p.saturationCount != null ? num(p.saturationCount) : null)) : null,
     p.money?.verdict ? h('div', { class: 'pg-money' }, h('strong', {}, 'Money verdict. '), p.money.verdict, p.money.comparable ? h('span', { class: 'muted' }, ' Comparable: ' + p.money.comparable) : null) : null,
+    custom.length ? h('div', { class: 'pg-kv' }, h('h4', {}, 'Custom systems to build'), h('ul', { class: 'pg-bullets' }, custom.map((x) => h('li', {}, text(x))))) : null,
+    risks.length ? h('div', { class: 'pg-kv' }, h('h4', {}, 'Biggest risk'), h('p', {}, text(risks[0]))) : null,
     section(p.id, 'The game', null,
       kv('How it plays', gm.howItPlays || p.coreLoop), kv('First 60 seconds', gm.first60s), kv('Goal at 10 to 15 minutes', gm.goal10to15), kv('Minutes 10 to 20', gm.minutes10to20),
       kv('How it makes money', gm.monetization), kv('The clip moment', gm.clipMoment), kv('Icon idea', gm.iconIdea),
       arr(gm.modules).length ? h('div', { class: 'pg-kv' }, h('h4', {}, 'Template modules'), h('div', { class: 'row gap wrap' }, arr(gm.modules).map((m) => chip(m)))) : null,
       !(gm.howItPlays || p.coreLoop) ? h('p', { class: 'muted' }, 'The Scout has not filled this in yet.') : null),
-    section(p.id, 'Competition', comps.length + cmp.length,
-      comps.map((c) => h('div', { class: 'pg-kv' }, h('h4', {}, c.name), c.whatItIs ? h('p', {}, c.whatItIs) : null, c.gap ? h('p', { class: 'muted' }, 'Gap: ' + c.gap) : null)),
+    section(p.id, 'Closest competitors', comps.length + cmp.length,
+      comps.map((c) => h('div', { class: 'pg-kv' }, h('h4', {}, c.name), c.whatItIs ? h('p', {}, c.whatItIs) : null, c.gap ? h('p', { class: 'muted' }, 'Their gap: ' + c.gap) : null)),
       cmp.length ? h('div', { class: 'pg-scroll' }, h('table', { class: 'pg-tbl' },
         h('thead', {}, h('tr', {}, ['Comparable', 'Playing', 'Likes', 'Upvotes/day', 'Rank climb'].map((c, i) => h('th', { class: i ? 'num' : '' }, c)))),
         h('tbody', {}, cmp.map((c) => h('tr', {}, h('td', { class: 'wrapc' }, c.name, c.note ? h('div', { class: 'muted' }, c.note) : null),
@@ -134,9 +158,9 @@ function card(p) {
       } }), 'Compare'),
       open ? [
         btn('Decline', () => askNote('Decline this pitch', 'Why? (optional context for the Scout)', 'Decline', async (n) => decide(p, { state: 'declined', note: n }, 'Declined')), { kind: 'sm' }),
-        btn('Request changes', () => askNote('Request changes', 'What should the Scout change or look into?', 'Send to Scout', async (n) => decide(p, { state: 'changes', note: n }, 'The Scout will revise it')), { kind: 'sm' }),
-        btn('Edit and approve', () => editApprove(p), { kind: 'sm' }),
-        btn('Approve', () => decide(p, { state: 'approved' }, 'Approved, the Lead will plan it'), { kind: 'primary', icon: 'check' }),
+        btn('Send to Scout', () => askNote('Send to Scout', 'What should the Scout change or look into?', 'Send to Scout', async (n) => decide(p, { state: 'changes', note: n }, 'The Scout will revise it')), { kind: 'sm' }),
+        btn('Edit and approve', () => editApprove(p), { kind: 'sm', disabled: miss.length > 0 }),
+        btn('Approve', () => decide(p, { state: 'approved' }, 'Approved, the Lead will plan it'), { kind: 'primary', icon: 'check', disabled: miss.length > 0, title: miss.length ? 'Incomplete pitch: send it back to the Scout' : '' }),
       ] : null));
 }
 
@@ -157,12 +181,13 @@ function openCompare(list) {
 
 function newIdea() {
   const title = h('input', { class: 'pg-input', maxlength: 120, placeholder: 'Working title' });
+  const extra = h('textarea', { class: 'pg-input', rows: 3, maxlength: 2000, placeholder: 'Games you like, what to avoid, a rough budget, anything else' });
   const idea = h('textarea', { class: 'pg-input', rows: 5, maxlength: 4000, placeholder: 'What is the game? What would a player do in the first minute?' });
   let close;
   const form = h('form', { class: 'pg-form', onsubmit: async (e) => {
     e.preventDefault();
     if (!title.value.trim() || !idea.value.trim()) { toast('Add a title and a few lines about the idea', 'error'); return; }
-    const r = await act(() => api('POST', '/api/pitches/ideas', { title: title.value.trim(), idea: idea.value.trim() }), 'Sent to the Scout to evaluate');
+    const r = await act(() => api('POST', '/api/pitches/ideas', { title: title.value.trim(), idea: idea.value.trim() + (extra.value.trim() ? '\n\nAnything else: ' + extra.value.trim() : '') }), 'Sent to the Scout to evaluate');
     if (r) { if (r.id) upsert(store.pitches, r); tab = 'yours'; close(); notify(); }
   } },
   field('Title', title), field('Your idea', idea, 'The Scout checks it against the charts and comes back with evidence, competitors and risks.'),

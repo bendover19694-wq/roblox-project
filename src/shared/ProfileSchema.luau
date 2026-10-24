@@ -29,6 +29,7 @@ function ProfileSchema.default(): any
 		gifts = { day = 0, played = 0, next = 1 }, -- playtime gifts, see Gifts.luau
 		settings = { reducedMotion = false, sound = true },
 		receipts = {},
+		telemetry = { firstDay = 0, source = "" }, -- first join (UTC day number) and where the player came from, for D1 / D7
 	}
 end
 
