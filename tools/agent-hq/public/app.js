@@ -125,7 +125,7 @@ function renderStrip() {
   const cur = name === 'games' && param ? param.split('/')[0] : '';
   strip.replaceChildren(
     h('a', { class: 'strip-item', href: '#/games', 'aria-current': cur ? null : 'true' }, 'All games', h('span', { class: 'count' }, games().length)),
-    games().map((g) => h('a', { class: 'strip-item', href: '#/games/' + encodeURIComponent(g.slug), 'aria-current': cur === g.slug ? 'true' : null }, g.name)),
+    ...games().map((g) => h('a', { class: 'strip-item', href: '#/games/' + encodeURIComponent(g.slug), 'aria-current': cur === g.slug ? 'true' : null }, g.name)),
     h('button', { type: 'button', class: 'strip-item', onclick: () => (views.games.addGame ? views.games.addGame() : (location.hash = '#/games')) }, ic('plus', 14), 'New game'));
 }
 
@@ -135,9 +135,9 @@ function renderTabs() {
   const c = counts();
   const n = { home: c.home, tasks: c.tasks, review: c.review };
   tabsEl.replaceChildren(
-    TABS.map(([id, label, icon, tone]) => h('a', { class: 'tab-item', href: '#/' + id, 'aria-current': id === name ? 'page' : null },
+    ...TABS.map(([id, label, icon, tone]) => h('a', { class: 'tab-item', href: '#/' + id, 'aria-current': id === name && !closeMore ? 'page' : null },
       h('span', { class: 'tab-ic' }, ic(icon, 24), n[id] ? h('span', { class: 'count', 'data-tone': tone }, n[id]) : null), h('span', {}, label))),
-    h('button', { type: 'button', id: 'tab-more', class: 'tab-item', 'aria-haspopup': 'dialog', 'aria-expanded': String(!!closeMore), 'aria-current': !closeMore && MORE.some(([id]) => id === name) ? 'true' : null, onclick: openMore },
+    h('button', { type: 'button', id: 'tab-more', class: 'tab-item', 'aria-haspopup': 'dialog', 'aria-expanded': String(!!closeMore), 'aria-current': closeMore || MORE.some(([id]) => id === name) ? 'true' : null, onclick: openMore },
       h('span', { class: 'tab-ic' }, ic('menu', 24)), h('span', {}, 'More')));
 }
 

@@ -46,7 +46,7 @@ export async function answer(ask, value, msg = 'Sent') {
   else if (r) { ask.state = 'answered'; ask.answer = value; }
   modeOf.delete(ask.id); delete drafts[ask.id]; askUi.v++;
   loadState().catch(() => {});
-  notify();
+  notify(); return r;
 }
 
 export function mediaEl(path, alt) {
@@ -114,7 +114,7 @@ export function askCard(ask) {
   const parts = ask.state === 'open' ? actions(ask) : [];
   const ans = ask.state !== 'open' && ask.answer ? ask.options?.find((o) => o.id === ask.answer)?.label || ask.answer : null;
   return h('article', { class: 'card ask', 'data-kind': ask.kind },
-    h('div', { class: 'row gap' }, h('span', { class: 'tag' }, roleLabel(ask.role)), h('span', { class: 'tag ghost' }, KIND_LABEL[ask.kind] || ask.kind), h('span', { class: 'muted grow end-text' }, ago(ask.createdAt))),
+    h('div', { class: 'row gap' }, h('span', { class: 'chip static' }, roleLabel(ask.role)), h('span', { class: 'chip static' }, KIND_LABEL[ask.kind] || ask.kind), h('span', { class: 'muted grow end-text' }, ago(ask.createdAt))),
     h('h3', {}, plain(ask.title)),
     ask.why ? h('p', { class: 'muted pre' }, ask.why) : null,
     ask.mediaPath ? mediaEl(ask.mediaPath, ask.title) : null,
@@ -285,7 +285,7 @@ function stageCard(r) {
   })() : null;
   return h('article', { class: 'card' },
     h('div', { class: 'row gap between' }, h('h3', {}, `${gameName(r.game)}: ${STAGE_NAME[r.fromStage] || r.fromStage} to ${STAGE_NAME[r.toStage] || r.toStage}`),
-      h('span', { class: 'row gap' }, r.state === 'held' ? statePill('review') : null, h('span', { class: 'tag' }, roleLabel(r.role)))),
+      h('span', { class: 'row gap' }, r.state === 'held' ? statePill('review') : null, h('span', { class: 'chip static' }, roleLabel(r.role)))),
     r.evidence ? h('p', { class: 'muted pre' }, r.evidence) : h('p', { class: 'muted' }, 'No evidence attached.'),
     r.state === 'held' && r.reason ? h('p', { class: 'small' }, 'On hold: ', r.reason) : null,
     h('div', { class: 'row gap wrap' },
@@ -312,7 +312,7 @@ function stagesTab() {
     kicked.length ? h('div', { class: 'tlist' }, kicked.slice(0, 30).map((r) => h('div', { class: 'trow static' },
       h('span', { class: 'trow-main' },
         h('span', { class: 'trow-title' }, `${gameName(r.game)}: ${STAGE_NAME[r.fromStage] || r.fromStage} to ${STAGE_NAME[r.toStage] || r.toStage}`,
-          (r.criteriaFailed || []).map((c) => h('span', { class: 'tag ghost' }, c))),
+          (r.criteriaFailed || []).map((c) => h('span', { class: 'chip static' }, c))),
         h('span', { class: 'trow-meta muted' }, [roleLabel(r.role), r.reason, r.decidedAt ? ago(r.decidedAt) + ' ago' : null].filter(Boolean).join(' · ')))))) : null,
     kicked.length ? h('p', { class: 'hint' }, 'Context only. The agent reworks it and asks again.') : null);
 }

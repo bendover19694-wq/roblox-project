@@ -252,8 +252,11 @@ function systemsTab() {
   return h('div', { class: 'stack' }, h('div', { class: 'pg-filters' }, input), results);
 }
 
-export function render() {
+let lastParam = null;
+export function render(param) {
   const tabs = [['assets', 'Assets'], ['catalog', 'Catalog'], ['systems', 'Systems'], ['vault', 'Vault'], ['skills', 'Skills']];
+  // a deep link such as #/library/catalog picks the tab once; clicking another tab afterwards sticks
+  if (param !== lastParam) { lastParam = param; if (tabs.some(([id]) => id === param)) tab = param; }
   const total = assetData?.counts?.all;
   const sub = total != null ? `${total} assets · ${assetData.onRoblox ?? 0} on Roblox. Plus the knowledge the agents read, the skills they use, and reusable game systems.` : 'Assets, reusable game systems, the knowledge the agents read, and the skills they use.';
   return h('div', { class: 'page' },

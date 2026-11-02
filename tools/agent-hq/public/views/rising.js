@@ -6,26 +6,8 @@ import { sparkline } from './charts.js';
 export const when = (iso) => (iso ? `${ago(iso)}${ago(iso) === 'just now' ? '' : ' ago'}` : 'never');
 export const gameHref = (id) => '#/pro/history/' + id;
 
-// ---- chart lists, in the order the owner reads them; any list the snapshot lacks is skipped (D18) ----
-export const REF_SORTS = [
-  { label: 'Trending', id: /trending/i, name: /trending/i },
-  { label: 'Up and coming', id: /up-and-coming|upandcoming/i, name: /up (and|&) coming/i },
-  { label: 'Most played', id: /playing-now|most-played|top-playing/i, name: /most played|playing now|top playing/i },
-  { label: 'Fun with friends', id: /friends/i, name: /friends/i },
-  { label: 'Most revisited', id: /revisit/i, name: /revisit/i },
-  { label: 'Top earning', id: /earning/i, name: /earning/i },
-];
-/** sorts = [{ id, name, count }]. Returns { main: [{ id, name, label }] in REF_SORTS order, more: [{ id, name, label }] }. */
-export function splitSorts(sorts) {
-  const left = [...(sorts || [])];
-  const main = [];
-  for (const ref of REF_SORTS) {
-    const byId = left.findIndex((s) => ref.id.test(s.id || ''));
-    const at = byId >= 0 ? byId : left.findIndex((s) => ref.name.test(s.name || ''));
-    if (at >= 0) main.push({ ...left.splice(at, 1)[0], label: ref.label });
-  }
-  return { main, more: left.map((s) => ({ ...s, label: s.name })) };
-}
+// ---- chart lists live in sorts.js (exact ids first, names as fallback) ----
+export { REF_SORTS, splitSorts } from './sorts.js';
 
 // ---- small formatters ----
 export const K = (n) => {

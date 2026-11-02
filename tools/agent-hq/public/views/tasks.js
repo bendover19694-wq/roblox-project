@@ -8,10 +8,17 @@ let gameFilter = '';
 let showDone = false;
 
 const GROUPS = [
-  ['working', 'Working now', "live in the agent's chat", ['working']],
-  ['review', 'In review', 'waiting for a check or for you', ['review']],
-  ['queued', 'Queued', 'runs as soon as the agent is free, in order', ['queued']],
+  ['review', 'Back to you', 'Finished: check it, then Looks good or Needs changes', ['review'], 'amber'],
+  ['working', 'Working now', "Live in the agent's chat", ['working'], 'green'],
+  ['queued', 'Queued', 'Runs as soon as the agent is free, in order', ['queued'], 'blue'],
 ];
+const PILL = { review: ['amber', 'Back to you'], working: ['green', 'Working now'], queued: ['blue', 'Queued'] };
+
+// Sentence-case status pill for the list rows; the drawer keeps statePill.
+function rowPill(state) {
+  const [tone, text] = PILL[state] || ['grey', state];
+  return h('span', { class: 'spill', 'data-tone': tone }, text);
+}
 
 function startedText(t) {
   if (t.state === 'working' || (t.state === 'review' && t.startedAt && !t.endedAt)) return 'started ' + ago(t.startedAt) + (ago(t.startedAt) === 'just now' ? '' : ' ago');
@@ -26,12 +33,13 @@ export function taskRow(t) {
     avatar(t.role, 30),
     h('span', { class: 'trow-main' },
       h('span', { class: 'trow-title' }, plain(t.title),
-        gate ? h('span', { class: 'tag ghost', title: 'Automatic check of another task' }, 'gate') : null,
-        t.attempt > 1 ? h('span', { class: 'tag ghost', title: 'Rework round' }, 'attempt ' + t.attempt) : null,
-        t.reworkCount > 0 ? h('span', { class: 'tag ghost', title: 'Times sent back for rework' }, `sent back ${t.reworkCount}x`) : null,
-        t.needsStudio ? h('span', { class: 'tag ghost', title: 'Needs Studio' }, ic('lock', 11), 'Studio') : null),
+        gate ? h('span', { class: 'chip static', title: 'Automatic check of another task' }, 'gate') : null,
+        t.attempt > 1 ? h('span', { class: 'chip static', title: 'Rework round' }, 'attempt ' + t.attempt) : null,
+        t.reworkCount > 0 ? h('span', { class: 'chip static', title: 'Times sent back for rework' }, `sent back ${t.reworkCount}x`) : null,
+        t.needsStudio ? h('span', { class: 'chip static', title: 'Needs Studio' }, ic('lock', 11), 'Studio') : null),
       h('span', { class: 'trow-meta muted' }, meta)),
-    statePill(t.state));
+    rowPill(t.state),
+    ic('chevron', 16));
 }
 
 // ---- Back to you: a finished task waiting for the owner's verdict ----
@@ -72,10 +80,10 @@ export function render() {
   const games = store.gameList.length ? store.gameList : store.games;
   const tasks = store.tasks.filter((t) => (!roleFilter || t.role === roleFilter) && (!gameFilter || t.game === gameFilter));
   const byAge = (a, b) => (a.createdAt < b.createdAt ? -1 : 1);
-  const groups = GROUPS.map(([id, label, sub, states]) => {
+  const groups = GROUPS.map(([id, label, sub, states, tone]) => {
     const list = tasks.filter((t) => states.includes(t.state)).sort(byAge);
     return list.length ? h('section', { class: 'tgroup', 'aria-label': label },
-      h('h2', { class: 'tgroup-head' }, label, h('span', { class: 'count' }, list.length), h('span', { class: 'muted tgroup-sub' }, sub)),
+      h('h2', { class: 'tgroup-head' }, label, h('span', { class: 'count', 'data-tone': tone }, list.length), id === 'working' ? h('span', { class: 'spin-ring', role: 'img', 'aria-label': 'Working' }) : null, h('span', { class: 'muted tgroup-sub' }, sub)),
       h('div', { class: 'tlist' }, list.map(taskRow))) : null;
   }).filter(Boolean);
   const done = tasks.filter((t) => ['done', 'failed', 'canceled'].includes(t.state))

@@ -10,7 +10,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 const here = import.meta.dirname;
-const CHROME = process.env.HQ_CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const CHROME = process.env.HQ_CHROME || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/opt/pw-browsers/chromium');
+// Linux containers often run as root, where Chrome refuses to start without --no-sandbox.
+const SANDBOX = process.platform === 'linux' ? ['--no-sandbox'] : [];
+const OFFENDERS = Number((process.argv.find((a) => a.startsWith('--offenders=')) || '--offenders=5').split('=')[1]) || 5;
 const DEVICES = {
   desktop: { dir: 'app', w: 1280, h: 800, scale: 1.5, mobile: false, out: [1920, 1200] },
   phone: { dir: 'phone', w: 390, h: 763, scale: 3, mobile: true, out: [1170, 2289] },
@@ -143,7 +146,7 @@ try {
   if (u.hostname !== '127.0.0.1' || Number(u.port) !== port) throw new Error('demo is not on 127.0.0.1:' + port);
   const base = `http://127.0.0.1:${port}/`;
 
-  const chrome = spawn(CHROME, ['--headless=new', '--hide-scrollbars', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-background-networking', 'about:blank'], { stdio: 'ignore', windowsHide: true });
+  const chrome = spawn(CHROME, ['--headless=new', '--hide-scrollbars', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-background-networking', ...SANDBOX, 'about:blank'], { stdio: 'ignore', windowsHide: true });
   procs.push(chrome);
   const portFile = path.join(profile, 'DevToolsActivePort');
   await until(() => fs.existsSync(portFile) && fs.readFileSync(portFile, 'utf8').includes('\n'), 30000, 'Chrome');
@@ -223,7 +226,7 @@ try {
     if (a.small.length) problems.push(`text<12px ${a.small.length}`);
     if (a.tap.length) problems.push(`tap<44px ${a.tap.length}`);
     console.log(`${problems.length ? 'FAIL' : 'ok  '} ${label} ${pw}x${ph}${problems.length ? ': ' + problems.join('; ') : ''}`);
-    for (const [k, list] of [['console', bad], ['text<12px', a.small], ['tap<44px', a.tap]]) list.slice(0, 5).forEach((x) => console.log(`       ${k}: ${x}`));
+    for (const [k, list] of [['console', bad], ['text<12px', a.small], ['tap<44px', a.tap]]) list.slice(0, OFFENDERS).forEach((x) => console.log(`       ${k}: ${x}`));
     if (problems.length) failed = true;
     for (const m of measure) {
       const r = await evalJs(MEASURE(m));

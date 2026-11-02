@@ -253,6 +253,7 @@ export function render(param) {
   return h('div', { class: 'page' }, head,
     list.length > 1 ? h('div', { class: 'pg-gametabs', role: 'tablist', 'aria-label': 'Games' }, list.map((x) => h('button', { type: 'button', role: 'tab', class: 'pg-gametab', 'aria-selected': String(x.slug === slug),
       onclick: () => { slug = x.slug; location.hash = '#/games/' + x.slug; notify(); } }, x.name))) : h('h2', {}, g.name),
-    segmented(items, tab, (id) => { tab = id; notify(); }, { overview: open }),
+    h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Game view' }, items.map(([id, label]) => h('button', { type: 'button', role: 'tab', class: 'tab', 'aria-selected': String(id === tab), onclick: () => { tab = id; notify(); } },
+      label, id === 'overview' && open ? h('span', { class: 'count', 'data-tone': 'violet' }, open) : null))),
     tab === 'overview' ? overview(g) : tab === 'live' ? liveTab(g) : pipeline(g));
 }

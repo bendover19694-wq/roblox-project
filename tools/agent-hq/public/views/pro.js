@@ -113,10 +113,11 @@ function detailStep(id) {
     h('div', { class: 'pro-stats' },
       stat('Playing now', playing != null ? Number(playing).toLocaleString() : 'not on the charts'),
       stat('Vs yesterday', trend(info.vsYesterdayPct)), stat('Vs last week', trend(wk)),
-      stat('Likes', like != null ? likeText(like) : 'not measured'),
-      d.stats?.visits != null ? stat('Visits', K(d.stats.visits)) : null, d.stats?.favorites != null ? stat('Favorites', K(d.stats.favorites)) : null),
+      stat('Likes', like != null ? likeText(like) : 'not measured')),
     lineChart('Players, last 30 days', series.map((p) => ({ x: p.at, y: p.playing })), { area: true }),
-    peak ? h('p', { class: 'muted small' }, `Peak ${peak.toLocaleString()} players in this window.`) : null,
+    peak || d.stats?.visits != null || d.stats?.favorites != null ? h('p', { class: 'muted small' }, [
+      peak ? `Peak ${peak.toLocaleString()} players in this window.` : '',
+      d.stats?.visits != null ? ` ${K(d.stats.visits)} visits.` : '', d.stats?.favorites != null ? ` ${K(d.stats.favorites)} favorites.` : ''].join('').trim()) : null,
     d.ranks?.length ? h('div', { class: 'row gap wrap pro-ranks' }, h('span', { class: 'muted small' }, 'On the charts'), d.ranks.map((r) => chip(`${r.sortName} #${r.rank}`))) : null);
 }
 

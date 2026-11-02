@@ -12,14 +12,58 @@ const drafts = {};
 const draftAttach = {};
 const STATUS_LABEL = { working: 'Working', queued: 'Queued', review: 'In review', idle: 'Idle' };
 
+const logCache = new Map(); // task id -> promise of formatted steps, fetched once
+const workedOpen = new Set(); // task ids whose step list is open, kept across repaints
+
+/** One step per tool call in a stream-json log line; plain text lines count as a step too. */
+function steps(lines) {
+  const out = [];
+  for (const raw of lines || []) {
+    let o = raw;
+    if (typeof raw === 'string') { try { o = JSON.parse(raw); } catch { out.push(raw); continue; } }
+    if (!o || typeof o !== 'object') continue;
+    if (o.type === 'assistant' && Array.isArray(o.message?.content)) {
+      for (const c of o.message.content) if (c.type === 'tool_use') out.push(c.name + ' ' + JSON.stringify(c.input || {}).slice(0, 120));
+    } else if (typeof o.text === 'string' && o.type !== 'user' && o.type !== 'system') out.push(o.text);
+  }
+  return out;
+}
+
 function taskChip(t) {
   const gate = t.createdBy === 'gate' || t.gateFor;
-  return h('button', { type: 'button', class: 'inline-task', onclick: () => openTaskDrawer(t.id) },
-    statePill(t.state),
-    h('span', { class: 'grow clip' }, plain(t.title)),
-    gate ? h('span', { class: 'tag ghost' }, 'gate') : null,
-    t.attempt > 1 ? h('span', { class: 'tag ghost' }, 'attempt ' + t.attempt) : null,
-    h('span', { class: 'muted nowrap' }, ago(t.endedAt || t.startedAt || t.createdAt)));
+  const label = h('span', { class: 'grow clip' }, 'Worked through the task');
+  const body = h('div', { class: 'worked-body', hidden: true });
+  const toggle = h('button', { type: 'button', class: 'worked-head', 'aria-expanded': 'false', title: plain(t.title) },
+    ic('check', 14), label, ic('chevron', 14));
+  const paint = (list) => {
+    label.textContent = `Worked through ${list.length} step${list.length === 1 ? '' : 's'}`;
+    body.replaceChildren(...(list.length ? list.slice(0, 40).map((x) => h('div', { class: 'worked-step' }, x)) : [h('div', { class: 'muted small' }, 'No steps recorded yet')]),
+      list.length > 40 ? h('div', { class: 'muted small' }, `${list.length - 40} more steps in the task log`) : null);
+  };
+  const load = () => {
+    if (!logCache.has(t.id)) {
+      body.replaceChildren(h('div', { class: 'muted small' }, 'Loading'));
+      const p = api('GET', `/api/tasks/${encodeURIComponent(t.id)}/log`).then((r) => steps(r.lines));
+      p.catch(() => logCache.delete(t.id));
+      logCache.set(t.id, p);
+    }
+    logCache.get(t.id).then(paint, (e) => body.replaceChildren(h('div', { class: 'muted small' }, e.message)));
+  };
+  const setOpen = (open) => {
+    toggle.setAttribute('aria-expanded', String(open));
+    body.hidden = !open;
+    if (open) { workedOpen.add(t.id); load(); } else workedOpen.delete(t.id);
+  };
+  if (logCache.has(t.id) || workedOpen.has(t.id)) load();
+  if (workedOpen.has(t.id)) setOpen(true);
+  toggle.onclick = () => setOpen(toggle.getAttribute('aria-expanded') !== 'true');
+  return h('div', { class: 'worked', 'data-state': t.state },
+    toggle, body,
+    h('div', { class: 'worked-foot' }, statePill(t.state),
+      gate ? h('span', { class: 'chip-btn static' }, 'gate') : null,
+      t.attempt > 1 ? h('span', { class: 'chip-btn static' }, 'attempt ' + t.attempt) : null,
+      h('span', { class: 'muted nowrap small' }, ago(t.endedAt || t.startedAt || t.createdAt)),
+      h('button', { type: 'button', class: 'worked-open', onclick: () => openTaskDrawer(t.id) }, 'Open task')));
 }
 
 function openLessons(role) {
@@ -28,7 +72,7 @@ function openLessons(role) {
   api('GET', '/api/memory/' + encodeURIComponent(role)).then((r) => {
     const ls = r.lessons || [];
     body.replaceChildren(h('p', { class: 'muted' }, 'Short notes this agent recorded after earlier tasks. Every new brief for this role includes the newest ones.'),
-      ls.length ? h('ul', { class: 'plain lessons' }, [...ls].reverse().map((l) => h('li', { class: 'lesson' }, h('span', { class: 'tag ghost' }, l.date), h('span', {}, l.text))))
+      ls.length ? h('ul', { class: 'plain lessons' }, [...ls].reverse().map((l) => h('li', { class: 'lesson' }, h('span', { class: 'chip' }, l.date), h('span', {}, l.text))))
         : empty('No lessons yet. Agents add them with hq_learn.'));
   }).catch((e) => body.replaceChildren(empty(e.message)));
 }
@@ -36,6 +80,7 @@ function openLessons(role) {
 export function chatView(role, { back = false } = {}) {
   const r = roleById(role);
   const label = roleLabel(role);
+  const hint = role === 'lead' ? 'Ask anything, or tell the Lead what you want done...' : `Message ${label}...`;
   const head = h('header', { class: 'chat-head' });
   const list = h('div', { class: 'chat-list', role: 'log', 'aria-live': 'polite', 'aria-label': 'Conversation with ' + label });
   const typing = h('div', { class: 'typing-slot' });
@@ -44,7 +89,7 @@ export function chatView(role, { back = false } = {}) {
 
   const attach = (draftAttach[role] ||= []);
   const chips = attachments(attach);
-  const input = h('textarea', { class: 'textarea composer-input', rows: 1, maxlength: 20000, placeholder: `Message ${label}…`, 'aria-label': 'Message ' + label,
+  const input = h('textarea', { class: 'textarea composer-input', rows: 1, maxlength: 20000, placeholder: hint, 'aria-label': 'Message ' + label,
     oninput: (e) => { drafts[role] = e.target.value; grow(); },
     onpaste: (e) => { const f = imageFiles(e.clipboardData); if (f.length) { e.preventDefault(); chips.add(f); } },
     onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } } });
@@ -94,15 +139,17 @@ export function chatView(role, { back = false } = {}) {
   function paintHead() {
     const st = roleStatus(role);
     const e = engineOf(role);
-    const sig = JSON.stringify([st.state, st.task?.id, st.task?.title, st.queued, e.engine, e.model, arch?.id || '']);
+    const msgs = store.messages[role] || [];
+    const lastAt = [...msgs].reverse().find((x) => x.from !== 'system')?.createdAt || store.threads[role]?.last?.createdAt || '';
+    const sig = JSON.stringify([st.state, st.task?.id, st.task?.title, st.queued, e.engine, e.model, arch?.id || '', lastAt ? ago(lastAt) : '']);
     if (sig === headSig) return;
     headSig = sig;
     head.replaceChildren(...[
       back ? h('a', { class: 'icon-btn back-btn', href: '#/team', 'aria-label': 'Back to the team list' }, ic('back', 18)) : null,
-      avatar(role, 40),
+      avatar(role, 44),
       h('div', { class: 'chat-id' },
         h('h1', {}, label),
-        h('div', { class: 'row gap muted small' }, h('span', { class: 'dot', 'data-on': st.state }), STATUS_LABEL[st.state],
+        h('div', { class: 'row gap muted small' }, h('span', { class: 'dot', 'data-on': st.state }), STATUS_LABEL[st.state], lastAt ? h('span', { class: 'muted' }, ' · ' + ago(lastAt) + (ago(lastAt) === 'just now' ? '' : ' ago')) : null,
           r?.job ? h('span', { class: 'clip hide-narrow' }, ' · ' + r.job) : null)),
       h('div', { class: 'chat-chips' },
         st.task ? h('button', { type: 'button', class: 'chip-btn cur', title: st.task.title, onclick: () => openTaskDrawer(st.task.id) }, ic('clock', 12), h('span', { class: 'clip' }, st.task.title)) : null,
@@ -114,7 +161,7 @@ export function chatView(role, { back = false } = {}) {
         btn('Past chats', () => openPast(), { kind: 'sm', icon: 'clock' }),
         btn('Start fresh', async () => {
           if (await act(() => api('POST', `/api/messages/${encodeURIComponent(role)}/reset`, {}), 'Fresh conversation')) { await reloadMessages(role).catch(() => {}); stick = true; }
-        }, { kind: 'sm', icon: 'refresh', title: 'Archives this conversation. It stays under Past chats.' }),
+        }, { kind: 'sm', icon: 'archive', title: 'Archives this conversation. It stays under Past chats.' }),
         st.task ? btn('Stop', () => { if (confirm('Stop the running task?')) act(() => api('POST', `/api/tasks/${st.task.id}/cancel`), 'Stopped'); }, { kind: 'sm danger', icon: 'stop' }) : null)].filter(Boolean));
   }
 
@@ -152,7 +199,7 @@ export function chatView(role, { back = false } = {}) {
       return h('div', { class: 'msg ' + (mine ? 'owner' : 'agent') },
         mine ? null : avatar(role, 28),
         h('div', { class: 'msg-col' },
-          h('div', { class: 'bubble' }, mine ? h('div', { class: 'pre' }, m.text) : markdown(m.text),
+          h('div', { class: 'bubble' }, mine && cards.length ? h('div', { class: 'task-from' }, ic('check', 12), `Task from ${String(store.settings.ownerName || '').trim() || 'You'}: ${plain(cards[0].title)}`) : null, mine ? h('div', { class: 'pre' }, m.text) : markdown(m.text),
             Array.isArray(m.attachPaths) && m.attachPaths.length ? h('div', { class: 'attach-grid' }, m.attachPaths.map((p) => h('a', { href: mediaUrl(p), target: '_blank', rel: 'noopener' }, h('img', { class: 'md-img', src: mediaUrl(p), alt: 'Attached screenshot', loading: 'lazy' })))) : null),
           cards.map(taskChip),
           h('div', { class: 'msg-meta muted' }, (mine ? 'You' : label) + ' · ' + ago(m.createdAt) + (ago(m.createdAt) === 'just now' ? '' : ' ago'))));
@@ -169,27 +216,31 @@ export function chatView(role, { back = false } = {}) {
 
   function paintTyping() {
     const st = roleStatus(role);
+    stopBtn.hidden = !st.task;
     const sig = st.task ? st.task.id : '';
     if (sig === typingSig) return;
     typingSig = sig;
     typing.replaceChildren(st.task ? h('div', { class: 'typing', role: 'status' },
       h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
-      h('span', {}, 'Working · a new message waits until the agent finishes')) : '');
+      h('span', {}, 'Working · a new message waits its turn')) : '');
     if (st.task) list.scrollTop = list.scrollHeight;
   }
 
   function update() {
     paintHead(); paintList(); paintTyping();
-    input.disabled = !!arch; input.placeholder = arch ? 'Go back to the current chat to write' : `Message ${label}…`;
+    input.disabled = !!arch; input.placeholder = arch ? 'Go back to the current chat to write' : hint;
     if (node.isConnected && store.threads[role]?.unread > 0 && document.visibilityState === 'visible') markRead(role);
   }
 
+  const stopBtn = h('button', { type: 'button', class: 'composer-stop', hidden: true, 'aria-label': 'Stop the running task', title: 'Stop the running task',
+    onclick: () => { const t = roleStatus(role).task; if (t && confirm('Stop the running task?')) act(() => api('POST', `/api/tasks/${t.id}/cancel`), 'Stopped'); } }, h('span', { class: 'stop-sq', 'aria-hidden': 'true' }));
   const node = h('section', { class: 'chat', 'aria-label': 'Conversation with ' + label }, head, list, typing,
     h('div', { class: 'composer-wrap' }, chips.node,
-      h('div', { class: 'composer' },
-        h('button', { type: 'button', class: 'btn icon', title: 'Add screenshots (or paste / drop them)', 'aria-label': 'Add screenshots (or paste / drop them)', onclick: () => picker.click() }, ic('image', 14)),
-        picker, input, h('button', { type: 'button', class: 'btn primary', onclick: send, 'aria-label': 'Send' }, ic('send', 14), h('span', { class: 'hide-narrow' }, 'Send'))),
-      h('div', { class: 'hint composer-hint' }, 'Enter or Ctrl+Enter to send · Shift+Enter for a new line · Ctrl+V pastes screenshots')));
+      h('div', { class: 'composer' }, picker, input,
+        h('button', { type: 'button', class: 'composer-clip', title: 'Add screenshots (or paste / drop them)', 'aria-label': 'Add screenshots (or paste / drop them)', onclick: () => picker.click() }, ic('clip', 18)),
+        stopBtn,
+        h('button', { type: 'button', class: 'composer-send', onclick: send, 'aria-label': 'Send' }, ic('arrowUp', 18))),
+      h('div', { class: 'hint composer-hint' }, 'Enter to send · Shift+Enter for a new line · Ctrl+V pastes screenshots')));
   if (!store.messages[role]) loadMessages(role);
   update();
   setTimeout(() => { markRead(role); grow(); }, 0);

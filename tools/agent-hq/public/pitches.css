@@ -5,7 +5,7 @@
 .kv p { color: var(--muted); }
 
 /* pitches */
-.pg-pitches { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: var(--s4); align-items: start; }
+.pg-pitches { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); align-items: start; }
 .pg-pitch .head { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
 .pg-pitch .title { font-size: 17px; font-weight: 600; flex: 1; min-width: 160px; }
 .pg-pitch .one { color: var(--text); }
@@ -33,4 +33,45 @@
   .pg-pitches { grid-template-columns: minmax(0, 1fr); }
   .pg-pitch .body { padding-left: var(--s2); }
   .pg-actions .sel { margin-right: 0; width: 100%; }
+}
+
+/* pitches r2: banner, info line, tabs note, stat tiles, differ panel, game table, look cards */
+.pg-info { display: flex; align-items: center; gap: 8px; background: var(--info-bg); color: var(--info-text); border: 1px solid rgba(136, 182, 235, 0.25); border-radius: var(--r-sm); padding: 8px 14px; font-size: 13px; }
+.pg-alt { font-size: 13px; margin: -2px 0 0; }
+.tabs .tab .seg-count { margin-left: 6px; }
+.pg-banner-img { height: 56px; margin: calc(-1 * var(--s4)) calc(-1 * var(--s4)) 4px; border-radius: 14px 14px 0 0; background: linear-gradient(120deg, hsl(var(--hue) 55% 26%), hsl(calc(var(--hue) + 40) 50% 18%)); display: flex; align-items: center; padding: 0 var(--s4); }
+.pg-banner-img .tile { width: 40px; height: 40px; border-radius: 11px; background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.22); display: grid; place-items: center; color: #fff; }
+.pg-evline { font-size: 12.5px; color: var(--muted); margin: 0; }
+.pg-differ { display: flex; gap: 12px; background: #201c26; border: 1px solid #3c3c55; border-radius: 12px; padding: 12px 14px; }
+.pg-differ .ico { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; }
+.pg-differ h4 { margin-bottom: 2px; }
+.pg-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.pg-stat { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pg-stat .k { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.pg-stat .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pg-stat .v.dim { color: var(--muted); font-size: 13px; font-weight: 500; padding: 4px 0; }
+.pg-stat .t { font-size: 12px; color: var(--muted); }
+.pg-stat[data-tone="ok"] { border-color: var(--ok-line); }
+.pg-stat[data-tone="ok"] .v { color: var(--ok-text); }
+.pg-stat[data-tone="warn"] { border-color: var(--warn-line); }
+.pg-money-line { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
+.pg-money-line .ic { color: var(--ok-text); flex: none; margin-top: 1px; }
+.pg-money-line p { margin: 0; }
+.pg-game-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pg-game-tbl th { width: 180px; text-align: left; vertical-align: top; color: var(--muted); font-weight: 500; padding: 8px 12px 8px 0; border-top: 1px solid var(--line); }
+.pg-game-tbl td { padding: 8px 0; border-top: 1px solid var(--line); }
+.pg-looks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pg-look { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.pg-look[data-on="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.pg-trend { margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 8px; }
+.pg-foot { font-size: 12px; margin: 0; }
+@media (max-width: 760px) {
+  .pg-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pg-looks { grid-template-columns: minmax(0, 1fr); }
+  .pg-game-tbl th { width: 110px; }
+  .pg-actions .btn { min-height: 44px; }
+  .pg-pitch summary { min-height: 44px; }
+  .pg-pitch .pg-list a { display: inline-flex; align-items: center; min-height: 44px; }
+  .pg-actions .sel { min-height: 44px; }
+  .pg-actions .sel input { width: 24px; height: 24px; margin: 10px; }
 }

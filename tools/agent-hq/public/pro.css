@@ -34,7 +34,7 @@
 .pro-back { min-height: 36px; }
 .pro-game { display: flex; gap: 14px; align-items: center; }
 .pro-game h3 { font-size: 18px; font-weight: 650; margin-bottom: 6px; }
-.pro-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.pro-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
 .pro-stat { border: 1px solid var(--line); border-radius: var(--r-btn); background: var(--panel-2); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .pro-stat .k { font-size: 12px; color: var(--muted); }
 .pro-stat .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -43,6 +43,7 @@
 
 /* score my idea */
 .pro-form { display: flex; flex-direction: column; gap: 12px; }
+.pro-form .field { flex: none; }
 .pro-form .textarea { min-height: 84px; resize: vertical; }
 .pro-seg { max-width: 100%; overflow-x: auto; align-self: flex-start; }
 .pro-score { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); padding: 18px; display: flex; flex-direction: column; gap: 16px; }
