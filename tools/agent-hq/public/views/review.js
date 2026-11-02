@@ -1,18 +1,15 @@
 // Review screen (images, visual bar, stages) and the shared ask card used by Home and the chats.
-import { h, store, api, act, btn, empty, pageHead, roleLabel, avatar, ago, mediaUrl, plain, gameName, statePill, upsert, notify, loadState, toast, openModal } from './core.js';
+import { h, ic, store, api, act, btn, empty, roleLabel, avatar, ago, mediaUrl, plain, gameName, statePill, upsert, notify, loadState, toast, openModal } from './core.js';
+import { openViewer, isVideo, VERDICT } from './viewer.js';
 
 export const askUi = { v: 0 }; // bumped when card UI state changes, so the chat repaints
 const modeOf = new Map(); // ask id -> open inline note mode
-const drafts = {};
-const smallOpen = new Set();
-let tab = 'images';
-let filter = 'open';
-let agent = '';
-let older = false;
-let stageAt = 0;
-let refsAt = 0;
-let refs = [];
+const drafts = {}; const smallOpen = new Set();
+let tab = 'images'; let filter = 'open'; let agent = ''; let older = false;
+let stageAt = 0; let refsAt = 0; let refs = [];
 let stages = { open: [], held: [], rejected: [] };
+let shownMedia = []; let viewerFor = ''; // Images tab order (the viewer pages through it); the #/review/<id> ask already opened this visit
+const agoTxt = (iso) => { const a = ago(iso); return a === 'just now' ? a : a + ' ago'; };
 
 const KIND_LABEL = { decision: 'Decision', try: 'Try it', approve: 'Approve', review: 'Review', reference: 'Reference' };
 const STAGE_NAME = { pitched: 'Pitched', designed: 'Designed', assets: 'Assets ready', built: 'Built', balanced: 'Balanced', art: 'Art done', ready: 'Ready to publish', live: 'Live', graded: 'Graded' };
@@ -25,8 +22,7 @@ const MODES = {
   reject: { label: 'Reject: why?', ph: 'Why is it rejected?', submit: 'Reject', prefix: 'reject:', required: true },
 };
 
-export const isMediaAsk = (a) => !!a.mediaPath;
-export const isReference = (a) => a.kind === 'reference';
+export const isMediaAsk = (a) => !!a.mediaPath; export const isReference = (a) => a.kind === 'reference';
 // Something the owner must decide (reference-only items need no decision).
 export const needsDecision = (a) => a.state === 'open' && !a.superseded && !isReference(a);
 
@@ -42,9 +38,9 @@ export function verdictOf(a) {
   if (x.startsWith('hold:')) return 'held';
   return 'answered';
 }
-const noteOf = (a) => a.verdictNote || String(a.answer || '').replace(/^(approve|changes|reject|hold):?/, '');
+export const noteOf = (a) => a.verdictNote || String(a.answer || '').replace(/^(approve|changes|reject|hold):?/, '');
 
-async function answer(ask, value, msg = 'Sent') {
+export async function answer(ask, value, msg = 'Sent') {
   const r = await act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: value }), msg);
   if (r && r !== true) upsert(store.asks, r);
   else if (r) { ask.state = 'answered'; ask.answer = value; }
@@ -55,7 +51,7 @@ async function answer(ask, value, msg = 'Sent') {
 
 export function mediaEl(path, alt) {
   const url = mediaUrl(path);
-  if (/\.(mp4|webm|mov)$/i.test(path)) return h('video', { class: 'ask-media', src: url, controls: true, preload: 'metadata' });
+  if (isVideo(path)) return h('video', { class: 'ask-media', src: url, controls: true, preload: 'metadata' });
   return h('a', { href: url, target: '_blank', rel: 'noopener', title: 'Click to enlarge' }, h('img', { class: 'ask-media', src: url, alt, loading: 'lazy' }));
 }
 
@@ -77,16 +73,12 @@ function modeBox(ask) {
 
 // Free text for a decision card: "Or say it in your own words".
 function ownWords(ask) {
+  const key = 'w' + ask.id;
+  const go = () => { const t = input.value.trim(); if (!t) return; delete drafts[key]; answer(ask, t, 'Answer sent'); };
   const input = h('input', { class: 'input', type: 'text', maxlength: 2000, placeholder: 'Or say it in your own words…', 'aria-label': 'Answer in your own words',
-    oninput: (e) => { drafts['w' + ask.id] = e.target.value; },
+    oninput: (e) => { drafts[key] = e.target.value; },
     onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } } });
-  input.value = drafts['w' + ask.id] || '';
-  async function go() {
-    const t = input.value.trim();
-    if (!t) return;
-    delete drafts['w' + ask.id];
-    answer(ask, t, 'Answer sent');
-  }
+  input.value = drafts[key] || '';
   return h('div', { class: 'row gap' }, input, btn('Send', go, { icon: 'send' }));
 }
 
@@ -99,11 +91,11 @@ function actions(ask) {
       btn('Pin to Visual bar', () => pinModal(ask.mediaPath, ask.title), { icon: 'image' }),
       btn('Got it', async () => { if (await act(() => api('POST', `/api/asks/${ask.id}/dismiss`))) { loadState().catch(() => {}); notify(); } }, { kind: 'primary', icon: 'check' }));
   } else if (ask.kind === 'review') {
-    row.append(btn('Approve', () => answer(ask, 'approve'), { kind: 'primary', icon: 'check' }),
+    row.append(btn('Approve', () => answer(ask, 'approve'), { kind: 'good', icon: 'check' }),
       btn('Looks good, with a note', () => setMode(ask, 'note')),
-      btn('Not right', () => setMode(ask, 'changes')),
+      btn('Not right: say what', () => setMode(ask, 'changes'), { icon: 'pencil' }),
       btn('Hold', () => setMode(ask, 'hold')),
-      btn('Reject', () => setMode(ask, 'reject'), { kind: 'danger' }));
+      btn('Reject', () => setMode(ask, 'reject'), { kind: 'rv-reject' }));
     extra.push(modeBox(ask));
   } else if (ask.options?.length) {
     ask.options.forEach((o) => row.append(btn(o.label, () => answer(ask, o.id), { kind: o.recommended ? 'primary' : '' })));
@@ -117,15 +109,10 @@ function actions(ask) {
   return [row, ...extra];
 }
 
-function answeredText(ask) {
-  if (ask.state === 'open' || !ask.answer) return null;
-  return ask.options?.find((o) => o.id === ask.answer)?.label || ask.answer;
-}
-
 // Compact card: Home "Needs you" and the inline cards in a chat.
 export function askCard(ask) {
   const parts = ask.state === 'open' ? actions(ask) : [];
-  const ans = answeredText(ask);
+  const ans = ask.state !== 'open' && ask.answer ? ask.options?.find((o) => o.id === ask.answer)?.label || ask.answer : null;
   return h('article', { class: 'card ask', 'data-kind': ask.kind },
     h('div', { class: 'row gap' }, h('span', { class: 'tag' }, roleLabel(ask.role)), h('span', { class: 'tag ghost' }, KIND_LABEL[ask.kind] || ask.kind), h('span', { class: 'muted grow end-text' }, ago(ask.createdAt))),
     h('h3', {}, plain(ask.title)),
@@ -143,17 +130,16 @@ async function loadRefs() {
 }
 
 function pinModal(mediaPath, title) {
-  let cat = 'screens';
   const note = h('input', { class: 'input', type: 'text', maxlength: 300, placeholder: 'Why is this the bar? (optional)' });
-  const sel = h('select', { class: 'select', 'aria-label': 'Category', onchange: (e) => { cat = e.target.value; } }, CATEGORIES.map(([v, l]) => h('option', { value: v }, l)));
-  sel.value = cat;
+  const sel = h('select', { class: 'select', 'aria-label': 'Category' }, CATEGORIES.map(([v, l]) => h('option', { value: v }, l)));
+  sel.value = 'screens';
   const close = openModal('Pin to the Visual bar', h('div', { class: 'stack' },
     h('p', { class: 'muted' }, 'Every designer, thumbnails and UI brief lists the pinned images as the house reference.'),
     mediaEl(mediaPath, title),
     h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Category'), sel),
     h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Note'), note),
     h('div', { class: 'row end' }, btn('Pin it', async () => {
-      if (await act(() => api('POST', '/api/references', { mediaPath, category: cat, note: note.value.trim() || undefined }), 'Pinned to the Visual bar')) { close(); loadRefs(); }
+      if (await act(() => api('POST', '/api/references', { mediaPath, category: sel.value, note: note.value.trim() || undefined }), 'Pinned to the Visual bar')) { close(); loadRefs(); }
     }, { kind: 'primary', icon: 'image' }))));
 }
 
@@ -164,11 +150,11 @@ function barTab() {
     CATEGORIES.map(([id, label]) => {
       const list = refs.filter((r) => r.category === id);
       return h('section', { class: 'rgroup' },
-        h('h2', { class: 'rgroup-head' }, label, h('span', { class: 'count' }, list.length)),
+        h('div', { class: 'rgroup-head' }, h('h2', {}, label), h('span', { class: 'rv-n' }, list.length)),
         list.length ? h('div', { class: 'rgrid small-grid' }, list.map((r) => h('article', { class: 'card ritem' },
           mediaEl(r.mediaPath, r.note || label),
           r.note ? h('p', { class: 'muted small' }, r.note) : null,
-          h('div', { class: 'row between' }, h('span', { class: 'muted small' }, ago(r.createdAt) + (ago(r.createdAt) === 'just now' ? '' : ' ago')),
+          h('div', { class: 'row between' }, h('span', { class: 'muted small' }, agoTxt(r.createdAt)),
             btn('Remove', async () => { if (await act(() => api('DELETE', `/api/references/${r.id}`), 'Removed')) loadRefs(); }, { kind: 'ghost sm' })))))
           : h('p', { class: 'muted small' }, 'Nothing pinned yet. Pin an approved image from the Images tab.'));
     }));
@@ -181,25 +167,29 @@ function smallPreview(ask) {
   return h('div', { class: 'small-prev' }, fig('150 px', 'f150', 150), fig('512 px', 'f512', 512), fig('Full size', 'ffull', 0));
 }
 
-function reviewItem(ask) {
+function reviewItem(ask, open) {
   const task = store.tasks.find((t) => t.id === ask.taskId);
-  const kind = /contact|sheet/i.test(ask.title + ' ' + ask.mediaPath) ? 'Contact sheet' : /\.(mp4|webm|mov)$/i.test(ask.mediaPath || '') ? 'Video' : 'Screenshot';
+  const video = isVideo(ask.mediaPath);
+  const kind = /contact|sheet/i.test(ask.title + ' ' + ask.mediaPath) ? 'Contact sheet' : video ? 'Video' : 'Screenshot';
   const v = verdictOf(ask);
-  const parts = v === 'open' ? actions(ask) : [];
-  const isImage = ask.mediaPath && !/\.(mp4|webm|mov)$/i.test(ask.mediaPath);
+  const [vLabel, vTone] = VERDICT[v] || [];
+  const isImage = ask.mediaPath && !video;
   const vNote = v !== 'open' ? noteOf(ask) : '';
+  const url = mediaUrl(ask.mediaPath);
   return h('article', { class: 'card ritem', 'data-verdict': v },
-    ask.mediaPath ? mediaEl(ask.mediaPath, ask.title) : null,
+    ask.mediaPath ? h('button', { type: 'button', class: 'rv-thumb', 'aria-label': `Open ${plain(ask.title)} in the viewer`, onclick: open },
+      video ? [h('video', { class: 'rv-media', src: url + '#t=0.1', preload: 'metadata' }), h('span', { class: 'rv-play', 'aria-hidden': 'true' }, ic('play', 22))] : h('img', { class: 'rv-media', src: url, alt: '', loading: 'lazy' }),
+      vLabel ? h('span', { class: 'spill rv-verdict', 'data-tone': vTone }, vLabel) : null) : null,
     h('div', { class: 'ritem-body' },
       h('h3', {}, plain(ask.title)),
-      ask.why ? h('p', { class: 'muted pre' }, ask.why) : null,
-      h('p', { class: 'muted small' }, [kind, task?.game ? gameName(task.game) : null, ago(ask.createdAt) + (ago(ask.createdAt) === 'just now' ? '' : ' ago'), ask.superseded ? 'older version' : null].filter(Boolean).join(' · ')),
-      v !== 'open' ? h('div', { class: 'row gap' }, h('span', { class: 'pill', 'data-state': v === 'approved' ? 'done' : v === 'rejected' ? 'failed' : 'review' }, { approved: 'approved', rejected: 'rejected', held: 'on hold', changes: 'changes asked' }[v] || v), vNote ? h('span', { class: 'muted small' }, vNote) : h('span', { class: 'muted small' }, v)) : null,
+      h('div', { class: 'rv-meta' }, h('span', { class: 'rv-type' }, ic(video ? 'play' : 'image', 13), kind), task?.game ? h('span', {}, gameName(task.game)) : null, h('span', {}, agoTxt(ask.createdAt)), ask.superseded ? h('span', {}, 'older version') : null),
+      ask.why ? h('p', { class: 'muted pre rv-why' }, ask.why) : null,
+      vNote ? h('p', { class: 'muted small' }, vNote) : null,
       isImage ? h('div', { class: 'row gap wrap' },
         btn('How it reads small', () => { smallOpen.has(ask.id) ? smallOpen.delete(ask.id) : smallOpen.add(ask.id); notify(); }, { kind: 'ghost sm', icon: 'search' }),
         v === 'approved' ? btn('Pin to Visual bar', () => pinModal(ask.mediaPath, ask.title), { kind: 'ghost sm', icon: 'image' }) : null) : null,
       smallOpen.has(ask.id) && isImage ? smallPreview(ask) : null,
-      parts));
+      v === 'open' ? actions(ask) : null));
 }
 
 function groupLabel(a) {
@@ -218,40 +208,46 @@ function rejectAllModal(ids) {
     }, { kind: 'danger' }))));
 }
 
+// Tile, purpose label, "media", count; Approve all and Reject all cover only that group's waiting items.
+async function bulkDo(path, ids, msg, ok) {
+  if (!confirm(msg)) return;
+  if (await act(() => api('POST', path, { ids }), ok)) loadState().catch(() => {});
+}
+
+function groupHead(g) {
+  const ids = g.items.filter((a) => needsDecision(a) && a.kind === 'review').map((a) => a.id);
+  return h('div', { class: 'rgroup-head' }, avatar(g.role, 28), h('h2', {}, g.label), h('span', { class: 'muted' }, 'media'), h('span', { class: 'rv-n' }, g.items.length), h('span', { class: 'grow' }),
+    ids.length ? [btn(`Approve all ${ids.length}`, () => bulkDo('/api/asks/approve-all', ids, `Approve all ${ids.length} waiting in ${g.label}?`, 'Approved'), { kind: 'good sm', icon: 'check' }),
+      btn('Reject all', () => rejectAllModal(ids), { kind: 'ghost sm' })] : null);
+}
+
 function imagesTab() {
   const base = store.asks.filter((a) => (isMediaAsk(a) || a.kind === 'review' || isReference(a)) && (!agent || a.role === agent) && (older || !a.superseded));
   const counts = { open: 0, changes: 0, held: 0, approved: 0, rejected: 0, all: base.length };
   for (const a of base) { const v = verdictOf(a); if (counts[v] != null && !(v === 'open' && isReference(a))) counts[v]++; }
   const shown = base.filter((a) => filter === 'all' || verdictOf(a) === filter);
   const roleIds = [...new Set(store.asks.filter((a) => isMediaAsk(a) || a.kind === 'review' || isReference(a)).map((a) => a.role))];
-  const groups = new Map();
-  for (const a of shown) { const k = a.role + '|' + groupLabel(a); (groups.get(k) || groups.set(k, { label: groupLabel(a), role: a.role, items: [] }).get(k)).items.push(a); }
-  const order = (g) => store.roles.findIndex((r) => r.id === g.role);
-  const sortedGroups = [...groups.values()].sort((a, b) => order(a) - order(b));
+  const groups = new Map(); for (const a of shown) { const k = a.role + '|' + groupLabel(a); (groups.get(k) || groups.set(k, { label: groupLabel(a), role: a.role, items: [] }).get(k)).items.push(a); }
+  const order = (g) => store.roles.findIndex((r) => r.id === g.role); const sortedGroups = [...groups.values()].sort((a, b) => order(a) - order(b));
+  shownMedia = sortedGroups.flatMap((g) => g.items).filter((a) => a.mediaPath);
   const waitingIds = base.filter((a) => a.state === 'open' && !isReference(a)).map((a) => a.id);
   const otherOpen = filter === 'open' && !agent ? store.asks.filter((a) => a.state === 'open' && !a.superseded && !isMediaAsk(a) && a.kind !== 'review' && !isReference(a)) : [];
-  const bulk = filter === 'open' && waitingIds.length ? h('div', { class: 'row gap wrap' },
-    btn('Clear the queue', async () => {
-      if (!confirm(`Approve all ${waitingIds.length} waiting images?`)) return;
-      if (await act(() => api('POST', '/api/asks/approve-all', { ids: waitingIds }), 'Queue cleared')) loadState().catch(() => {});
-    }, { icon: 'check', title: 'Approve everything waiting' }),
-    btn('Reject all…', () => rejectAllModal(waitingIds), { kind: 'danger', icon: 'x' }),
-    btn('Empty the queue without approving anything', async () => {
-      if (!confirm(`Remove ${waitingIds.length} waiting items from the queue without approving or rejecting them?`)) return;
-      if (await act(() => api('POST', '/api/asks/empty', { ids: waitingIds }), 'Queue emptied')) loadState().catch(() => {});
-    }, { kind: 'ghost' })) : null;
+  const bulk = filter === 'open' && waitingIds.length ? h('div', { class: 'row gap wrap rv-bulk' },
+    btn('Clear the queue', () => bulkDo('/api/asks/approve-all', waitingIds, `Approve all ${waitingIds.length} waiting images?`, 'Queue cleared'), { kind: 'sm', icon: 'check', title: 'Approve everything waiting' }),
+    btn('Reject all…', () => rejectAllModal(waitingIds), { kind: 'rv-reject sm', icon: 'x' }),
+    btn('Empty the queue without approving anything', () => bulkDo('/api/asks/empty', waitingIds, `Remove ${waitingIds.length} waiting items from the queue without approving or rejecting them?`, 'Queue emptied'), { kind: 'ghost sm' })) : null;
+  const opener = (a) => () => openViewer(shownMedia, shownMedia.indexOf(a));
   return h('div', { class: 'stack' },
     h('div', { class: 'row gap wrap between' },
-      h('div', { class: 'seg wide', role: 'group', 'aria-label': 'Filter' }, FILTERS.map(([id, l]) => h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(id === filter), onclick: () => { filter = id; notify(); } }, `${l} (${counts[id]})`))),
+      h('div', { class: 'seg wide', role: 'group', 'aria-label': 'Filter' }, FILTERS.map(([id, l]) => h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(id === filter), onclick: () => { filter = id; notify(); } }, l, h('span', { class: 'seg-count' }, counts[id])))),
       h('div', { class: 'row gap wrap' },
         h('select', { class: 'select sm', 'aria-label': 'Agent', onchange: (e) => { agent = e.target.value; notify(); } },
-          h('option', { value: '' }, 'All agents'), roleIds.map((id) => h('option', { value: id, selected: id === agent }, roleLabel(id)))),
+          h('option', { value: '' }, 'Every agent'), roleIds.map((id) => h('option', { value: id, selected: id === agent }, roleLabel(id)))),
         h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: older, onchange: (e) => { older = e.target.checked; notify(); } }), h('span', {}, 'Older versions')))),
     bulk,
-    sortedGroups.length ? sortedGroups.map((g) => h('section', { class: 'rgroup' },
-      h('h2', { class: 'rgroup-head' }, avatar(g.role, 24), g.label, h('span', { class: 'count' }, g.items.length)),
-      h('div', { class: 'rgrid' }, g.items.map(reviewItem)))) : (otherOpen.length ? null : empty(filter === 'open' ? 'Nothing is waiting for you' : 'Nothing in this filter')),
-    otherOpen.length ? h('section', { class: 'rgroup' }, h('h2', { class: 'rgroup-head' }, 'Other questions', h('span', { class: 'count' }, otherOpen.length)),
+    sortedGroups.length ? sortedGroups.map((g) => h('section', { class: 'rgroup' }, groupHead(g), h('div', { class: 'rgrid' }, g.items.map((a) => reviewItem(a, opener(a))))))
+      : (otherOpen.length ? null : empty(filter === 'open' ? 'Nothing waiting. When an agent makes an image or screenshot for you, it shows up here.' : 'Nothing in this filter')),
+    otherOpen.length ? h('section', { class: 'rgroup' }, h('div', { class: 'rgroup-head' }, h('h2', {}, 'Other questions'), h('span', { class: 'rv-n' }, otherOpen.length)),
       h('div', { class: 'stack' }, otherOpen.map(askCard))) : null);
 }
 
@@ -260,19 +256,13 @@ async function loadStages() {
   stageAt = Date.now();
   const get = async (s) => { try { const r = await api('GET', '/api/stage-requests?state=' + s); return Array.isArray(r) ? r : r.requests || []; } catch { return []; } };
   const [open, held, rejected] = await Promise.all([get('open'), get('held'), get('rejected')]);
-  stages = { open, held, rejected };
-  store.stageRequests = open;
-  notify();
+  stages = { open, held, rejected }; store.stageRequests = open; notify();
 }
 
-const stageMode = new Map();
-const stageDraft = {};
-const CRIT = /^[A-Z][0-9]{1,2}$/;
+const stageMode = new Map(); const stageDraft = {}; const CRIT = /^[A-Z][0-9]{1,2}$/;
 
 async function decideStage(r, state, reason, criteria) {
-  const body = { state };
-  if (reason) body.reason = reason;
-  if (criteria?.length) body.criteriaFailed = criteria;
+  const body = { state, ...(reason ? { reason } : {}), ...(criteria?.length ? { criteriaFailed: criteria } : {}) };
   if (await act(() => api('POST', `/api/stage-requests/${r.id}/decide`, body), { approved: 'Stage approved', rejected: 'Sent back', held: 'On hold' }[state])) { stageMode.delete(r.id); await loadStages(); loadState().catch(() => {}); }
 }
 
@@ -301,7 +291,7 @@ function stageCard(r) {
     h('div', { class: 'row gap wrap' },
       btn('Approve', () => decideStage(r, 'approved'), { kind: 'primary', icon: 'check' }),
       r.state === 'held' ? null : btn('Hold', () => { stageMode.set(r.id, 'held'); notify(); }),
-      btn('Reject', () => { stageMode.set(r.id, 'rejected'); notify(); }, { kind: 'danger' })),
+      btn('Reject', () => { stageMode.set(r.id, 'rejected'); notify(); }, { kind: 'rv-reject' })),
     box);
 }
 
@@ -327,12 +317,21 @@ function stagesTab() {
     kicked.length ? h('p', { class: 'hint' }, 'Context only. The agent reworks it and asks again.') : null);
 }
 
-export function render() {
+// param is an ask id for #/review/<id>: that ask opens in the viewer once per visit.
+export function render(param) {
   const mediaOpen = store.asks.filter((a) => needsDecision(a) && (isMediaAsk(a) || a.kind === 'review')).length;
-  const tabs = [['images', `Images & video (${mediaOpen})`], ['bar', `Visual bar (${refs.length})`], ['stages', `Stages & publish (${stages.open.length + stages.held.length})`]];
+  const target = param && param !== viewerFor ? store.asks.find((a) => a.id === param && a.mediaPath) : null;
+  viewerFor = param || '';
+  if (target) tab = 'images';
+  const tabs = [['images', 'Images & video', mediaOpen], ['bar', 'Visual bar', refs.length], ['stages', 'Stages & publish', stages.open.length + stages.held.length]];
   if (refsAt === 0) loadRefs();
-  return h('div', { class: 'page' },
-    pageHead('Review', mediaOpen ? `${mediaOpen} waiting for you.` : 'Nothing is waiting for you.'),
-    h('div', { class: 'tabs', role: 'tablist' }, tabs.map(([id, l]) => h('button', { type: 'button', role: 'tab', class: 'tab', 'aria-selected': String(id === tab), onclick: () => { tab = id; notify(); } }, l))),
+  const page = h('div', { class: 'page rv-page' },
+    h('header', { class: 'page-head' }, h('div', {},
+      mediaOpen ? null : h('div', { class: 'overline', 'data-tone': 'green' }, 'All caught up'),
+      h('div', { class: 'rv-title' }, h('h1', {}, 'Review'), mediaOpen ? h('span', { class: 'chip', 'data-tone': 'need' }, `${mediaOpen} waiting for you`) : null),
+      h('p', { class: 'muted' }, 'What the agents made for you. Approve it, ask for changes, or reject it; the agent picks up your verdict next.'))),
+    h('div', { class: 'tabs', role: 'tablist' }, tabs.map(([id, l, n]) => h('button', { type: 'button', role: 'tab', class: 'tab', 'aria-selected': String(id === tab), onclick: () => { tab = id; notify(); } }, l, n ? h('span', { class: 'rv-n' }, n) : null))),
     tab === 'images' ? imagesTab() : tab === 'bar' ? barTab() : stagesTab());
+  if (target) setTimeout(() => { const list = shownMedia.includes(target) ? shownMedia : [target, ...shownMedia]; openViewer(list, list.indexOf(target), () => { viewerFor = ''; if (location.hash.startsWith('#/review/')) history.replaceState(null, '', '#/review'); }); }, 0);
+  return page;
 }

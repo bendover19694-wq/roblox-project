@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 
 const USAGE = `Agent HQ command line (same actions as the hq_* MCP tools). Run from the repo root.
-Every command that touches a task (note, ask, media, complete, learn, pitch, stage, asset, metric) also needs the task token from your brief:
+Every command that touches a task (note, ask, media, complete, learn, pitch, idea, stage, asset, metric) also needs the task token from your brief:
   add  --token <taskToken>  to the command, or set the HQ_TASK_TOKEN environment variable. Never share it or use another task's token.
 
   node tools/agent-hq/hqctl.mjs gate <engine> [--manual]                    should this lane work now? (engine: app | antigravity)
@@ -17,6 +17,7 @@ Every command that touches a task (note, ask, media, complete, learn, pitch, sta
   node tools/agent-hq/hqctl.mjs complete <taskId> <summary> [--state review|done|failed]
   node tools/agent-hq/hqctl.mjs learn <taskId> <lesson>                    record a reusable lesson for the task's role
   node tools/agent-hq/hqctl.mjs pitch '<json>' | <file.json> --task <taskId>   the full pitch schema (see hq_pitch)
+  node tools/agent-hq/hqctl.mjs idea '<json>' | <file.json> --task <taskId>    scout: score an owner idea {ideaId, verdict, rows, change} (see hq_idea_score)
   node tools/agent-hq/hqctl.mjs stage <game> <toStage> <evidence> --task <taskId>      producer and lead: request the next stage
   node tools/agent-hq/hqctl.mjs asset <name> <kind> <scope> <file> --task <taskId> [--tags a,b]   librarian: add an asset to the index
   node tools/agent-hq/hqctl.mjs metric <game> <key> <value> --task <taskId> [--date YYYY-MM-DD]   live ops: record a measured number
@@ -53,11 +54,11 @@ if (opt.token) process.env.HQ_TASK_TOKEN = opt.token;
 const { handlers, api } = await import('./mcp.mjs');
 
 const [cmd, ...a] = pos;
-const arity = { gate: 1, next: 1, note: 2, ask: 4, media: 3, complete: 2, learn: 2, pitch: 1, market: 0, stage: 3, asset: 4, metric: 3 };
+const arity = { gate: 1, next: 1, note: 2, ask: 4, media: 3, complete: 2, learn: 2, pitch: 1, idea: 1, market: 0, stage: 3, asset: 4, metric: 3 };
 if (!(cmd in arity)) fail(`unknown command "${cmd}". Run with --help.`);
-const TASK_COMMANDS = ['note', 'ask', 'media', 'complete', 'learn', 'pitch', 'stage', 'asset', 'metric'];
+const TASK_COMMANDS = ['note', 'ask', 'media', 'complete', 'learn', 'pitch', 'idea', 'stage', 'asset', 'metric'];
 if (TASK_COMMANDS.includes(cmd) && !process.env.HQ_TASK_TOKEN) fail(`"${cmd}" needs your task token: add --token <taskToken> (it is in your brief) or set HQ_TASK_TOKEN.`);
-if (['stage', 'asset', 'metric', 'pitch'].includes(cmd) && !opt.task) fail(`"${cmd}" needs --task <taskId> (the working task of the role that may do this).`);
+if (['stage', 'asset', 'metric', 'pitch', 'idea'].includes(cmd) && !opt.task) fail(`"${cmd}" needs --task <taskId> (the working task of the role that may do this).`);
 if (a.length !== arity[cmd]) fail(`"${cmd}" takes ${arity[cmd]} argument(s), got ${a.length}. Run with --help.`);
 
 try {
@@ -72,6 +73,9 @@ try {
   else if (cmd === 'pitch') {
     let p; try { p = JSON.parse(fs.existsSync(a[0]) ? fs.readFileSync(a[0], 'utf8') : a[0]); } catch { fail('pitch needs a JSON object or a path to a JSON file'); }
     res = await handlers.hq_pitch({ ...p, taskId: opt.task });
+  } else if (cmd === 'idea') {
+    let p; try { p = JSON.parse(fs.existsSync(a[0]) ? fs.readFileSync(a[0], 'utf8') : a[0]); } catch { fail('idea needs a JSON object or a path to a JSON file'); }
+    res = await handlers.hq_idea_score({ ...p, taskId: opt.task });
   } else if (cmd === 'stage') {
     res = await handlers.hq_stage_request({ taskId: opt.task, game: a[0], toStage: a[1], evidence: a[2] });
   } else if (cmd === 'asset') {

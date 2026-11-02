@@ -22,6 +22,7 @@ const TASKS = {
   t_prod: { id: 't_prod', role: 'producer', title: 'stage', state: 'working' },
   t_lib: { id: 't_lib', role: 'librarian', title: 'assets', state: 'working' },
   t_ops: { id: 't_ops', role: 'liveops', title: 'numbers', state: 'working' },
+  t_scout: { id: 't_scout', role: 'scout', title: 'Score idea: x', state: 'working' },
   t_ops_done: { id: 't_ops_done', role: 'liveops', title: 'old numbers', state: 'review' },
 };
 let server, url;
@@ -77,6 +78,8 @@ before(async () => {
       const sr = req.url.match(/^\/api\/games\/([\w-]+)\/(stage-requests|metrics)$/);
       if (req.method === 'POST' && sr) { calls.push([sr[2], sr[1], parseBody()]); return send(200, { id: 'x_1' }); }
       if (req.method === 'POST' && req.url === '/api/assets') { calls.push(['asset', parseBody()]); return send(200, { id: 'asset_1' }); }
+      const idea = req.url.match(/^\/api\/idea-scores\/(i_\w+)\/score$/);
+      if (req.method === 'POST' && idea) { calls.push(['idea', idea[1], parseBody()]); return send(200, { id: idea[1], state: 'scored' }); }
       if (req.method === 'POST' && req.url === '/api/pitches') { calls.push(['pitch', parseBody()]); return send(200, { id: 'p_1' }); }
       if (req.method === 'GET' && req.url === '/api/market') return send(200, { sorts: [] });
       if (req.method === 'POST' && req.url === '/api/tasks/next') { const b = parseBody(); return send(200, b.engine === 'app' ? { task: { id: 't_1' }, brief: 'BRIEF', taskToken: 'SECRET' } : { task: null }); }
@@ -98,11 +101,11 @@ test('initialize echoes protocol version', async () => {
   assert.equal(r.result.serverInfo.name, 'agent-hq');
 });
 
-test('tools/list has the 15 tools', async () => {
+test('tools/list has the 21 tools', async () => {
   const r = await task.rpc('tools/list', {});
   assert.deepEqual(r.result.tools.map((t) => t.name).sort(), [
-    'hq_add_media', 'hq_ask_owner', 'hq_asset_add', 'hq_claim_task', 'hq_complete', 'hq_create_task', 'hq_lane_gate',
-    'hq_learn', 'hq_list_tasks', 'hq_metric', 'hq_next_task', 'hq_note', 'hq_pitch', 'hq_stage_request', 'hq_vault',
+    'hq_add_media', 'hq_ask_owner', 'hq_asset_add', 'hq_catalog_fetch', 'hq_catalog_search', 'hq_claim_task', 'hq_complete', 'hq_create_task', 'hq_idea_score', 'hq_lane_gate',
+    'hq_learn', 'hq_link_read', 'hq_link_say', 'hq_link_share', 'hq_list_tasks', 'hq_metric', 'hq_next_task', 'hq_note', 'hq_pitch', 'hq_stage_request', 'hq_vault',
   ]);
 });
 
@@ -147,6 +150,24 @@ test('hq_pitch posts the full pitch and refuses a partial one', async () => {
   const partial = await ide.call('hq_pitch', { title: 'T', oneLiner: 'o', evidence: { summary: 's', links: [] }, game: { howItPlays: 'a' } });
   assert.equal(partial.result.isError, true);
   assert.match(partial.result.content[0].text, /full pitch.*format.*window.*competitors.*game\.first60s.*evidence\.links/s);
+  assert.equal(calls.length, before, 'nothing was sent');
+});
+
+const IDEA = {
+  ideaId: 'i_0123456789ab', verdict: 'Wanted, but a big build.', change: 'Cut the second map.',
+  rows: ['Demand', 'Competition', 'Money', 'First five minutes', 'Build size'].map((name, i) => ({ name, score: 5 + i / 2, evidence: `evidence ${i}` })),
+};
+
+test('hq_idea_score sends the rows to the idea with the task token, and needs a task and an idea id', async () => {
+  seen.length = 0;
+  const r = await ide.call('hq_idea_score', { ...IDEA, taskId: 't_scout' });
+  assert.ok(!r.result.isError, JSON.stringify(r.result));
+  assert.deepEqual(calls.at(-1), ['idea', IDEA.ideaId, { verdict: IDEA.verdict, rows: IDEA.rows, change: IDEA.change, taskId: 't_scout' }]);
+  assert.deepEqual(seen.at(-1), { url: `/api/idea-scores/${IDEA.ideaId}/score`, header: tok('t_scout'), bodyToken: tok('t_scout') });
+  const before = calls.length;
+  assert.equal((await ide.call('hq_idea_score', IDEA)).result.isError, true, 'no taskId');
+  assert.equal((await ide.call('hq_idea_score', { ...IDEA, taskId: 't_scout', ideaId: undefined })).result.isError, true, 'no ideaId');
+  assert.equal((await ide.raw('hq_idea_score', { ...IDEA, taskId: 't_scout' })).result.isError, true, 'no task token');
   assert.equal(calls.length, before, 'nothing was sent');
 });
 
@@ -249,6 +270,23 @@ test('hqctl stage, asset and metric need --task and go through the same gates', 
   assert.equal(live.status, 1);
 });
 
+test('hqctl idea scores through hq_idea_score and needs --task', async () => {
+  const env = { ...process.env, HQ_URL: url, HQ_TOKEN: TOKEN };
+  const run = (...a) => new Promise((resolve) => {
+    const c = spawn(process.execPath, [ctlFile, ...a], { env });
+    let stdout = '';
+    c.stdout.on('data', (d) => (stdout += d));
+    c.on('close', (status) => resolve({ status, stdout }));
+  });
+  const json = JSON.stringify(IDEA);
+  assert.match(JSON.parse((await run('idea', json, '--token', tok('t_scout'))).stdout).error, /--task/);
+  assert.equal((await run('idea', json, '--task', 't_scout')).status, 1, 'needs the task token');
+  assert.equal((await run('idea', 'not json', '--task', 't_scout', '--token', tok('t_scout'))).status, 1);
+  assert.equal((await run('idea', json, '--task', 't_scout', '--token', tok('t_scout'))).status, 0);
+  assert.equal(calls.at(-1)[0], 'idea');
+  assert.equal(calls.at(-1)[2].taskId, 't_scout');
+});
+
 test('every task-scoped call carries taskId, and none works without one', async () => {
   // task: HQ_TASK=t_1 in the environment; ide: no HQ_TASK, so the id must be an argument
   await task.call('hq_ask_owner', { kind: 'try', title: 'Try it', why: 'because' });
@@ -276,6 +314,7 @@ test('every task-scoped call carries taskId, and none works without one', async 
     ['hq_note', { text: 't' }],
     ['hq_learn', { lesson: 'l' }],
     ['hq_pitch', FULL_PITCH],
+    ['hq_idea_score', IDEA],
   ]) {
     const r = await ide.call(name, args);
     assert.equal(r.result.isError, true, `${name} without a taskId`);
@@ -304,6 +343,7 @@ test('a task-scoped call without a task token is refused and sends nothing', asy
     ['hq_complete', { taskId: 't_1', summary: 's' }],
     ['hq_learn', { taskId: 't_1', lesson: 'l' }],
     ['hq_pitch', { ...FULL_PITCH, taskId: 't_1' }],
+    ['hq_idea_score', { ...IDEA, taskId: 't_scout' }],
     ['hq_create_task', { taskId: 't_lead', role: 'ui', title: 'a', body: 'b' }],
     ['hq_stage_request', { taskId: 't_prod', game: 'space-agency', toStage: 'balanced', evidence: 'e' }],
     ['hq_asset_add', { taskId: 't_lib', name: 'N', kind: 'icon', scope: 'studio', file: 'assets/ui/coin.png' }],

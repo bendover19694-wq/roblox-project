@@ -1,4 +1,6 @@
 // Agent HQ server: HTTP API, SSE, static files. Zero dependencies.
+import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs';
+import { createAssetCatalog, mountCatalog, CATALOG_OWNER_ONLY } from './catalog.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,7 +8,9 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import * as D from './db.mjs';
 import { loadRoles, parseVault, buildBrief } from './briefs.mjs';
-import { fetchCharts as realFetchCharts, velocity, computeBreakouts, fetchGameDetails, fetchIcons, fetchThumbnails, loadBenchmarks, titleAnalysis } from './market.mjs';
+import { mountMarket } from './market-routes.mjs';
+import { mountIdeas, IDEAS_OWNER_ONLY } from './ideas.mjs';
+import { fetchCharts as realFetchCharts, fetchGameDetails, fetchIcons, fetchThumbnails, loadBenchmarks, titleAnalysis } from './market.mjs';
 import { liveStatsView } from './livestats.mjs';
 import { PROVIDERS, PROVIDER_IDS, CLAUDE_MODELS, keyLooksOk, createCatalog, testModel } from './providers.mjs';
 import { normalizePitch } from './pitches.mjs';
@@ -34,10 +38,10 @@ const MIME = {
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
   '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.mp4': 'video/mp4', '.txt': 'text/plain; charset=utf-8',
-  '.md': 'text/plain; charset=utf-8', '.ico': 'image/x-icon',
+  '.md': 'text/plain; charset=utf-8', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
 };
 const MEDIA_INLINE = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp3', '.ogg', '.wav', '.mp4']);
-const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'";
+const CSP = "default-src 'self'; img-src 'self' data: https://cdn.polyhaven.com https://*.rbxcdn.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 // ---- event bus (SSE) ----
 const clients = new Set();
@@ -229,7 +233,7 @@ export async function realFetchLiveStats({ apiKey, universeId, dates }) {
  * startServer({root, port=4317, stateDir, dbFile, runner, fetchCharts}) -> Promise<{server, db, token (agent), ownerToken, port, close}>
  * runner: an object, or a factory ({db, root, emit, port, token}) => runner (started/stopped by the server).
  */
-export async function startServer({ root, port = 4317, stateDir, dbFile, runner, fetchCharts = realFetchCharts, now = Date.now, roles: rolesOpt, memoryDir, fetchLive = realFetchLive, fetchLiveStats = realFetchLiveStats, autoTimers = false, tickMs = 60000, fetchers: fetchersOpt = {} } = {}) {
+export async function startServer({ root, port = 4317, stateDir, dbFile, runner, linkFetch, catalogFetch, catalogLihfolk, fetchCharts = realFetchCharts, now = Date.now, roles: rolesOpt, memoryDir, fetchLive = realFetchLive, fetchLiveStats = realFetchLiveStats, autoTimers = false, tickMs = 60000, fetchers: fetchersOpt = {} } = {}) {
   const fetchers = { details: fetchGameDetails, icons: fetchIcons, thumbnails: fetchThumbnails, ...fetchersOpt };
   root = path.resolve(root ?? path.resolve(HERE, '../..'));
   stateDir = path.resolve(stateDir ?? path.join(root, '.agent-hq'));
@@ -313,8 +317,8 @@ Task: ${task.title}
 ${task.body}`;
     }
   };
-  const pubTask = (t) => { emit('task', clean(t)); processTask(clean(t)); return clean(t); };
-  const hookedEmit = (type, payload) => { emit(type, type === 'task' ? clean(payload) : payload); if (type === 'task') processTask(clean(payload)); };
+  const pubTask = (t) => { emit('task', clean(t)); processTask(clean(t)); link.taskChanged(clean(t)); return clean(t); };
+  const hookedEmit = (type, payload) => { emit(type, type === 'task' ? clean(payload) : payload); if (type === 'task') { processTask(clean(payload)); link.taskChanged(clean(payload)); } };
 
   // ---- review gates: reviewer/tester tasks after a role finishes; FAIL sends work back (max 3 attempts) ----
   const GATE_ENGINES = new Set(['app', 'claude-cli', 'echo', 'groq', 'nim']);
@@ -375,6 +379,8 @@ ${task.body}`;
     return t;
   };
   const queueTask = (f) => pubTask(D.createTask(db, f));
+  const assetCatalog = createAssetCatalog({ root, stateDir, addAsset, fetchImpl: catalogFetch ?? globalThis.fetch, lihfolkPath: catalogLihfolk ?? process.env.HQ_LIHFOLK_ASSETS });
+  const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), fetchImpl: linkFetch ?? globalThis.fetch });
   const postMessage = (f) => { const m = D.addMessage(db, f); emit('message', m); return m; };
 
   const gameRow = (g) => ({ ...g, ...D.gameWork(db, g.slug) });
@@ -400,7 +406,7 @@ ${task.body}`;
     ['GET', /^\/api\/games\/[^/]+\/gate$/], ['POST', /^\/api\/games\/[^/]+\/(?:gate\/(?:start|confirm|checklist)|ad-note)$/],
     ['POST', /^\/api\/pitches\/ideas$/], ['POST', /^\/api\/pitches\/[^/]+\/decide$/], ['POST', /^\/api\/stage-requests\/[^/]+\/decide$/],
     ['POST', /^\/api\/games$/], ['PATCH', /^\/api\/games\/[^/]+$/], ['POST', /^\/api\/games\/[^/]+\/mark-live$/],
-    ['POST', /^\/api\/settings$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
+    ...LINK_OWNER_ONLY, ...CATALOG_OWNER_ONLY, ...IDEAS_OWNER_ONLY, ['POST', /^\/api\/settings$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
     ['POST', /^\/api\/messages\/[^/]+\/reset$/], ['POST', /^\/api\/threads\/[^/]+\/read$/],
     ['POST', /^\/api\/market\/corpus$/], ['DELETE', /^\/api\/market\/corpus\/\d+$/], ['POST', /^\/api\/uploads$/],
   ];
@@ -425,6 +431,7 @@ ${task.body}`;
   const route = (method, re, fn, opts = {}) => routes.push([method, re, fn, opts]);
 
   route('GET', /^\/api\/health$/, () => ({ ok: true }));
+  mountLink(route, link, { str, bad, isObj, agentTask, HttpError });
 
   route('GET', /^\/api\/state$/, () => {
     const asks = D.listAsks(db);
@@ -609,6 +616,7 @@ ${task.body}`;
     }
     const done = D.answerAsk(db, a.id, { answer, verdict, verdictNote: note });
     emit('ask', done);
+    if (link.answered(a, answer)) return done;
     const task = a.taskId ? D.getTask(db, a.taskId) : null;
     const say = (text) => postMessage({ role: a.role, from: 'owner', text, taskId: a.taskId });
     if (a.kind === 'decision' || a.kind === 'try' || a.kind === 'approve') {
@@ -1186,30 +1194,8 @@ ${task.body}`;
   route('POST', /^\/api\/resume$/, () => setPaused(false));
 
   // market
-  const marketView = () => {
-    const [latest, previous] = D.latestMarketSnapshots(db, 2);
-    const cur = latest ?? { fetchedAt: null, sorts: [] };
-    return { latest: cur, previous: previous ?? null, velocity: velocity(cur, previous ?? null), sorts: cur.sorts.map((x) => ({ id: x.id, name: x.name, count: x.games.length })) };
-  };
-  route('GET', /^\/api\/market$/, () => marketView());
-
-  async function refreshBreakouts() {
-    const snaps = D.latestMarketSnapshots(db, 30);
-    const ids = [...new Set((snaps[0]?.sorts ?? []).flatMap((x) => x.games.map((g) => g.universeId)))].slice(0, 600);
-    const rows = computeBreakouts(snaps, await fetchers.details(ids), now());
-    D.setSetting(db, 'breakouts', { rows, at: nowIso() });
-    D.setSetting(db, 'breakoutsAt', nowIso());
-  }
-  async function refreshMarket() {
-    D.setSetting(db, 'marketAttemptAt', nowIso());
-    let snap;
-    try { snap = await fetchCharts(); } catch (e) { throw new HttpError(502, `market fetch failed: ${e.message}`); }
-    D.saveMarketSnapshot(db, snap);
-    let breakoutsError = null;
-    try { await refreshBreakouts(); } catch (e) { breakoutsError = e.message; }
-    return { ...marketView(), breakoutsError };
-  }
-  route('POST', /^\/api\/market\/refresh$/, () => refreshMarket());
+  const { refreshMarket } = mountMarket(route, { db, fetchers, fetchCharts, now, nowIso, HttpError }); // GET /api/market, /api/market/games/:id, POST /api/market/refresh
+  mountIdeas(route, { db, str, bad, isObj, agentTask, queueTask, HttpError }); // Score my idea: /api/idea-scores
 
   // title patterns across everything on the charts right now
   route('GET', /^\/api\/market\/titles$/, () => {
@@ -1272,6 +1258,7 @@ ${task.body}`;
     if (who === 'agent') agentTask(body, ['librarian'], headers); // only a librarian task, or the owner, adds assets
     try { return addAsset(root, body); } catch (e) { throw new HttpError(e.status ?? 500, e.message); }
   });
+  mountCatalog(route, assetCatalog, { str, bad, isObj, agentTask, HttpError });
   route('GET', /^\/api\/systems$/, () => ({ markdown: readSystems(root) }));
 
   route('GET', /^\/api\/vault$/, () => ({ chapters: parseVault(root) }));
@@ -1422,6 +1409,9 @@ ${task.body}`;
     // scrape the providers' model lists at boot and then daily, so the pickers are filled
     catalog.refreshAll().catch(() => {});
     setInterval(() => catalog.refreshAll().catch(() => {}), 86400000).unref();
+    setInterval(() => link.poll(), 20000).unref();
+    assetCatalog.refreshIfOld();
+    setInterval(() => assetCatalog.refreshIfOld(), 86400000).unref();
   }
   rn = runnerOwned ? runner({ db, root, emit: hookedEmit, port: boundPort, token, memoryDir, providers: readProviders }) : (runner ?? null);
   if (runnerOwned) rn.start?.();

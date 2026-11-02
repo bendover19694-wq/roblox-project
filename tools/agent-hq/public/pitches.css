@@ -1,0 +1,36 @@
+/* Agent HQ pitches: cards, compare, schema banner. Owner: exec-3. Loads after review.css. */
+/* pitches */
+.pitch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--s4); }
+.lede { font-size: 15px; }
+.kv p { color: var(--muted); }
+
+/* pitches */
+.pg-pitches { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: var(--s4); align-items: start; }
+.pg-pitch .head { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
+.pg-pitch .title { font-size: 17px; font-weight: 600; flex: 1; min-width: 160px; }
+.pg-pitch .one { color: var(--text); }
+.pg-pitch details { border-top: 1px solid var(--line); padding-top: var(--s2); }
+.pg-pitch summary { cursor: pointer; display: flex; gap: var(--s2); align-items: center; font-weight: 600; font-size: 13px; padding: 2px 0; list-style: none; }
+.pg-pitch summary::-webkit-details-marker { display: none; }
+.pg-pitch summary::before { content: ""; width: 6px; height: 6px; border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted); transform: rotate(-45deg); transition: transform 0.12s; }
+.pg-pitch details[open] > summary::before { transform: rotate(45deg); }
+.pg-pitch .body { padding: var(--s2) 0 var(--s1) var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+.pg-kv h4 { margin-bottom: 2px; }
+.pg-money { border: 1px solid var(--line-2); border-radius: 6px; padding: var(--s2) var(--s3); font-size: 13px; }
+.pg-actions { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; border-top: 1px solid var(--line); padding-top: var(--s3); }
+.pg-actions .sel { margin-right: auto; display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12.5px; }
+.pg-compare { display: grid; gap: var(--s3); grid-template-columns: repeat(var(--cols, 2), minmax(220px, 1fr)); overflow-x: auto; }
+.pg-compare .colh { font-weight: 600; font-size: 15px; }
+.pg-compare .cell { border-top: 1px solid var(--line); padding-top: var(--s2); min-width: 0; }
+.pg-compare .lab { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 2px; }
+
+/* pitches: schema banner, thumbnails */
+.pg-banner { border: 1px solid rgba(214, 162, 74, 0.5); background: rgba(214, 162, 74, 0.08); border-radius: 6px; padding: var(--s2) var(--s3); font-size: 13px; }
+.pg-thumbs { display: flex; gap: 4px; }
+.pg-thumbs img { cursor: zoom-in; }
+
+@media (max-width: 760px) {
+  .pg-pitches { grid-template-columns: minmax(0, 1fr); }
+  .pg-pitch .body { padding-left: var(--s2); }
+  .pg-actions .sel { margin-right: 0; width: 100%; }
+}

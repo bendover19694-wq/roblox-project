@@ -3,7 +3,7 @@ import { h, ic, store, api, act, roleLabel, avatar, plain, gameName, go, ago } f
 import { openTaskDrawer, newTaskModal } from './tasks.js';
 
 const PAGES = [['Home', 'home', 'home'], ['Lead', 'lead', 'lead'], ['Team', 'team', 'team'], ['Tasks', 'tasks', 'tasks'], ['Review', 'review', 'review'],
-  ['Games', 'games', 'games'], ['Pitches', 'pitches', 'pitches'], ['Market', 'market', 'market'], ['Library', 'library', 'library'], ['Settings', 'settings', 'settings']];
+  ['Games', 'games', 'games'], ['Pitches', 'pitches', 'pitches'], ['Market', 'market', 'market'], ['Library', 'library', 'library'], ['Pro', 'pro', 'gem'], ['Settings', 'settings', 'settings'], ['Help', 'help', 'help']];
 
 let openState = null;
 

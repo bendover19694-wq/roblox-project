@@ -1,4 +1,4 @@
-import { h, store, api, btn, empty, pageHead, assetUrl, mediaUrl, notify, toast } from './core.js';
+import { h, store, api, act, btn, empty, pageHead, assetUrl, mediaUrl, notify, toast } from './core.js';
 import { chip, segmented } from './charts.js';
 import { openLightbox } from './lightbox.js';
 
@@ -169,6 +169,65 @@ function assetsTab() {
     results);
 }
 
+// ---- catalog: free art from Poly Haven, the LihFolk pack and downloaded packs ----
+const cat = { q: '', type: '', data: null, err: '', seq: 0, busy: '' };
+let catTimer = null;
+
+async function loadCatalog(into) {
+  const seq = ++cat.seq;
+  const qs = new URLSearchParams();
+  if (cat.q) qs.set('q', cat.q);
+  if (cat.type) qs.set('type', cat.type);
+  try { cat.data = await api('GET', '/api/catalog?' + qs); cat.err = ''; } catch (e) { cat.err = e.message; }
+  if (seq !== cat.seq) return;
+  if (into && into.isConnected) into.replaceChildren(catalogGrid()); else notify();
+}
+
+async function fetchItem(x) {
+  cat.busy = x.id; notify();
+  const r = await act(() => api('POST', '/api/catalog/fetch', { id: x.id, res: '1k' }), `${x.name} is in your Assets`);
+  cat.busy = '';
+  if (r) assetData = null;
+  notify();
+}
+
+function catalogCard(x) {
+  const facts = [x.triangles ? `${Number(x.triangles).toLocaleString()} triangles` : '', x.licence].filter(Boolean).join(' | ');
+  return h('article', { class: 'pg-asset' },
+    h('div', { class: 'pv' }, x.preview ? h('img', { src: x.preview, alt: x.name, loading: 'lazy' }) : h('span', { class: 'muted' }, x.type)),
+    h('div', { class: 'info' },
+      h('span', { class: 'nm', title: x.name }, x.name),
+      h('div', { class: 'row gap wrap' }, chip(x.type), chip(x.source)),
+      h('span', { class: 'muted' }, x.description),
+      h('span', { class: 'muted' }, facts),
+      x.source === 'polyhaven' ? btn(cat.busy === x.id ? 'Getting it' : 'Get 1K', () => fetchItem(x), { disabled: !!cat.busy }) : null,
+      x.file ? h('span', { class: 'muted mono clip', title: x.file }, x.file) : null));
+}
+
+function catalogGrid() {
+  if (cat.err) return empty(cat.err);
+  const a = cat.data?.results || [];
+  if (!a.length) return empty(cat.data?.total ? 'Nothing matches that search.' : 'The catalog is empty. Press Refresh to load Poly Haven.');
+  return h('div', { class: 'stack' }, h('p', { class: 'muted' }, `${cat.data.found.toLocaleString()} found, showing ${a.length}`), h('div', { class: 'pg-assets' }, a.map(catalogCard)));
+}
+
+function catalogTab() {
+  if (!cat.data && !cat.err) { loadCatalog(); return empty('Loading'); }
+  const results = h('div', {});
+  results.append(catalogGrid());
+  const search = h('input', { class: 'pg-input', type: 'search', placeholder: 'Search free models, textures, skies and packs', value: cat.q, 'aria-label': 'Search the catalog', style: 'flex:1 1 260px;min-width:0',
+    oninput: (e) => { cat.q = e.target.value.trim(); clearTimeout(catTimer); catTimer = setTimeout(() => loadCatalog(results), 200); } });
+  const types = ['', 'model', 'texture', 'hdri', 'material', 'sky', 'animation', 'vfx', 'pack'];
+  const type = h('select', { class: 'select', 'aria-label': 'Type', onchange: (e) => { cat.type = e.target.value; loadCatalog(results); } },
+    types.map((t) => h('option', { value: t }, t || 'All types')));
+  type.value = cat.type;
+  return h('div', { class: 'stack' },
+    h('div', { class: 'pg-filters' }, search, type, btn('Refresh', async () => { if (await act(() => api('POST', '/api/catalog/refresh'), 'Catalog refreshed')) loadCatalog(); })),
+    results,
+    h('p', { class: 'muted' }, 'Powered by ', h('a', { href: 'https://polyhaven.com', target: '_blank', rel: 'noopener' }, 'Poly Haven'),
+      '. Add Kenney packs by unzipping them into assets/packs.'));
+}
+
 async function loadSystems() {
   if (systemsMd !== null) return;
   systemsMd = '';
@@ -194,12 +253,12 @@ function systemsTab() {
 }
 
 export function render() {
-  const tabs = [['assets', 'Assets'], ['systems', 'Systems'], ['vault', 'Vault'], ['skills', 'Skills']];
+  const tabs = [['assets', 'Assets'], ['catalog', 'Catalog'], ['systems', 'Systems'], ['vault', 'Vault'], ['skills', 'Skills']];
   const total = assetData?.counts?.all;
   const sub = total != null ? `${total} assets · ${assetData.onRoblox ?? 0} on Roblox. Plus the knowledge the agents read, the skills they use, and reusable game systems.` : 'Assets, reusable game systems, the knowledge the agents read, and the skills they use.';
   return h('div', { class: 'page' },
     pageHead('Library', sub),
     h('div', { class: 'tabs', role: 'tablist' }, tabs.map(([id, l]) => h('button', { type: 'button', role: 'tab', class: 'tab', 'aria-selected': String(id === tab),
       onclick: () => { tab = id; notify(); } }, l))),
-    tab === 'assets' ? assetsTab() : tab === 'systems' ? systemsTab() : tab === 'vault' ? vaultTab() : skillsTab());
+    tab === 'assets' ? assetsTab() : tab === 'catalog' ? catalogTab() : tab === 'systems' ? systemsTab() : tab === 'vault' ? vaultTab() : skillsTab());
 }

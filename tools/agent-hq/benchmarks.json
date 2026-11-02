@@ -138,5 +138,85 @@
     "failureMeaning": "Low-end phones stutter or crash, and the phone layout loses most of its audience.",
     "source": "docs/technical-architecture.md section 8 (performance targets)",
     "label": "Team target"
+  },
+  {
+    "id": "ga26-d1",
+    "benchmark": "Day-1 retention, Roblox platform (2026)",
+    "target": "p25 8.4%, p50 10.3%, p75 12.9%, p90 15.9%, p99 22.2%",
+    "measuredBy": "Creator Analytics D1 retention",
+    "tier": "watch",
+    "failureMeaning": "Under p25 means the first session loses players faster than three quarters of large games.",
+    "source": "https://www.gameanalytics.com/reports/2026-roblox-report",
+    "label": "GameAnalytics 2026 Roblox Benchmark Report, large games only (500+ titles with 1M+ MAU, Aug 2025 to Jul 2026). A median here is a floor for healthy, not a target for a new release; a small game that beats it is a strong signal."
+  },
+  {
+    "id": "ga26-d7",
+    "benchmark": "Day-7 retention, Roblox platform (2026)",
+    "target": "p25 1.0%, p50 1.6%, p99 9.1%",
+    "measuredBy": "Creator Analytics D2 to 7 retention window and the D7 cohort",
+    "tier": "watch",
+    "failureMeaning": "Under p25 means players do not come back across the first week as often as in three quarters of large games.",
+    "source": "https://www.gameanalytics.com/reports/2026-roblox-report",
+    "label": "GameAnalytics 2026 Roblox Benchmark Report, large games only (500+ titles with 1M+ MAU, Aug 2025 to Jul 2026). A median here is a floor for healthy, not a target for a new release; a small game that beats it is a strong signal."
+  },
+  {
+    "id": "ga26-d30",
+    "benchmark": "Day-30 retention, Roblox platform (2026)",
+    "target": "p25 0.3%, p50 0.5%, p99 4.7%",
+    "measuredBy": "Creator Analytics D8 to 28 window and the D30 cohort",
+    "tier": "watch",
+    "failureMeaning": "Under p25 means few players are still around after a month.",
+    "source": "https://www.gameanalytics.com/reports/2026-roblox-report",
+    "label": "GameAnalytics 2026 Roblox Benchmark Report, large games only (500+ titles with 1M+ MAU, Aug 2025 to Jul 2026). A median here is a floor for healthy, not a target for a new release; a small game that beats it is a strong signal."
+  },
+  {
+    "id": "ga26-session-length",
+    "benchmark": "Session length, Roblox platform (2026)",
+    "target": "p50 9.8 minutes",
+    "measuredBy": "Creator Analytics average session time",
+    "tier": "watch",
+    "failureMeaning": "A short median session leaves little room for the loop to pay off.",
+    "source": "https://www.gameanalytics.com/reports/2026-roblox-report",
+    "label": "GameAnalytics 2026 Roblox Benchmark Report, large games only (500+ titles with 1M+ MAU, Aug 2025 to Jul 2026). A median here is a floor for healthy, not a target for a new release; a small game that beats it is a strong signal."
+  },
+  {
+    "id": "ga26-sessions-per-day",
+    "benchmark": "Sessions per player per day (2026)",
+    "target": "p50 1.56",
+    "measuredBy": "Creator Analytics sessions divided by daily active players",
+    "tier": "watch",
+    "failureMeaning": "Fewer than one return visit a day points at weak daily hooks.",
+    "source": "https://www.gameanalytics.com/reports/2026-roblox-report",
+    "label": "GameAnalytics 2026 Roblox Benchmark Report, large games only (500+ titles with 1M+ MAU, Aug 2025 to Jul 2026). A median here is a floor for healthy, not a target for a new release; a small game that beats it is a strong signal."
+  },
+  {
+    "id": "ga26-arppu",
+    "benchmark": "Revenue per paying player per day (ARPPU, 2026)",
+    "target": "p50 $0.70, p90 $2.33",
+    "measuredBy": "Creator Analytics revenue divided by daily paying players",
+    "tier": "watch",
+    "failureMeaning": "Plan revenue from these figures, not from a creator claim of a higher number.",
+    "source": "https://www.gameanalytics.com/reports/2026-roblox-report",
+    "label": "GameAnalytics 2026 Roblox Benchmark Report, large games only (500+ titles with 1M+ MAU, Aug 2025 to Jul 2026). A median here is a floor for healthy, not a target for a new release; a small game that beats it is a strong signal."
+  },
+  {
+    "id": "ga26-paying-share",
+    "benchmark": "Share of players who pay (2026)",
+    "target": "3.8% of tracked players",
+    "measuredBy": "Creator Analytics paying users divided by daily active users",
+    "tier": "watch",
+    "failureMeaning": "Revenue plans that assume a much higher paying share are too high.",
+    "source": "https://www.gameanalytics.com/reports/2026-roblox-report",
+    "label": "GameAnalytics 2026 Roblox Benchmark Report, large games only (500+ titles with 1M+ MAU, Aug 2025 to Jul 2026). A median here is a floor for healthy, not a target for a new release; a small game that beats it is a strong signal."
+  },
+  {
+    "id": "ga26-device-mix",
+    "benchmark": "Player devices (2026)",
+    "target": "44% use mobile and PC, 40.8% PC only, 11.6% mobile only",
+    "measuredBy": "Creator Analytics platform breakdown",
+    "tier": "watch",
+    "failureMeaning": "More than half of players (55.6%) use a phone at least some of the time, so the phone layout is not optional.",
+    "source": "https://www.gameanalytics.com/reports/2026-roblox-report",
+    "label": "GameAnalytics 2026 Roblox Benchmark Report, large games only (500+ titles with 1M+ MAU, Aug 2025 to Jul 2026). A median here is a floor for healthy, not a target for a new release; a small game that beats it is a strong signal."
   }
 ]

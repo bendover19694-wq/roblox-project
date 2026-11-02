@@ -9,13 +9,13 @@ import { openDb, addMessage } from '../db.mjs';
 const root = path.resolve(import.meta.dirname, '../../..');
 const task = { id: 't_abc', title: 'Do thing', body: 'Details here' };
 const HQCTL = 'node tools/agent-hq/hqctl.mjs';
-const ICONS = new Set(['crown', 'radar', 'compass', 'wrench', 'layout', 'palette', 'mountain', 'box', 'scale', 'cart', 'image', 'smile', 'play', 'shield', 'flag', 'pulse']);
+const ICONS = new Set(['sparkles', 'pulse', 'compass', 'books', 'hammer', 'layout', 'mountain', 'gamepad', 'smile', 'scale', 'image', 'shieldCheck', 'trend', 'store', 'scan', 'palette']);
 
 test('roles.json has 16 roles with required fields', () => {
   const roles = loadRoles();
   assert.equal(roles.length, 16);
   for (const r of roles) {
-    for (const k of ['id', 'label', 'job', 'chapters', 'mode', 'files', 'engine', 'model', 'needsStudio', 'allowedTools', 'agentType', 'skills', 'mcp', 'doneWhen', 'gates', 'color', 'icon']) {
+    for (const k of ['id', 'label', 'job', 'chapters', 'mode', 'files', 'engine', 'model', 'needsStudio', 'allowedTools', 'agentType', 'skills', 'mcp', 'doneWhen', 'gates', 'color', 'color2', 'icon']) {
       assert.ok(k in r, `${r.id}.${k}`);
     }
     assert.match(r.color, /^#[0-9a-f]{6}$/i, r.id);

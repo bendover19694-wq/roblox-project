@@ -737,7 +737,7 @@ test('market: velocity route, breakouts, corpus, benchmarks', async () => {
 test('market refresh survives a failing breakouts fetch', async () => {
   const { s, api } = await boot({
     fetchCharts: async () => ({ fetchedAt: '2026-10-20T00:00:00.000Z', sorts: [{ id: 'top', name: 'Top', games: [{ universeId: 1, name: 'A', playerCount: 10, up: 1, down: 1, genre: '', sponsored: false }] }] }),
-    fetchers: { details: async () => { throw new Error('boom'); } },
+    fetchers: { details: async () => { throw new Error('boom'); }, icons: async () => ({}) },
   });
   const r = await api('POST', '/api/market/refresh');
   assert.equal(r.status, 200);
@@ -1484,7 +1484,7 @@ test('background refresh: market every marketEveryHours, live numbers every 15 m
   const { s, api } = await boot({
     now: () => clock,
     fetchCharts: async () => { chartCalls++; if (failCharts) throw new Error('down'); return { fetchedAt: new Date(clock).toISOString(), sorts: [{ id: 'top', name: 'Top', games: [{ universeId: 1, name: 'A', playerCount: 10, up: 1, down: 1, genre: '', sponsored: false }] }] }; },
-    fetchers: { details: async () => ({}) },
+    fetchers: { details: async () => ({}), icons: async () => ({}) },
     fetchLive: async () => { throw new Error('private'); },
     fetchLiveStats: async () => { liveCalls++; return { live: liveRecord(clock), days: {} }; },
   });
@@ -1539,7 +1539,7 @@ test('market titles route analyses the titles on the latest charts', async () =>
       { id: 'a', name: 'A', games: [g(1, 'Build a Boat'), g(2, 'Escape Tsunami'), g(3, 'Pet Simulator')] },
       { id: 'b', name: 'B', games: [g(1, 'Build a Boat'), g(4, 'Steal a Brainrot')] },
     ] }),
-    fetchers: { details: async () => ({}) },
+    fetchers: { details: async () => ({}), icons: async () => ({}) },
   });
   const empty = (await api('GET', '/api/market/titles')).json;
   assert.equal(empty.sample, 0);

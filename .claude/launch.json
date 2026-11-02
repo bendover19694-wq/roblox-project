@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["tools/agent-hq/server.mjs"],
       "port": 4317
+    },
+    {
+      "name": "agent-hq-demo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/agent-hq/test/demo.mjs"],
+      "port": 4400
     }
   ]
 }

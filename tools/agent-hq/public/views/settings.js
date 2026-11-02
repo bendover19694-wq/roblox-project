@@ -100,11 +100,19 @@ function lanesCard() {
     h('p', { class: 'hint' }, 'The Claude app checks in every hour and Antigravity every 20 minutes; HQ decides from these settings whether they work.'));
 }
 
+// Where the worker lanes were seen last; moved here from Home.
+function lanesStrip() {
+  return h('div', { class: 'lanes-strip', 'aria-label': 'Worker lanes' }, LANES.map((l) => h('span', { class: 'lane-pill', title: l.how },
+    h('span', { class: 'dot', 'data-on': laneCfg(l.id).enabled !== false && laneFresh(l.id) ? 'working' : 'idle' }), l.name,
+    h('span', { class: 'muted' }, laneCfg(l.id).enabled === false ? 'paused' : 'last seen ' + lastSeen(l.id)))));
+}
+
 export function render() {
   const budget = store.settings.budget ?? 2;
   const paused = !!store.settings.paused;
   return h('div', { class: 'page' },
     pageHead('Settings', 'Control which models your agents use, how many run at once, and when.'),
+    lanesStrip(),
     h('div', { class: 'stack' },
       h('section', { class: 'card stack sm' },
         h('h2', { class: 'section-title' }, 'Run control'),

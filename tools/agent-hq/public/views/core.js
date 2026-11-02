@@ -251,12 +251,19 @@ export function engineOf(roleId) {
 }
 
 // ---- roles: avatar and status ----
-const FALLBACK = { lead: ['#d9a441', 'crown'], scout: ['#38a3a5', 'radar'], architect: ['#7c83e0', 'compass'], builder: ['#4f8cff', 'wrench'], ui: ['#e0709a', 'layout'], designer: ['#c26be0', 'palette'], world: ['#5fae6a', 'mountain'], librarian: ['#b08968', 'box'], economy: ['#e0a03a', 'scale'], merchant: ['#3fb68b', 'cart'], thumbnails: ['#e8743b', 'image'], 'kid-tester': ['#f2c94c', 'smile'], playtester: ['#4cc9a0', 'play'], reviewer: ['#e5534b', 'shield'], producer: ['#8e9aaf', 'flag'], liveops: ['#56b4d3', 'pulse'] };
-export const roleColor = (id) => roleById(id)?.color || FALLBACK[id]?.[0] || '#8d95a5';
-export const roleIcon = (id) => roleById(id)?.icon || FALLBACK[id]?.[1] || 'flag';
+export const roleColor = (id) => roleById(id)?.color || '#8d95a5';
+export const roleColor2 = (id) => roleById(id)?.color2 || roleColor(id);
+export const roleIcon = (id) => roleById(id)?.icon || 'flag';
 export function avatar(id, size = 36) {
-  const working = store.tasks.some((t) => t.role === id && t.state === 'working');
-  return h('span', { class: 'avatar' + (working ? ' ring' : ''), style: `--c:${roleColor(id)};width:${size}px;height:${size}px`, title: roleLabel(id) }, ic(roleIcon(id), Math.round(size * 0.5)));
+  const st = roleStatus(id);
+  const ring = st.state === 'working' ? 'working' : st.queued ? 'queued' : null;
+  return h('span', { class: 'avatar', 'data-ring': ring, style: `--c:${roleColor(id)};--c2:${roleColor2(id)};width:${size}px;height:${size}px`, title: roleLabel(id) }, ic(roleIcon(id), Math.round(size * 0.5)));
+}
+// Dollars spent by tasks that started in the last `days` days.
+// ponytail: /api/state caps tasks at 500, so a very busy week undercounts; add a server-side sum if that matters.
+export function agentSpend(days = 7) {
+  const from = Date.now() - days * 86400000;
+  return store.tasks.reduce((sum, t) => sum + (t.costUsd > 0 && t.startedAt && new Date(t.startedAt).getTime() >= from ? Number(t.costUsd) : 0), 0);
 }
 // working > review > queued > idle
 export function roleStatus(id) {

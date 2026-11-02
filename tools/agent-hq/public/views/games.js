@@ -220,7 +220,7 @@ function pipeline(g) {
 }
 
 // ---------- page ----------
-function addGame() {
+export function addGame() {
   const name = h('input', { class: 'pg-input', placeholder: 'Run a ___', maxlength: 80 });
   const id = h('input', { class: 'pg-input', placeholder: 'short-id', maxlength: 40 });
   let close;
