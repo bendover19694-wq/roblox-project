@@ -18,6 +18,7 @@
 .mk-prochip:hover { text-decoration: none; border-color: #b2a8ff; }
 .mk-stack { gap: 18px; }
 .mk-tabs { align-items: center; overflow-y: hidden; }
+.mk-tabs .tab { flex: none; }
 .mk-panel > .btn { align-self: flex-start; }
 .mk-more { width: auto; min-width: 150px; margin-left: auto; padding: 6px 10px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -4,7 +4,7 @@ import { openViewer, isVideo, VERDICT } from './viewer.js';
 
 export const askUi = { v: 0 }; // bumped when card UI state changes, so the chat repaints
 const modeOf = new Map(); // ask id -> open inline note mode
-const drafts = {}; const smallOpen = new Set();
+const drafts = {};
 let tab = 'images'; let filter = 'open'; let agent = ''; let older = false;
 let stageAt = 0; let refsAt = 0; let refs = [];
 let stages = { open: [], held: [], rejected: [] };
@@ -129,7 +129,7 @@ async function loadRefs() {
   notify();
 }
 
-function pinModal(mediaPath, title) {
+export function pinModal(mediaPath, title) {
   const note = h('input', { class: 'input', type: 'text', maxlength: 300, placeholder: 'Why is this the bar? (optional)' });
   const sel = h('select', { class: 'select', 'aria-label': 'Category' }, CATEGORIES.map(([v, l]) => h('option', { value: v }, l)));
   sel.value = 'screens';
@@ -161,35 +161,23 @@ function barTab() {
 }
 
 // ---- Images tab ----
-function smallPreview(ask) {
-  const url = mediaUrl(ask.mediaPath);
-  const fig = (label, cls, w) => h('figure', { class: 'fig ' + cls }, h('img', { class: 'lb-able', src: url, alt: label + ' preview', style: w ? `width:${w}px;max-width:100%` : '' }), h('figcaption', { class: 'muted small' }, label));
-  return h('div', { class: 'small-prev' }, fig('150 px', 'f150', 150), fig('512 px', 'f512', 512), fig('Full size', 'ffull', 0));
-}
-
 function reviewItem(ask, open) {
   const task = store.tasks.find((t) => t.id === ask.taskId);
   const video = isVideo(ask.mediaPath);
   const kind = /contact|sheet/i.test(ask.title + ' ' + ask.mediaPath) ? 'Contact sheet' : video ? 'Video' : 'Screenshot';
   const v = verdictOf(ask);
   const [vLabel, vTone] = VERDICT[v] || [];
-  const isImage = ask.mediaPath && !video;
-  const vNote = v !== 'open' ? noteOf(ask) : '';
   const url = mediaUrl(ask.mediaPath);
-  return h('article', { class: 'card ritem', 'data-verdict': v },
-    ask.mediaPath ? h('button', { type: 'button', class: 'rv-thumb', 'aria-label': `Open ${plain(ask.title)} in the viewer`, onclick: open },
+  // The whole card opens the viewer, where the decision lives. Questions and references keep their buttons here.
+  const go = (e) => { if (!e.target.closest('.ritem-acts, a, input, textarea, select')) open(); };
+  return h('article', { class: 'card ritem' + (ask.mediaPath ? ' clickable' : ''), 'data-verdict': v, onclick: ask.mediaPath ? go : null },
+    ask.mediaPath ? h('button', { type: 'button', class: 'rv-thumb', 'aria-label': `Open ${plain(ask.title)} in the viewer` },
       video ? [h('video', { class: 'rv-media', src: url + '#t=0.1', preload: 'metadata' }), h('span', { class: 'rv-play', 'aria-hidden': 'true' }, ic('play', 22))] : h('img', { class: 'rv-media', src: url, alt: '', loading: 'lazy' }),
       vLabel ? h('span', { class: 'spill rv-verdict', 'data-tone': vTone }, vLabel) : null) : null,
     h('div', { class: 'ritem-body' },
-      h('h3', {}, plain(ask.title)),
-      h('div', { class: 'rv-meta' }, h('span', { class: 'rv-type' }, ic(video ? 'play' : 'image', 13), kind), task?.game ? h('span', {}, gameName(task.game)) : null, h('span', {}, agoTxt(ask.createdAt)), ask.superseded ? h('span', {}, 'older version') : null),
-      ask.why ? h('p', { class: 'muted pre rv-why' }, ask.why) : null,
-      vNote ? h('p', { class: 'muted small' }, vNote) : null,
-      isImage ? h('div', { class: 'row gap wrap' },
-        btn('How it reads small', () => { smallOpen.has(ask.id) ? smallOpen.delete(ask.id) : smallOpen.add(ask.id); notify(); }, { kind: 'ghost sm', icon: 'search' }),
-        v === 'approved' ? btn('Pin to Visual bar', () => pinModal(ask.mediaPath, ask.title), { kind: 'ghost sm', icon: 'image' }) : null) : null,
-      smallOpen.has(ask.id) && isImage ? smallPreview(ask) : null,
-      v === 'open' ? actions(ask) : null));
+      h('h3', { title: plain(ask.title) }, plain(ask.title)),
+      h('div', { class: 'rv-meta' }, ic(video ? 'play' : 'image', 13), h('span', { class: 'rv-line' }, [kind, task?.game ? gameName(task.game) : null, agoTxt(ask.createdAt), ask.superseded ? 'older version' : null].filter(Boolean).join(' · ')))),
+    v === 'open' && (ask.kind !== 'review' || !ask.mediaPath) ? h('div', { class: 'ritem-acts' }, ask.why ? h('p', { class: 'muted pre rv-why' }, ask.why) : null, actions(ask)) : null);
 }
 
 function groupLabel(a) {

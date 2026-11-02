@@ -1,5 +1,5 @@
 // Pitches: decision cards, compare side by side, owner ideas.
-import { h, store, api, act, btn, field, empty, pageHead, ago, upsert, openModal, notify, toast, ic } from './core.js';
+import { h, store, api, act, btn, field, empty, ago, upsert, openModal, notify, toast, ic } from './core.js';
 import { chip, num } from './charts.js';
 
 let tab = 'needs';
@@ -141,26 +141,29 @@ function card(p) {
     h('div', { class: 'pg-looks' }, LOOKS.map(([id, name, line]) => h('div', { class: 'pg-look', 'data-on': String(id === p.look) },
       h('strong', {}, name, id === p.look ? h('span', { class: 'pg-trend' }, 'Trending') : null), h('span', { class: 'muted' }, line))))) : null;
   return h('article', { class: 'pg-card pg-pitch', 'data-id': p.id },
-    h('div', { class: 'pg-banner-img', style: `--hue:${hueOf(p.format)}`, 'aria-hidden': 'true' }, h('span', { class: 'tile' }, ic('pitches', 22))),
-    h('div', { class: 'head' },
-      p.window ? chip(p.window === 'early' ? 'early to the trend' : p.window + ' window', toneW) : null,
-      crowded ? chip('others are on it', 'warn') : null,
-      p.format ? chip(p.format) : null,
-      p.origin === 'owner' ? chip('your idea', 'accent') : null,
-      chip(st, st === 'approved' ? 'ok' : st === 'declined' || st === 'withdrawn' ? 'err' : st === 'proposed' ? 'warn' : null)),
+    h('div', { class: 'pg-banner-img', style: `--hue:${hueOf(p.format)}` },
+      h('span', { class: 'tile', 'aria-hidden': 'true' }, ic('pitches', 26)),
+      h('div', { class: 'pg-bhead' },
+        h('div', { class: 'head' },
+          p.window ? chip(p.window === 'early' ? 'early to the trend' : p.window + ' window', toneW) : null,
+          crowded ? chip('others are on it', 'warn') : null,
+          p.format ? chip(p.format) : null,
+          p.origin === 'owner' ? chip('your idea', 'accent') : null,
+          chip(st, st === 'approved' ? 'ok' : st === 'declined' || st === 'withdrawn' ? 'err' : st === 'proposed' ? 'warn' : null)),
+        h('h3', { class: 'title' }, p.title),
+        p.oneLiner ? h('p', { class: 'one' }, p.oneLiner) : null,
+        e.summary ? h('p', { class: 'pg-evline' }, firstSentence(e.summary)) : null)),
     miss.length ? h('div', { class: 'pg-banner' }, h('strong', {}, 'This pitch cannot be decided yet. '), `It is missing: ${miss.join(', ')}. The Scout has to fix it; use Send to Scout.`) : null,
-    h('h3', { class: 'title' }, p.title),
-    p.oneLiner ? h('p', { class: 'one' }, p.oneLiner) : null,
-    e.summary ? h('p', { class: 'pg-evline' }, firstSentence(e.summary)) : null,
-    p.edge || comps.length ? h('div', { class: 'pg-differ' }, h('span', { class: 'ico' }, ic('check', 16)),
-      h('div', {}, h('h4', {}, 'How we differ'), p.edge ? h('p', {}, p.edge) : null,
+    p.edge || comps.length ? h('div', { class: 'pg-differ' },
+      h('div', { class: 'dh' }, ic('radar', 16), h('h4', {}, 'How we differ')),
+      h('div', {}, p.edge ? h('p', {}, p.edge) : null,
         comps.length ? h('div', { class: 'row gap wrap', style: 'margin-top:6px' }, comps.slice(0, 4).map((c) => chip('vs ' + c.name))) : null)) : null,
     cmp.length || p.money || p.saturationCount != null ? h('div', { class: 'pg-stats' },
-      statTile('TOP EARNING RANK', topRank != null ? '#' + num(topRank) + (earnN && topRank <= earnN ? ` (of ${num(earnN)})` : '') : null),
-      statTile('TOP COMPARABLE PLAYING', best(cmp, 'playing') != null ? num(best(cmp, 'playing')) : null),
+      statTile('TOP EARNING RANK', topRank != null ? '#' + num(topRank) : null, [p.money?.comparable, earnN && topRank != null && topRank <= earnN ? `of ${num(earnN)}` : null].filter(Boolean).join(' · ') || null),
+      statTile('TOP COMPARABLE PLAYING', best(cmp, 'playing') != null ? num(best(cmp, 'playing')) : null, cmp.find((c) => c.playing === best(cmp, 'playing'))?.name),
       statTile('ITS LIKES', lk != null ? pct(lk) : null, '80%+ gets recommended', lk != null ? (lk >= (lk <= 1 ? 0.8 : 80) ? 'ok' : 'warn') : null),
-      statTile('UPVOTES PER DAY', best(cmp, 'upvotesPerDay') != null ? num(best(cmp, 'upvotesPerDay')) : null),
-      statTile('SIMILAR GAMES', p.saturationCount != null ? num(p.saturationCount) : null)) : null,
+      statTile('UPVOTES PER DAY', best(cmp, 'upvotesPerDay') != null ? num(best(cmp, 'upvotesPerDay')) : null, "how fast it's growing"),
+      statTile('SIMILAR GAMES', p.saturationCount != null ? num(p.saturationCount) : null, p.saturationCount != null ? 'on the charts now' : null)) : null,
     p.money?.verdict ? h('div', { class: 'pg-money-line' }, ic('dollar', 18), h('p', {}, h('strong', {}, 'Money verdict. '), p.money.verdict, p.money.comparable ? h('span', { class: 'muted' }, ' Comparable: ' + p.money.comparable) : null)) : null,
     custom.length ? h('div', { class: 'pg-kv' }, h('h4', {}, 'Custom systems to build'), h('ul', { class: 'pg-bullets' }, custom.map((x) => h('li', {}, text(x))))) : null,
     risks.length ? h('div', { class: 'pg-kv' }, h('h4', {}, 'Biggest risk'), h('p', {}, text(risks[0]))) : null,
@@ -250,13 +253,15 @@ export function render() {
   loadEarnN();
   const every = Number(store.settings?.marketEveryHours) || 0;
   return h('div', { class: 'page' },
-    pageHead('Pitches', 'Game ideas with the evidence behind them. Approving one withdraws the other open pitches and asks the Lead to plan it.',
-      btn(`Compare side by side${chosen.length ? ' (' + chosen.length + ')' : ''}`, () => (chosen.length >= 2 ? openCompare(chosen) : toast('Tick Compare on 2 or 3 pitches first', 'error'))),
-      btn('New game idea', newIdea, { icon: 'plus' }),
-      btn('Find my next game', findNext, { kind: 'primary', icon: 'radar' })),
+    h('header', { class: 'page-head pg-head' },
+      h('div', {}, h('h1', {}, 'Pitches'), h('p', { class: 'muted' }, 'Game ideas with the evidence behind them. Approving one withdraws the other open pitches and asks the Lead to plan it.')),
+      h('div', { class: 'row gap' },
+        btn('Find my next game', findNext, { kind: 'primary', icon: 'radar' }),
+        btn('New game idea', newIdea, { icon: 'plus' }),
+        btn(`Compare${chosen.length ? ' (' + chosen.length + ')' : ''}`, () => (chosen.length >= 2 ? openCompare(chosen) : toast('Tick Compare on 2 or 3 pitches first', 'error')), { kind: 'ghost' }))),
     h('div', { class: 'pg-info', role: 'note' }, ic('help', 16), every ? `Charts refresh every ${every} hour${every === 1 ? '' : 's'}.` : 'Chart refresh is off. Turn it on in Settings.'),
     h('div', { class: 'tabs', role: 'tablist' }, TABS.map(([id, l]) => h('button', { type: 'button', class: 'tab', role: 'tab', 'aria-selected': String(id === tab), onclick: () => { tab = id; notify(); } },
-      l, h('span', { class: 'seg-count' }, counts[id])))),
+      l, h('span', { class: 'count', 'data-tone': 'grey' }, counts[id])))),
     h('p', { class: 'pg-alt muted' }, 'These are alternatives. Until game #1 is live, approving one withdraws the others.'),
     list.length ? h('div', { class: 'pg-pitches' }, list.map(card))
       : empty(tab === 'needs' ? 'Nothing to decide. Ask the Scout for ideas from the Market page, or add your own.' : tab === 'waiting' ? 'The Scout is not working on anything for you right now.' : tab === 'yours' ? 'No ideas from you yet. Use New game idea.' : 'No decided pitches yet.'));

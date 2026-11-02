@@ -38,6 +38,7 @@ export function taskRow(t) {
         t.reworkCount > 0 ? h('span', { class: 'chip static', title: 'Times sent back for rework' }, `sent back ${t.reworkCount}x`) : null,
         t.needsStudio ? h('span', { class: 'chip static', title: 'Needs Studio' }, ic('lock', 11), 'Studio') : null),
       h('span', { class: 'trow-meta muted' }, meta)),
+    t.state === 'working' ? h('span', { class: 'spin-ring', role: 'img', 'aria-label': 'Working' }) : null,
     rowPill(t.state),
     ic('chevron', 16));
 }
@@ -83,7 +84,7 @@ export function render() {
   const groups = GROUPS.map(([id, label, sub, states, tone]) => {
     const list = tasks.filter((t) => states.includes(t.state)).sort(byAge);
     return list.length ? h('section', { class: 'tgroup', 'aria-label': label },
-      h('h2', { class: 'tgroup-head' }, label, h('span', { class: 'count', 'data-tone': tone }, list.length), id === 'working' ? h('span', { class: 'spin-ring', role: 'img', 'aria-label': 'Working' }) : null, h('span', { class: 'muted tgroup-sub' }, sub)),
+      h('h2', { class: 'tgroup-head' }, h('span', { class: 'count', 'data-tone': tone }, list.length), h('span', { class: 'tgroup-title' }, label), h('span', { class: 'muted tgroup-sub' }, sub)),
       h('div', { class: 'tlist' }, list.map(taskRow))) : null;
   }).filter(Boolean);
   const done = tasks.filter((t) => ['done', 'failed', 'canceled'].includes(t.state))

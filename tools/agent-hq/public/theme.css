@@ -27,6 +27,8 @@
   --accent: #8b7cff;
   --accent-soft: rgba(139, 124, 255, 0.14);
   --accent-ink: #fff;
+  --grad-btn: linear-gradient(135deg, #8b6aff 0%, #d670dc 52%, #ffa468 100%);
+  --card-line: rgba(255, 255, 255, 0.1);
   --nav-on: rgba(139, 124, 255, 0.2);
   --nav-on-line: rgba(178, 168, 255, 0.35);
   --grad: linear-gradient(90deg, #8a69ff 0%, #d470df 52%, #ff828e 100%);

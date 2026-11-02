@@ -32,13 +32,16 @@ function greeting() {
   };
 }
 
+const tile = (name) => h('span', { class: 'tile', 'aria-hidden': 'true' }, ic(name, 18));
+
 function imagesCard(media) {
   const thumbs = media.filter((a) => !/\.(mp4|webm|mov)$/i.test(a.mediaPath)).slice(0, 4);
-  return h('article', { class: 'card ask group-card' },
-    h('div', { class: 'row gap' }, h('span', { class: 'overline' }, 'Review')),
-    h('h3', {}, `${media.length} new image${media.length === 1 ? '' : 's'} from the agents`),
-    thumbs.length ? h('div', { class: 'thumb-row' }, thumbs.map((a) => h('img', { class: 'thumb', src: mediaUrl(a.mediaPath), alt: plain(a.title), loading: 'lazy' }))) : null,
-    h('div', { class: 'row' }, btn('Review them', () => go('#/review'), { kind: 'primary', icon: 'review' })));
+  return h('article', { class: 'card ask group-card tile-card' }, tile('image'),
+    h('div', { class: 'done-main' },
+      h('span', { class: 'overline' }, 'Review'),
+      h('h3', {}, `${media.length} new image${media.length === 1 ? '' : 's'} from the agents`),
+      thumbs.length ? h('div', { class: 'thumb-row' }, thumbs.map((a) => h('img', { class: 'thumb', src: mediaUrl(a.mediaPath), alt: plain(a.title), loading: 'lazy' }))) : null,
+      h('div', { class: 'row' }, btn('Review them', () => go('#/review'), { kind: 'sm' }))));
 }
 
 function tryCard(ask) {
@@ -74,11 +77,12 @@ function pickCard() {
   const awaiting = store.pitches.filter((p) => p.state === 'proposed').length;
   const inProgress = store.gameList.some((g) => !['live', 'graded'].includes(g.stage));
   if (!awaiting && (inProgress || !store.gameList.length)) return null;
-  return h('article', { class: 'card ask', 'data-kind': 'pick' },
-    h('div', { class: 'row gap' }, h('span', { class: 'overline' }, 'Next game')),
-    h('h3', {}, 'Pick the next game'),
-    h('p', { class: 'muted' }, awaiting ? `${awaiting} pitch${awaiting === 1 ? '' : 'es'} await${awaiting === 1 ? 's' : ''} your decision.` : 'No game is in progress. Look at the pitches and pick one.'),
-    h('div', { class: 'row' }, h('a', { class: 'btn primary', href: '#/pitches' }, 'See the pitches')));
+  return h('article', { class: 'card ask tile-card', 'data-kind': 'pick' }, tile('pitches'),
+    h('div', { class: 'done-main' },
+      h('span', { class: 'overline' }, 'Next game'),
+      h('h3', {}, 'Pick the next game'),
+      h('p', { class: 'muted' }, awaiting ? `${awaiting} pitch${awaiting === 1 ? '' : 'es'} await${awaiting === 1 ? 's' : ''} your decision.` : 'No game is in progress. Look at the pitches and pick one.'),
+      h('div', { class: 'row' }, h('a', { class: 'btn primary sm', href: '#/pitches' }, 'See the pitches'))));
 }
 
 // A finished piece of work waiting for the owner: a task in review, or an open review ask.
@@ -99,19 +103,22 @@ function doneCard({ task, ask }) {
     if (r) { done(); loadState().catch(() => {}); notify(); }
   };
   const see = () => (target ? go('#/review/' + target.id) : task ? openTaskDrawer(task.id) : ask.taskId ? openTaskDrawer(ask.taskId) : go('#/review'));
-  return h('article', { class: 'card done-card', 'data-kind': task ? 'back' : 'review' },
-    h('div', { class: 'row gap' }, avatar(src.role, 28), h('span', { class: 'overline', 'data-tone': 'green' }, roleLabel(src.role) + ' finished · check it'),
-      h('span', { class: 'muted grow end-text small' }, agoText(task ? task.endedAt || task.startedAt || task.createdAt : ask.createdAt))),
-    h('h3', {}, plain(src.title)),
-    h('p', { class: 'muted pre done-body' }, body),
-    ta,
-    h('div', { class: 'row gap wrap' },
-      btn('Looks good', () => send('approve'), { kind: 'good', icon: 'check' }),
-      btn('See what changed', see, { icon: 'review' }),
-      open
-        ? btn('Send it back', () => { const n = ta.value.trim(); if (!n) { ta.focus(); toast('Say what is not right', 'error'); return; } send('changes', n); }, { kind: 'caution' })
-        : btn('Not right: say what', () => { noteOpen.add(key); notify(); }, { kind: 'ghost', icon: 'pencil' }),
-      open ? btn('Cancel', () => { done(); notify(); }, { kind: 'ghost' }) : null));
+  const when = agoText(task ? task.endedAt || task.startedAt || task.createdAt : ask.createdAt);
+  return h('article', { class: 'card tile-card done-card', 'data-kind': task ? 'back' : 'review' },
+    avatar(src.role, 36),
+    h('div', { class: 'done-main' },
+      h('span', { class: 'overline', 'data-tone': 'green' }, roleLabel(src.role) + ' finished · check it'),
+      h('h3', {}, plain(src.title)),
+      h('p', { class: 'muted pre done-body' }, body),
+      ta,
+      h('div', { class: 'row gap wrap done-actions' },
+        btn('Looks good', () => send('approve'), { kind: 'good sm', icon: 'check' }),
+        btn('See what changed', see, { kind: 'sm' }),
+        open
+          ? btn('Send it back', () => { const n = ta.value.trim(); if (!n) { ta.focus(); toast('Say what is not right', 'error'); return; } send('changes', n); }, { kind: 'caution sm' })
+          : btn('Not right: say what', () => { noteOpen.add(key); notify(); }, { kind: 'ghost sm', icon: 'pencil' }),
+        open ? btn('Cancel', () => { done(); notify(); }, { kind: 'ghost sm' }) : null,
+        h('span', { class: 'muted small done-when' }, when))));
 }
 
 function needsYou() {
@@ -131,14 +138,15 @@ function needsYou() {
 function liveNow() {
   const rows = store.roles.map((r) => ({ r, st: roleStatus(r.id) })).filter((x) => x.st.state !== 'idle')
     .sort((a, b) => (a.st.state === 'working' ? 0 : 1) - (b.st.state === 'working' ? 0 : 1));
+  const open = (id) => go('#/team/' + id);
   return h('section', { class: 'card' },
-    h('h2', { class: 'section-title' }, 'Live now'),
-    rows.length ? h('ul', { class: 'live' }, rows.map(({ r, st }) => h('li', { class: 'live-row' + (st.task ? ' on' : ''), 'data-state': st.task ? 'working' : 'queued', role: 'button', 'aria-label': 'Open the ' + r.label + ' chat', onclick: () => go('#/team/' + r.id), tabindex: '0', onkeydown: (e) => { if (e.key === 'Enter') go('#/team/' + r.id); } },
-      avatar(r.id, 26),
-      h('span', { class: 'live-role' }, r.label),
-      h('span', { class: 'live-what muted' }, st.task ? 'On: ' + plain(st.task.title) : st.queued ? `${st.queued} task${st.queued === 1 ? '' : 's'} waiting` : 'Work is in review'),
-      h('span', { class: 'live-end' }, st.queued ? h('span', { class: 'live-q' }, st.queued + ' queued') : null,
-        st.task ? h('span', { class: 'spin-ring', role: 'img', 'aria-label': 'Working' }) : null))))
+    h('h2', { class: 'sec-h' }, h('span', { class: 'live-dot', 'aria-hidden': 'true' }), 'Live now'),
+    rows.length ? h('ul', { class: 'live' }, rows.map(({ r, st }) => h('li', { class: 'live-row' + (st.task ? ' on' : ''), 'data-state': st.task ? 'working' : 'queued', role: 'button', 'aria-label': 'Open the ' + r.label + ' chat', onclick: () => open(r.id), tabindex: '0', onkeydown: (e) => { if (e.key === 'Enter') open(r.id); } },
+      avatar(r.id, 28),
+      h('span', { class: 'live-main' },
+        h('span', { class: 'live-role' }, r.label),
+        h('span', { class: 'live-what muted' }, st.task ? 'On: ' + plain(st.task.title) : st.queued ? `${st.queued} task${st.queued === 1 ? '' : 's'} waiting` : 'Work is in review')),
+      h('span', { class: 'live-end' }, st.task ? h('span', { class: 'spin-ring', role: 'img', 'aria-label': 'Working' }) : st.queued ? h('span', { class: 'live-q' }, st.queued + ' queued') : null))))
       : h('p', { class: 'muted' }, 'Everyone is idle.'));
 }
 
@@ -147,7 +155,7 @@ function stageDots(stage) {
   const at = STAGES.indexOf(stage);
   const label = at < 0 ? 'Stage not set' : `Stage ${at + 1} of ${STAGES.length}: ${STAGE_NAME[stage]}`;
   return h('span', { class: 'row gap stage' },
-    h('span', { class: 'dots9', role: 'img', 'aria-label': label }, STAGES.map((k, i) => h('i', { 'data-on': i <= at ? '1' : '0' }))),
+    h('span', { class: 'dots9', role: 'img', 'aria-label': label }, STAGES.map((k, i) => h('i', { 'data-s': i < at ? 'done' : i === at ? 'now' : 'next' }))),
     h('span', { class: 'stage-word' }, STAGE_NAME[stage] || stage || 'No stage yet'));
 }
 
@@ -157,7 +165,7 @@ function gamesCard() {
     h('h2', { class: 'section-title' }, 'Where each game is'),
     games.length ? games.map((g) => {
       const working = Array.isArray(g.working) ? g.working : store.tasks.filter((t) => t.game === g.slug && t.state === 'working').map((t) => t.role);
-      return h('a', { class: 'game-row', href: '#/games/' + g.slug },
+      return h('a', { class: 'game-row game-card', href: '#/games/' + g.slug },
         h('div', { class: 'row gap between' }, h('strong', {}, g.name), h('span', { class: 'row gap' },
           g.version != null ? h('span', { class: 'muted small' }, 'v' + g.version) : null)),
         g.stage ? stageDots(g.stage) : null,
@@ -202,26 +210,28 @@ export function render() {
 
   const input = h('input', { class: 'input', type: 'text', maxlength: 20000, placeholder: 'Ask the Lead anything, or say what you want done...', 'aria-label': 'Ask the Lead', oninput: (e) => { leadDraft = e.target.value; } });
   input.value = leadDraft;
+  const go_ask = h('button', { type: 'submit', class: 'btn primary ask-go', 'data-empty': leadDraft.trim() ? '0' : '1', 'aria-label': 'Ask the Lead' }, h('span', { class: 'ask-label' }, 'Ask'), ic('arrowRight', 14));
+  input.addEventListener('input', () => go_ask.setAttribute('data-empty', input.value.trim() ? '0' : '1'));
   const ask = h('form', { class: 'ask-lead', onsubmit: async (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
     if (await act(() => api('POST', '/api/messages', { role: 'lead', text }), 'Sent to the Lead')) { leadDraft = ''; input.value = ''; }
   } }, avatar('lead', 28), input,
-  h('button', { type: 'submit', class: 'btn primary ask-go', 'aria-label': 'Ask the Lead' }, ic('send', 14), h('span', { class: 'ask-label' }, 'Ask')));
-  const tools = h('div', { class: 'ask-tools' },
+  go_ask,
+  h('div', { class: 'ask-tools' },
     btn('New task', () => newTaskModal(), { icon: 'plus' }),
-    btn(paused ? 'Resume all' : 'Pause all', () => act(() => api('POST', paused ? '/api/resume' : '/api/pause'), paused ? 'Resumed' : 'Paused'), { icon: paused ? 'play' : 'pause' }));
+    btn(paused ? 'Resume all' : 'Pause all', () => act(() => api('POST', paused ? '/api/resume' : '/api/pause'), paused ? 'Resumed' : 'Paused'), { icon: paused ? 'play' : 'pause' })));
 
   return h('div', { class: 'page' },
-    h('header', { class: 'greet' }, h('p', { class: 'eyebrow' }, g.when), h('h1', {}, g.name ? [g.hello + ', ', h('span', { class: 'grad-text' }, g.name)] : g.hello)),
+    h('header', { class: 'greet' }, h('h1', {}, g.name ? [g.hello + ', ', h('span', { class: 'grad-text' }, g.name)] : g.hello), h('p', { class: 'greet-date muted' }, g.when)),
     h('div', { class: 'chips' },
       h('a', { class: 'chip', 'data-tone': open.length ? 'need' : null, href: '#/review' }, h('b', {}, open.length), ' need you'),
       h('a', { class: 'chip', 'data-tone': working.length ? 'work' : null, href: '#/team' }, h('b', {}, working.length), ' working'),
       h('a', { class: 'chip', href: '#/tasks' }, h('b', {}, queued.length), ' queued'),
       h('span', { class: 'chip static' }, 'last change ', h('b', {}, agoText(new Date(store.lastChange).toISOString())))),
-    h('div', { class: 'ask-wrap' }, ask, tools),
+    ask,
     h('div', { class: 'home-grid' },
-      h('section', { class: 'stack' }, h('h2', { class: 'section-title' }, 'Needs you', open.length ? h('span', { class: 'count', 'data-tone': 'amber' }, open.length) : null), needsYou()),
+      h('section', { class: 'stack' }, h('h2', { class: 'sec-h' }, 'Needs you', open.length ? h('span', { class: 'count', 'data-tone': 'amber' }, open.length) : null), needsYou()),
       h('aside', { class: 'stack' }, liveNow(), gamesCard(), studioCard(), freshnessCard())));
 }

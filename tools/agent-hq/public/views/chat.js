@@ -88,9 +88,9 @@ export function chatView(role, { back = false } = {}) {
   let headSig = ''; let listSig = ''; let typingSig = ''; let first = true; let stick = true;
 
   const attach = (draftAttach[role] ||= []);
-  const chips = attachments(attach);
+  const chips = attachments(attach, () => syncSend());
   const input = h('textarea', { class: 'textarea composer-input', rows: 1, maxlength: 20000, placeholder: hint, 'aria-label': 'Message ' + label,
-    oninput: (e) => { drafts[role] = e.target.value; grow(); },
+    oninput: (e) => { drafts[role] = e.target.value; grow(); syncSend(); },
     onpaste: (e) => { const f = imageFiles(e.clipboardData); if (f.length) { e.preventDefault(); chips.add(f); } },
     onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } } });
   input.value = drafts[role] || '';
@@ -101,16 +101,18 @@ export function chatView(role, { back = false } = {}) {
     el.addEventListener('drop', (e) => { const f = imageFiles(e.dataTransfer); if (f.length) { e.preventDefault(); chips.add(f); } });
   };
   dropOn(input);
+  // Send looks muted until there is text or a screenshot. It stays focusable and keeps its label.
+  function syncSend() { sendBtn.setAttribute('aria-disabled', String(!(input.value.trim() || attach.length))); }
   function grow() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; }
 
   async function send() {
     const text = input.value.trim();
-    if (!text && !attach.length) return;
+    if (!text && !attach.length) { input.focus(); return; }
     const body = { role, text: text || 'See the attached screenshot.' };
     if (attach.length) body.attachPaths = [...attach];
     const m = await act(() => api('POST', '/api/messages', body));
     if (!m) return;
-    input.value = ''; drafts[role] = ''; attach.length = 0; chips.paint(); grow();
+    input.value = ''; drafts[role] = ''; attach.length = 0; chips.paint(); grow(); syncSend();
     if (m !== true && store.messages[role] && !store.messages[role].some((x) => x.id === m.id)) store.messages[role].push(m);
     stick = true;
     notify();
@@ -151,7 +153,7 @@ export function chatView(role, { back = false } = {}) {
         h('h1', {}, label),
         h('div', { class: 'row gap muted small' }, h('span', { class: 'dot', 'data-on': st.state }), STATUS_LABEL[st.state], lastAt ? h('span', { class: 'muted' }, ' · ' + ago(lastAt) + (ago(lastAt) === 'just now' ? '' : ' ago')) : null,
           r?.job ? h('span', { class: 'clip hide-narrow' }, ' · ' + r.job) : null)),
-      h('div', { class: 'chat-chips' },
+      h('div', { class: 'chat-tools' }, h('div', { class: 'chat-chips' },
         st.task ? h('button', { type: 'button', class: 'chip-btn cur', title: st.task.title, onclick: () => openTaskDrawer(st.task.id) }, ic('clock', 12), h('span', { class: 'clip' }, st.task.title)) : null,
         st.queued ? h('span', { class: 'chip-btn static' }, st.queued + ' queued') : null,
         h('span', { class: 'chip-btn static' }, ic('cpu', 12), engineLabel(e.engine) + (e.model ? ' / ' + e.model : ''))),
@@ -162,7 +164,7 @@ export function chatView(role, { back = false } = {}) {
         btn('Start fresh', async () => {
           if (await act(() => api('POST', `/api/messages/${encodeURIComponent(role)}/reset`, {}), 'Fresh conversation')) { await reloadMessages(role).catch(() => {}); stick = true; }
         }, { kind: 'sm', icon: 'archive', title: 'Archives this conversation. It stays under Past chats.' }),
-        st.task ? btn('Stop', () => { if (confirm('Stop the running task?')) act(() => api('POST', `/api/tasks/${st.task.id}/cancel`), 'Stopped'); }, { kind: 'sm danger', icon: 'stop' }) : null)].filter(Boolean));
+        st.task ? btn('Stop', () => { if (confirm('Stop the running task?')) act(() => api('POST', `/api/tasks/${st.task.id}/cancel`), 'Stopped'); }, { kind: 'sm danger', icon: 'stop' }) : null))].filter(Boolean));
   }
 
   function paintList() {
@@ -197,7 +199,6 @@ export function chatView(role, { back = false } = {}) {
       if (m.from === 'system') return h('div', { class: 'divider' }, h('span', {}, m.text));
       const mine = m.from === 'owner';
       return h('div', { class: 'msg ' + (mine ? 'owner' : 'agent') },
-        mine ? null : avatar(role, 28),
         h('div', { class: 'msg-col' },
           h('div', { class: 'bubble' }, mine && cards.length ? h('div', { class: 'task-from' }, ic('check', 12), `Task from ${String(store.settings.ownerName || '').trim() || 'You'}: ${plain(cards[0].title)}`) : null, mine ? h('div', { class: 'pre' }, m.text) : markdown(m.text),
             Array.isArray(m.attachPaths) && m.attachPaths.length ? h('div', { class: 'attach-grid' }, m.attachPaths.map((p) => h('a', { href: mediaUrl(p), target: '_blank', rel: 'noopener' }, h('img', { class: 'md-img', src: mediaUrl(p), alt: 'Attached screenshot', loading: 'lazy' })))) : null),
@@ -234,14 +235,17 @@ export function chatView(role, { back = false } = {}) {
 
   const stopBtn = h('button', { type: 'button', class: 'composer-stop', hidden: true, 'aria-label': 'Stop the running task', title: 'Stop the running task',
     onclick: () => { const t = roleStatus(role).task; if (t && confirm('Stop the running task?')) act(() => api('POST', `/api/tasks/${t.id}/cancel`), 'Stopped'); } }, h('span', { class: 'stop-sq', 'aria-hidden': 'true' }));
+  const sendBtn = h('button', { type: 'button', class: 'composer-send', onclick: send, 'aria-label': 'Send', 'aria-disabled': 'true' }, ic('arrowUp', 18));
   const node = h('section', { class: 'chat', 'aria-label': 'Conversation with ' + label }, head, list, typing,
     h('div', { class: 'composer-wrap' }, chips.node,
       h('div', { class: 'composer' }, picker, input,
-        h('button', { type: 'button', class: 'composer-clip', title: 'Add screenshots (or paste / drop them)', 'aria-label': 'Add screenshots (or paste / drop them)', onclick: () => picker.click() }, ic('clip', 18)),
-        stopBtn,
-        h('button', { type: 'button', class: 'composer-send', onclick: send, 'aria-label': 'Send' }, ic('arrowUp', 18))),
-      h('div', { class: 'hint composer-hint' }, 'Enter to send · Shift+Enter for a new line · Ctrl+V pastes screenshots')));
+        h('div', { class: 'composer-bar' },
+          h('button', { type: 'button', class: 'composer-clip', title: 'Add screenshots (or paste / drop them)', 'aria-label': 'Add screenshots (or paste / drop them)', onclick: () => picker.click() }, ic('clip', 18)),
+          h('span', { class: 'composer-hint' }, 'Enter to send · Shift+Enter for a new line · Ctrl+V pastes screenshots'),
+          stopBtn,
+          sendBtn))));
   if (!store.messages[role]) loadMessages(role);
+  syncSend();
   update();
   setTimeout(() => { markRead(role); grow(); }, 0);
   return { node, update };

@@ -21,15 +21,17 @@ test('the GameAnalytics 2026 rows are watch items that link the report and carry
     assert.equal(r.source, REPORT, r.id);
     assert.match(r.label, /GameAnalytics 2026/, r.id);
     assert.match(r.label, /large games only/i, r.id);
-    assert.match(r.label, /floor for healthy, not a target/i, r.id);
+    // Device mix comes from the full 17,000+ game pool, so it names that sample instead of the large-games caveat.
+    if (r.id === 'ga26-device-mix') assert.match(r.label, /17,000\+/, r.id);
+    else assert.match(r.label, /not expected to reach the median/i, r.id);
     assert.equal(r.tier, 'watch', r.id);
   }
 });
 
 test('the 2026 numbers are the ones from the report', () => {
   assert.match(byId['ga26-d1'].target, /p25 8\.4%.*p50 10\.3%.*p75 12\.9%.*p90 15\.9%.*p99 22\.2%/);
-  assert.match(byId['ga26-d7'].target, /p25 1\.0%.*p50 1\.6%.*p99 9\.1%/);
-  assert.match(byId['ga26-d30'].target, /p25 0\.3%.*p50 0\.5%.*p99 4\.7%/);
+  assert.match(byId['ga26-d7'].target, /p25 1\.0%.*p50 1\.6%.*p75 2\.5%.*p90 3\.9%.*p99 9\.1%/);
+  assert.match(byId['ga26-d30'].target, /p25 0\.3%.*p50 0\.5%.*p75 0\.9%.*p90 2\.0%.*p99 4\.7%/);
   assert.match(byId['ga26-session-length'].target, /9\.8 minutes/);
   assert.match(byId['ga26-sessions-per-day'].target, /1\.56/);
   assert.match(byId['ga26-arppu'].target, /\$0\.70.*\$2\.33/);

@@ -1,13 +1,18 @@
 // Review viewer: the media on the left, the decision on the right. openViewer(asks, index).
 // Answers keep their old strings: approve, changes:<note>, reject:<reason>. Keys A, C, R work only while it is open.
 import { h, ic, store, roleLabel, avatar, mediaUrl, plain, gameName, ago, toast, subscribe } from './core.js';
-import { answer, verdictOf, noteOf, needsDecision } from './review.js';
+import { answer, verdictOf, noteOf, needsDecision, pinModal } from './review.js';
 
 export const isVideo = (p) => /\.(mp4|webm|mov)$/i.test(p || '');
 // verdict -> [label, tone]. The label is always shown, so colour is never the only signal.
 export const VERDICT = { approved: ['Approved', 'green'], rejected: ['Rejected', 'red'], changes: ['Changes asked', 'amber'], held: ['On hold', 'blue'], dismissed: ['Dismissed', 'grey'], answered: ['Answered', 'grey'] };
 
 let current = null;
+function smallPreview(path) {
+  const url = mediaUrl(path);
+  const fig = (label, w) => h('figure', { class: 'fig' }, h('img', { src: url, alt: label + ' preview', style: w ? `width:${w}px;max-width:100%` : 'max-width:100%;max-height:200px' }), h('figcaption', { class: 'muted small' }, label));
+  return h('div', { class: 'small-prev' }, fig('150 px', 150), fig('512 px', 512), fig('Full size', 0));
+}
 export function closeViewer() { current?.close(); }
 
 export function openViewer(asks, index = 0, onClose) {
@@ -16,6 +21,7 @@ export function openViewer(asks, index = 0, onClose) {
   closeViewer();
   let i = Math.min(Math.max(0, index), ids.length - 1);
   let sig = '';
+  let small = ''; // ask id whose small-size preview is open
   const notes = {}; // per-ask draft, so prev and next keep what was typed
   const get = (n = i) => store.asks.find((a) => a.id === ids[n]) || asks.find((a) => a.id === ids[n]);
   const stage = h('div', { class: 'vw-stage' });
@@ -39,8 +45,8 @@ export function openViewer(asks, index = 0, onClose) {
     const a = get();
     if (a.state !== 'open' || a.kind !== 'review') return;
     const t = (notes[a.id] || '').trim();
-    if (kind === 'changes' && !t) { toast('Say what would make it right first', 'error'); panel.querySelector('textarea')?.focus(); return; }
-    await answer(a, t ? `${kind}:${t}` : kind, { approve: 'Approved', changes: 'Sent to ' + roleLabel(a.role), reject: 'Rejected' }[kind]);
+    if ((kind === 'changes' || kind === 'hold') && !t) { toast(kind === 'hold' ? 'Say why it is parked first' : 'Say what would make it right first', 'error'); panel.querySelector('textarea')?.focus(); return; }
+    await answer(a, t ? `${kind}:${t}` : kind, { approve: 'Approved', changes: 'Sent to ' + roleLabel(a.role), hold: 'On hold', reject: 'Rejected' }[kind]);
     if (get().state === 'open') return; // the request failed; the toast says why
     delete notes[a.id];
     const n = ids.findIndex((_, k) => { const x = get((i + 1 + k) % ids.length); return x && x.id !== a.id && needsDecision(x) && x.kind === 'review'; });
@@ -64,15 +70,19 @@ export function openViewer(asks, index = 0, onClose) {
       h('div', { class: 'vw-who' }, avatar(a.role, 36), h('div', {}, h('div', { class: 'vw-made' }, 'Made by ', who), h('div', { class: 'muted small' }, meta))),
       h('div', { class: 'vw-ask' }, h('h2', {}, plain(a.title)), a.why ? h('p', { class: 'muted pre' }, a.why) : null),
       ...(live ? [
-        h('label', { class: 'field' }, h('span', { class: 'field-label' }, `Note for ${who} `, h('span', { class: 'faint' }, '(needed to ask for changes)')), note),
-        h('p', { class: 'vw-help' }, `Ask for changes sends your note to ${who} as a new task.`),
-        h('div', { class: 'vw-acts' }, act('approve', 'Approve', 'A', 'check', 'good'), act('changes', 'Ask for changes', 'C', 'pencil', ''), act('reject', 'Reject', 'R', 'x', 'bad')),
+        h('label', { class: 'field' }, h('span', { class: 'field-label' }, `Note for ${who} `, h('span', { class: 'faint' }, '(needed to ask for changes or hold; sent along with Approve)')), note),
+        h('p', { class: 'vw-help' }, `Ask for changes sends your note to ${who} as a new task. Hold needs a note too and parks it.`),
+        h('div', { class: 'vw-acts' }, act('approve', 'Approve', 'A', 'check', 'good'), act('changes', 'Ask for changes', 'C', 'pencil', ''), act('hold', 'Hold', 'H', 'pause', ''), act('reject', 'Reject', 'R', 'x', 'bad')),
       ] : [
         vLabel ? h('div', {}, h('span', { class: 'spill', 'data-tone': vTone }, vLabel)) : null,
         noteOf(a) ? h('p', { class: 'pre' }, noteOf(a)) : null,
         a.state === 'open' && a.options?.length ? h('div', { class: 'vw-acts' }, a.options.map((o) => h('button', { type: 'button', class: 'btn vw-act', onclick: async () => { await answer(a, o.id); if (get().state !== 'open') paint(); } }, h('span', { class: 'grow' }, o.label)))) : null,
         a.state === 'open' && !a.options?.length ? h('p', { class: 'muted' }, a.kind === 'reference' ? 'Reference only: nothing to decide here.' : 'This one is a question, not a review. Answer it in the list.') : null,
       ]),
+      !isVideo(a.mediaPath) ? h('div', { class: 'row gap wrap' },
+        h('button', { type: 'button', class: 'btn ghost sm', 'aria-expanded': String(small === a.id), onclick: () => { small = small === a.id ? '' : a.id; paint(); } }, ic('search', 14), 'How it reads small'),
+        v === 'approved' ? h('button', { type: 'button', class: 'btn ghost sm', onclick: () => pinModal(a.mediaPath, a.title) }, ic('image', 14), 'Pin to Visual bar') : null) : null,
+      small === a.id && !isVideo(a.mediaPath) ? smallPreview(a.mediaPath) : null,
     ].filter(Boolean));
   }
 
@@ -100,6 +110,7 @@ export function openViewer(asks, index = 0, onClose) {
     const k = e.key.toLowerCase();
     if (k === 'a') decide('approve');
     else if (k === 'c') { const a = get(); if (a.state === 'open' && !(notes[a.id] || '').trim()) panel.querySelector('textarea')?.focus(); else decide('changes'); }
+    else if (k === 'h') decide('hold');
     else if (k === 'r') decide('reject');
     else if (e.key === 'ArrowRight' && ids.length > 1) show(i + 1);
     else if (e.key === 'ArrowLeft' && ids.length > 1) show(i - 1);

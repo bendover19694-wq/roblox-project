@@ -10,6 +10,8 @@ function preview(text) {
   return String(text || '').replace(/[#*`>_\[\]!]/g, '').replace(/\s+/g, ' ').trim().slice(0, 90);
 }
 
+const rel = (iso) => (iso ? ago(iso) + (ago(iso) === 'just now' ? '' : ' ago') : '');
+
 function rosterRow(r, active) {
   const st = roleStatus(r.id);
   const th = store.threads[r.id];
@@ -29,10 +31,11 @@ function rosterRow(r, active) {
         h('span', { class: 'spill', 'data-tone': PILL[st.state][1] }, PILL[st.state][0])),
       h('div', { class: 'row gap between' },
         h('span', { class: 'roster-detail muted clip' }, detail),
-        h('span', { class: 'roster-side muted nowrap' }, when ? ago(when) : '')),
+        h('span', { class: 'roster-side muted nowrap' }, rel(when))),
       done || st.queued ? h('div', { class: 'row gap between' },
         done ? h('span', { class: 'roster-last muted clip', title: plain(done.title) }, ic('clock', 12), 'Last job: ' + plain(done.title)) : h('span'),
-        st.queued ? h('span', { class: 'spill', 'data-tone': 'blue' }, st.queued + ' queued') : null) : null));
+        h('span', { class: 'roster-side muted nowrap row gap' }, done ? rel(done.endedAt || done.createdAt) : '',
+          st.queued ? h('span', { class: 'spill', 'data-tone': 'blue' }, st.queued + ' queued') : null)) : null));
 }
 
 const RANK = { working: 0, review: 1, queued: 1, idle: 2 };

@@ -1,7 +1,7 @@
 /* Agent HQ base and primitives. Tokens live in theme.css, surfaces in polish.css, and each page family has its own file (see index.html for the order). */
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body { margin: 0; color: var(--text); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+body { margin: 0; color: var(--text); font: 13px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
 h1, h2, h3, h4, p, ul, ol, dl, dd { margin: 0; }
 h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
 h2 { font-size: 15px; font-weight: 600; }
@@ -44,17 +44,17 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 .dot[data-on="done"] { background: var(--ok); }
 .dot[data-on="failed"], .dot[data-on="canceled"] { background: var(--err); }
 
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: var(--r-btn); padding: 8px 14px; cursor: pointer; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: var(--r-btn); padding: 6px 12px; cursor: pointer; white-space: nowrap; }
 .btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.28); }
 .btn:disabled { opacity: 0.45; cursor: default; }
-.btn.primary { background: var(--grad); border-color: transparent; color: #fff; font-weight: 600; box-shadow: 0 6px 22px -8px rgba(139, 124, 255, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.28); }
+.btn.primary { background: var(--grad-btn); border-color: transparent; color: #fff; font-weight: 600; box-shadow: 0 6px 22px -8px rgba(139, 124, 255, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.28); }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 8px 26px -8px rgba(139, 124, 255, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.34); }
 .btn.good { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-text); }
 .btn.caution { background: transparent; border-color: var(--warn-line); color: var(--warn-text); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
 .btn.ghost:hover:not(:disabled) { color: var(--text); }
 .btn.danger { color: var(--err); }
-.btn.sm { padding: 4px 10px; font-size: 13px; border-radius: var(--r-sm); }
+.btn.sm { padding: 3px 10px; font-size: 13px; line-height: 1.4; border-radius: var(--r-sm); }
 .icon-btn { background: transparent; border: 0; color: var(--muted); cursor: pointer; padding: 6px; border-radius: var(--r-sm); display: inline-flex; }
 .icon-btn:hover { color: var(--text); background: var(--panel-2); }
 .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; }
@@ -73,7 +73,7 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 .check { display: flex; align-items: center; gap: var(--s2); cursor: pointer; }
 .check input { accent-color: var(--accent); width: 15px; height: 15px; }
 
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.card { background: var(--panel); border: 1px solid var(--card-line); border-radius: var(--r); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .empty { color: var(--muted); text-align: center; padding: var(--s6) var(--s4); border: 1px dashed var(--line-2); border-radius: var(--r); }
 .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
 .tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; background: var(--accent-soft); color: var(--accent); border-radius: 4px; padding: 1px 7px; }
@@ -87,7 +87,7 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 .state-chip.nocap { text-transform: none; }
 
 /* chips with a leading dot: need = amber, work = green */
-.chip { display: inline-flex; align-items: center; gap: 7px; background: var(--chip); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 4px 14px; color: var(--muted); }
+.chip { display: inline-flex; align-items: center; gap: 7px; background: var(--chip); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 3px 12px; font-size: 13px; color: var(--muted); }
 .chip b { color: var(--text); }
 .chip:hover { text-decoration: none; border-color: var(--line-2); }
 .chip[data-tone]::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--muted); }
@@ -205,7 +205,7 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 .sched { background: var(--panel-2); }
 
 /* overlays */
-.backdrop { position: fixed; inset: 0; background: rgba(4, 6, 10, 0.6); display: flex; z-index: 50; }
+.backdrop { position: fixed; inset: 0; background: rgba(4, 6, 10, 0.6); display: flex; z-index: 90; } /* above the review viewer (80), so a modal opened from it shows */
 .modal { margin: auto; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r); display: flex; flex-direction: column; }
 .drawer { margin-left: auto; width: min(560px, 100vw); height: 100%; background: var(--panel); border-left: 1px solid var(--line-2); display: flex; flex-direction: column; }
 .overlay-head { display: flex; justify-content: space-between; align-items: center; padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); }
@@ -217,7 +217,7 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 .block.err .pre { color: var(--err); }
 .log { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s2) var(--s3); height: 280px; overflow: auto; font: 12px/1.5 var(--mono); }
 .log-line { white-space: pre-wrap; overflow-wrap: anywhere; }
-#toasts { position: fixed; right: var(--s4); bottom: calc(var(--s4) + var(--tabs-h)); display: flex; flex-direction: column; gap: var(--s2); z-index: 60; }
+#toasts { position: fixed; right: var(--s4); bottom: calc(var(--s4) + var(--tabs-h)); display: flex; flex-direction: column; gap: var(--s2); z-index: 100; }
 .toast { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: var(--s2) var(--s3); max-width: 360px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
 .toast.error { border-color: var(--err); }
 
