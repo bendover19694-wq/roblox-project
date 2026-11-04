@@ -57,6 +57,7 @@ test('routes: owner and lane caller sync, task-token agent cannot, one section o
   await owner('POST', '/api/tasks', { title: 'Queued', role: 'ui' });
   const gate = (await lane('POST', '/api/lanes/app/gate', { manual: true })).json;
   assert.equal(gate.run, true); assert.match(gate.laneToken, /^[0-9a-f]{32}$/);
+  assert.equal((await lane('POST', '/api/lanes/app/gate', { manual: true, taskToken: 'f'.repeat(64) })).json.laneToken, undefined); // a task caller gets none
   assert.equal((await lane('POST', '/api/notebook/doc', { markdown: DOC })).status, 403); // no lane token
   assert.equal((await lane('POST', '/api/notebook/doc', { markdown: DOC, laneToken: 'a'.repeat(32) })).status, 403); // wrong
   assert.equal((await lane('POST', '/api/notebook/doc', { markdown: '', laneToken: gate.laneToken })).status, 400);
@@ -107,5 +108,9 @@ test('MCP: a task-scoped session does not list the lane-only tools', async () =>
     const names = out.result.tools.map((t) => t.name);
     for (const n of ['hq_notebook_mirror', 'hq_lane_gate', 'hq_next_task']) assert.ok(!names.includes(n), n);
     assert.ok(names.includes('hq_notebook_read'));
+    // calling one by name is refused too, before any request reaches the server
+    const call = await new Promise((resolve) => { child.stdout.once('data', (d) => resolve(JSON.parse(String(d).split('\n')[0]))); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'hq_notebook_mirror', arguments: { markdown: '# x', laneToken: 'y' } } }) + '\n'); });
+    assert.equal(call.result.isError, true);
+    assert.match(call.result.content[0].text, /lane worker/);
   } finally { child.kill(); }
 });

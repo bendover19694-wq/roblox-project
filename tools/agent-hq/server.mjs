@@ -720,7 +720,7 @@ ${task.body}`;
   });
 
   // lane gate: should this worker run now? The outside schedulers fire at a fixed rate; HQ decides.
-  route('POST', /^\/api\/lanes\/([^/]+)\/gate$/, ({ m, body }) => {
+  route('POST', /^\/api\/lanes\/([^/]+)\/gate$/, ({ m, body, headers }) => {
     const engine = oneOf(m[1], 'engine', LANES, { required: true });
     const manual = isObj(body) && body.manual === true;
     const cfg = settingsAll().laneSchedules[engine];
@@ -747,7 +747,7 @@ ${task.body}`;
     const blocked = decide();
     if (blocked) { touchLane(engine, {}); return blocked; }
     touchLane(engine, { lastRunAt: nowIso() });
-    return { ...out(true, 'ok'), laneToken: nb.issueLaneToken(engine) }; // for hq_notebook_mirror
+    return { ...out(true, 'ok'), ...(headers?.['x-hq-task-token'] || (isObj(body) && body.taskToken) ? {} : { laneToken: nb.issueLaneToken(engine) }) }; // lane token for hq_notebook_mirror, never to a task caller
   });
 
   // ---- the Visual bar: approved images pinned as house references ----

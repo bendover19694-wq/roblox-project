@@ -321,6 +321,8 @@ async function handle(msg) {
     if (method === 'tools/call') {
       const fn = handlers[params?.name];
       if (!fn) return send({ id, result: { isError: true, content: [{ type: 'text', text: `unknown tool ${params?.name}` }] } });
+      // hiding them from tools/list is not enough: a task session must not call lane tools by name either
+      if ((HQ_TASK || HQ_TASK_TOKEN) && LANE_ONLY.has(params.name)) return send({ id, result: { isError: true, content: [{ type: 'text', text: `${params.name} is for the lane worker, not for a task` }] } });
       try {
         const out = await fn(params.arguments ?? {});
         return send({ id, result: { content: [{ type: 'text', text: typeof out === 'string' ? out : JSON.stringify(out) }] } });

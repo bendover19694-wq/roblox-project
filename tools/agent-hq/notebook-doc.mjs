@@ -46,6 +46,7 @@ export function loadDoc(stateDir) {
 }
 export function saveDoc(stateDir, markdown, source) {
   const doc = { syncedAt: new Date().toISOString(), source: typeof source === 'string' && /^https:\/\/docs\.google\.com\//.test(source) ? source.slice(0, 300) : null, sections: parseSections(markdown) };
+  try { fs.copyFileSync(file(stateDir), file(stateDir) + '.prev'); } catch { /* first sync */ } // one step back if a bad copy lands
   fs.writeFileSync(file(stateDir), JSON.stringify(doc));
   return doc;
 }
