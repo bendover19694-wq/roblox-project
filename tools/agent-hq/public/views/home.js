@@ -165,7 +165,8 @@ function needsYou() {
   // A task whose review ask is already on Home is decided there, so it is not shown twice.
   for (const t of store.tasks.filter((x) => isBackToYou(x) && inScope(x))) if (!open.some((a) => a.kind === 'review' && a.taskId === t.id)) cards.push(tag(doneCard({ task: t }), t));
   for (const a of rest) if (a.kind === 'review') cards.push(tag(doneCard({ ask: a }), a));
-  if (media.length) cards.push(tag(reviewCard(media), media[0]));
+  // one review card per game, so All games can file each under its own game
+  for (const s of [...new Set(media.map(itemGame))]) { const mine = media.filter((a) => itemGame(a) === s); cards.push(tag(reviewCard(mine), mine[0])); }
   const pick = pickCard();
   if (pick) cards.push(pick);
   cards.push(...publishCards());
