@@ -185,7 +185,7 @@ function needsYou() {
 // All games: with items from more than one game, a small header per game (name, count); "No game" last.
 function groupByGame(cards, gm) {
   const games = new Set([...gm.values()]);
-  if (games.size < 2) return cards;
+  if (games.size < 2 && store.gameList.length < 2) return cards; // one game in the studio: no headers needed
   const order = [...store.gameList.map((g) => g.slug).filter((s) => games.has(s)), ...[...games].filter((s) => s && !store.gameList.some((g) => g.slug === s)), ''].filter((s, i, a) => games.has(s) && a.indexOf(s) === i);
   const out = cards.filter((c) => !gm.has(c));
   for (const s of order) {
