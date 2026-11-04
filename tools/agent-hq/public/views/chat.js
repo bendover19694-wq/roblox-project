@@ -78,9 +78,31 @@ function openLessons(role) {
   const body = h('div', { class: 'stack' }, empty('Loading'));
   openDrawer(roleLabel(role) + ' lessons', body);
   let lessons = [];
-  const paint = (corrections) => {
+  let corrections = [];
+  const prefs = { [role]: [], studio: [] };
+  const prefPath = (scope) => '/api/memory/' + encodeURIComponent(scope) + '/preferences';
+  const prefRow = (scope, p) => h('li', { class: 'lesson' },
+    h('span', { class: 'chip' }, p.date), scope === 'studio' ? h('span', { class: 'chip static' }, 'Every agent') : null, h('span', { class: 'grow' }, p.text),
+    btn('Remove', async () => {
+      const r = await act(() => api('DELETE', prefPath(scope) + '/' + encodeURIComponent(p.id)), 'Removed');
+      if (r && r !== true && Array.isArray(r.preferences)) { prefs[scope] = r.preferences; paint(); }
+    }, { kind: 'ghost sm', icon: 'trash', title: 'Remove this preference' }));
+  const addPref = (scope, input) => async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    const r = await act(() => api('POST', prefPath(scope), { text }), 'Saved');
+    if (r && r !== true && Array.isArray(r.preferences)) { prefs[scope] = r.preferences; input.value = ''; paint(); }
+  };
+  const paint = () => {
     const mine = [...corrections].reverse(); // the API lists oldest first
+    const input = h('input', { class: 'pg-input grow', maxlength: 200, placeholder: 'A rule to keep, for example: always say studs, never pixels', 'aria-label': 'New standing preference' });
+    const all = [...prefs.studio.map((p) => ['studio', p]), ...prefs[role].map((p) => [role, p])];
     body.replaceChildren(
+      h('section', { class: 'stack sm', 'aria-label': 'Standing preferences' },
+        h('h4', {}, 'Standing preferences'),
+        h('p', { class: 'muted' }, 'Rules you set for good. Every new brief includes them, with your authority. Agents can propose rules, but only you save them.'),
+        all.length ? h('ul', { class: 'plain lessons' }, all.map(([scope, p]) => prefRow(scope, p))) : h('p', { class: 'muted' }, 'None yet.'),
+        h('div', { class: 'row' }, input, btn('Add for this agent', addPref(role, input), { kind: 'ghost sm' }), btn('Add for every agent', addPref('studio', input), { kind: 'ghost sm' }))),
       h('section', { class: 'stack sm', 'aria-label': 'Your corrections' },
         h('h4', {}, 'Your corrections'),
         h('p', { class: 'muted' }, 'What you told this agent when you sent work back or approved it with a note. Every new brief for this role includes them. Remove one that no longer applies.'),
@@ -90,7 +112,7 @@ function openLessons(role) {
           h('span', { class: 'grow' }, c.text),
           btn('Remove', async () => {
             const r = await act(() => api('DELETE', `/api/memory/${encodeURIComponent(role)}/corrections/${encodeURIComponent(c.id)}`), 'Removed');
-            if (r && r !== true && Array.isArray(r.corrections)) paint(r.corrections);
+            if (r && r !== true && Array.isArray(r.corrections)) { corrections = r.corrections; paint(); }
           }, { kind: 'ghost sm', icon: 'trash', title: 'Remove this correction' }))))
           : h('p', { class: 'muted' }, 'None yet. When you send work back with a note, it is kept here.')),
       h('section', { class: 'stack sm', 'aria-label': 'Lessons' },
@@ -99,7 +121,9 @@ function openLessons(role) {
         lessons.length ? h('ul', { class: 'plain lessons' }, [...lessons].reverse().map((l) => h('li', { class: 'lesson' }, h('span', { class: 'chip' }, l.date), h('span', {}, l.text))))
           : empty('No lessons yet. Agents add them with hq_learn.')));
   };
-  api('GET', '/api/memory/' + encodeURIComponent(role)).then((r) => { lessons = r.lessons || []; paint(r.corrections || []); }).catch((e) => body.replaceChildren(empty(e.message)));
+  Promise.all([api('GET', '/api/memory/' + encodeURIComponent(role)), api('GET', prefPath(role)), api('GET', prefPath('studio'))])
+    .then(([r, mine, studio]) => { lessons = r.lessons || []; corrections = r.corrections || []; prefs[role] = mine.preferences || []; prefs.studio = studio.preferences || []; paint(); })
+    .catch((e) => body.replaceChildren(empty(e.message)));
 }
 
 // "More" popover in the chat header: the engine in use, the running task, and the less common actions.

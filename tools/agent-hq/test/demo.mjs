@@ -11,12 +11,13 @@ import { computeBreakouts } from '../market.mjs';
 import { recordPoints, upsertMeta } from '../market-history.mjs';
 import { normalizePitch } from '../pitches.mjs';
 import { startServer } from '../server.mjs';
+import { saveResearchNote } from '../research-notes.mjs';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 const stateDir = process.env.HQ_DEMO_DIR || fs.mkdtempSync(path.join(os.tmpdir(), 'hq-demo-'));
 const offline = async () => { throw new Error('the demo is offline'); };
 const s = await startServer({
-  root, port: Number(process.env.HQ_PORT) || 4400, stateDir, dbFile: path.join(stateDir, 'hq.db'),
+  root, port: Number(process.env.HQ_PORT) || 4400, stateDir, dbFile: path.join(stateDir, 'hq.db'), memoryDir: path.join(stateDir, 'memory'), // the demo never writes to the repo's memory folder
   fetchCharts: offline, fetchers: { details: async () => ({}), icons: async () => ({}), thumbnails: async () => ({}) },
 });
 const { db } = s;
@@ -100,6 +101,10 @@ setSetting(db, 'breakouts', { rows: computeBreakouts(latestMarketSnapshots(db, 3
 
 // ---- SAMPLE idea scores, through the real routes: one open, one scored ----
 const api = async (p, body) => (await fetch(`http://127.0.0.1:${s.port}${p}`, { method: 'POST', headers: { 'x-hq-token': s.ownerToken, 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+// ---- SAMPLE standing preference and research note, so the Lessons drawer and the Library show something ----
+await api('/api/memory/studio/preferences', { text: 'Sample preference: say studs, never pixels, in every note.' });
+saveResearchNote(stateDir, { title: 'Sample research note: AnimationConstraint', url: 'https://create.roblox.com/docs/animation', summary: 'Sample note, not real research. AnimationConstraint replaces Motor6D on upgraded rigs.', role: 'builder' }, new Date().toISOString().slice(0, 10));
+
 await api('/api/idea-scores', { title: 'Sample idea: space station tycoon', idea: 'Sample idea text. Build a station module by module and trade cargo with other players.' });
 const scored = await api('/api/idea-scores', { title: 'Sample idea: asteroid mining', idea: 'Sample idea text. Send drones to asteroids, sell ore, and upgrade the fleet.' });
 updateTask(db, scored.taskId, { state: 'done', startedAt: ago(2 * HOUR), costUsd: 0.2 });

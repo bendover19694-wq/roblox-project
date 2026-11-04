@@ -11,7 +11,8 @@ import { loadRoles, parseVault, buildBrief } from './briefs.mjs';
 import { mountMarket } from './market-routes.mjs';
 import { mountIdeas, IDEAS_OWNER_ONLY } from './ideas.mjs';
 import { createKnowledge, mountKnowledge } from './knowledge.mjs';
-import { addCorrection, readCorrections, mountCorrections } from './corrections.mjs';
+import { addCorrection, readCorrections } from './corrections.mjs';
+import { mountLearning, LEARNING_OWNER_ONLY } from './preferences.mjs';
 import { fetchCharts as realFetchCharts, fetchGameDetails, fetchIcons, fetchThumbnails, loadBenchmarks, titleAnalysis } from './market.mjs';
 import { liveStatsView } from './livestats.mjs';
 import { PROVIDERS, PROVIDER_IDS, CLAUDE_MODELS, keyLooksOk, createCatalog, testModel } from './providers.mjs';
@@ -351,7 +352,7 @@ ${task.body}`;
     ['GET', /^\/api\/games\/[^/]+\/gate$/], ['POST', /^\/api\/games\/[^/]+\/(?:gate\/(?:start|confirm|checklist)|ad-note)$/],
     ['POST', /^\/api\/pitches\/ideas$/], ['POST', /^\/api\/pitches\/[^/]+\/decide$/], ['POST', /^\/api\/stage-requests\/[^/]+\/decide$/],
     ['POST', /^\/api\/games$/], ['PATCH', /^\/api\/games\/[^/]+$/], ['POST', /^\/api\/games\/[^/]+\/mark-live$/],
-    ...LINK_OWNER_ONLY, ...CATALOG_OWNER_ONLY, ...NOTEBOOK_OWNER_ONLY, ['POST', /^\/api\/games\/[^/]+\/play$/], ...IDEAS_OWNER_ONLY, ['POST', /^\/api\/settings$/], ['POST', /^\/api\/roles\/[^/]+$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
+    ...LINK_OWNER_ONLY, ...LEARNING_OWNER_ONLY, ...CATALOG_OWNER_ONLY, ...NOTEBOOK_OWNER_ONLY, ['POST', /^\/api\/games\/[^/]+\/play$/], ...IDEAS_OWNER_ONLY, ['POST', /^\/api\/settings$/], ['POST', /^\/api\/roles\/[^/]+$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
     ['POST', /^\/api\/messages\/[^/]+\/reset$/], ['POST', /^\/api\/memory\/[^/]+\/corrections$/], ['DELETE', /^\/api\/memory\/[^/]+\/corrections\/[^/]+$/], ['POST', /^\/api\/threads\/[^/]+\/read$/],
     ['POST', /^\/api\/market\/corpus$/], ['DELETE', /^\/api\/market\/corpus\/\d+$/], ['POST', /^\/api\/uploads$/],
   ];
@@ -565,7 +566,7 @@ ${task.body}`;
     }
     const done = D.answerAsk(db, a.id, { answer, verdict, verdictNote: note });
     emit('ask', done);
-    if (link.answered(a, answer)) return done;
+    if (link.answered(a, answer) || learning.answered(a, answer)) return done;
     const task = a.taskId ? D.getTask(db, a.taskId) : null;
     if (verdict === 'changes' || verdict === 'rejected' || verdict === 'approved') remember(a.role, verdict === 'approved' ? 'preference' : 'correction', task?.game, note);
     const say = (text) => postMessage({ role: a.role, from: 'owner', text, taskId: a.taskId });
@@ -701,9 +702,9 @@ ${task.body}`;
     return text.split('\n').map((l) => /^- (\d{4}-\d{2}-\d{2}): (.+)$/.exec(l.trim())).filter(Boolean).map((x) => ({ date: x[1], text: x[2] }));
   };
   // owner corrections live in memory/<role>.corrections.md (corrections.mjs); only the owner's own actions write them
-  const remember = (role, kind, game, text) => { try { addCorrection(memoryDir, role, { kind, game, text }, nowIso().slice(0, 10)); } catch { /* memory is best effort */ } };
+  const remember = (role, kind, game, text) => { try { if (addCorrection(memoryDir, role, { kind, game, text }, nowIso().slice(0, 10)).added && kind === 'correction') learning.noted(role); } catch { /* memory is best effort */ } };
   route('GET', /^\/api\/memory\/([^/]+)$/, ({ m }) => { const role = oneOf(m[1], 'role', roleIds, { required: true }); return { lessons: readLessons(role), corrections: readCorrections(memoryDir, role) }; });
-  mountCorrections(route, { memoryDir, roleIds, HttpError }); // DELETE /api/memory/:role/corrections/:id (owner only)
+  const learning = mountLearning(route, { db, D, emit, memoryDir, stateDir, roleIds, roleLabel: (id) => roleOf(id)?.label ?? id, queueTask, nowIso, str, bad, isObj, agentTask, HttpError, onNoteSaved: () => kn.reindex?.('notes') });
   route('POST', /^\/api\/memory\/([^/]+)$/, ({ m, body, who, headers }) => {
     const pathRole = oneOf(m[1], 'role', roleIds, { required: true });
     if (!isObj(body)) throw bad('body must be an object');
@@ -1015,7 +1016,6 @@ ${task.body}`;
     fs.writeFileSync(path.join(stateDir, 'media', rel), buf);
     return { path: rel, name, bytes: buf.length };
   }, { maxBody: 8 * 1024 * 1024 });
-
   // pitches
   const normalize = (input) => {
     try { return normalizePitch(input); } catch (e) { throw new HttpError(e.status ?? 400, e.message); }

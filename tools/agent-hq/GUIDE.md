@@ -9,6 +9,14 @@ A control room on your own PC. You ask for work. Sixteen role agents do it. You 
 - Open it with the "Agent HQ" shortcut on your desktop. It starts HQ if needed and opens a signed-in tab at `http://127.0.0.1:4317`.
 - To keep it always on, run `scripts/install-agent-hq-autostart.bat` once.
 - To stop it, end the two `node` processes in Task Manager.
+
+### The app copy (always the newest version)
+- Agent HQ runs from a stable folder, `Documents\Agent-HQ-App`. It is a checkout of this project at the branch named in `Documents\Agent-HQ-App.json`.
+- Every time you open Agent HQ it first checks GitHub and moves to the newest version of that branch, then restarts HQ if something changed. Offline, it just starts the version you have and says so. If you changed files inside the app copy, it will not overwrite them and stays put.
+- Your data (`.agent-hq` inside the app copy) is kept across updates.
+- To move to a new branch later, run in PowerShell: `powershell -File "%USERPROFILE%\Documents\Agent-HQ-App\scriptsgent-hq-update.ps1" -Branch <branch name>`. It saves the branch only if GitHub has it.
+- The one-time move from the old folder is `scripts/agent-hq-switch.ps1` (add `-WhatIf` first to see every step without changing anything). It backs up the old `.agent-hq` to `Documents\Agent-HQ-Backups\<date and time>`, copies it into the app copy, and never deletes the old folder.
+- To go back to the old version: run `scripts/install-agent-hq-autostart.bat` from the old folder (it points the shortcuts back there), stop the app copy's `node` processes, and open Agent HQ. The backup folder holds the state as it was at the switch.
 - Your owner token is in the shortcut link and in `.agent-hq/owner-token`. The agents have a different token. Never share either one, and never paste them into a chat or a file in the repo.
 
 ## The pages, one by one

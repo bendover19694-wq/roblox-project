@@ -63,8 +63,8 @@ test('findSources: env override, then the newest plugin copy, then missing is re
   const override = tmp('v');
   assert.equal(findSources({ env: { HQ_LIHFOLK_VAULT: override }, home, root: empty }).lihfolk.root, path.resolve(override));
   const none = findSources({ env: {}, home: tmp('h2'), root: empty });
-  assert.deepEqual(Object.values(none).map((x) => x.found), Array(6).fill(false));
-  assert.deepEqual(Object.keys(none), ['lihfolk', 'docs', 'cards', 'research', 'references', 'community'], 'V1 is not a source');
+  assert.deepEqual(Object.values(none).map((x) => x.found), Array(7).fill(false));
+  assert.deepEqual(Object.keys(none), ['lihfolk', 'docs', 'cards', 'research', 'references', 'community', 'notes'], 'V1 is not a source');
   const full = fixture();
   const all = findSources({ env: full.env, home: full.home, root: full.repo });
   assert.equal(all.references.root, path.join(path.resolve(full.refs), 'repos'));
@@ -303,7 +303,7 @@ test('routes: owner or agent token, bad input is a 400, nothing without a token'
   assert.equal((await get('/api/knowledge/status')).status, 401);
   const st = await get('/api/knowledge/status', s.token);
   assert.equal(st.status, 200);
-  assert.equal(st.json.sources.length, 6);
+  assert.equal(st.json.sources.length, 7);
   const q = await get('/api/knowledge/search?q=retention&limit=2', s.ownerToken);
   assert.equal(q.status, 200);
   assert.ok(q.json.results.length >= 1 && q.json.results.length <= 2);

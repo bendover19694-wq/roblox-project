@@ -245,3 +245,41 @@ test('builder briefs stay under a stated size per engine', () => {
   assert.ok(size('groq') <= 8000, `groq ${size('groq')}`);
 });
 
+
+test('ponytail: LLM and antigravity code roles get the rules, Claude engines one line, off removes both', () => {
+  const brief = (engine, role, settings) => buildBrief({ task: { ...task, engine }, role, root, settings });
+  const groq = brief('groq', 'builder', {});
+  assert.match(groq, /## Code style \(ponytail full\)\n- Ask first whether the code needs to exist/);
+  assert.ok(groq.match(/## Code style[^\n]*\n((?:- [^\n]*\n?)+)/)[1].trim().split('\n').length <= 6);
+  assert.match(brief('antigravity', 'builder', {}), /## Code style \(ponytail full\)/);
+  const cli = brief('claude-cli', 'builder', {});
+  assert.match(cli, /Ponytail plugin is active at full; follow it\./);
+  assert.doesNotMatch(cli, /## Code style/);
+  assert.equal(brief('app', 'builder', {}).match(/ponytail/gi).length, 1);
+  const lite = brief('groq', 'builder', { ponytailMode: 'lite' });
+  const ultra = brief('groq', 'builder', { ponytailMode: 'ultra' });
+  assert.match(lite, /ponytail lite/);
+  assert.ok(lite.length < groq.length && groq.length < ultra.length);
+  assert.match(ultra, /Shortest working diff, no comments beyond one line/);
+  for (const engine of ['groq', 'antigravity', 'claude-cli', 'app']) assert.doesNotMatch(brief(engine, 'builder', { ponytailMode: 'off' }), /ponytail/i, engine);
+  assert.doesNotMatch(brief('groq', 'architect', {}), /## Code style/, 'roles that do not write code skip the rules');
+});
+
+test('feedback, preferences and research lines sit in the right order', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-br-'));
+  fs.writeFileSync(path.join(dir, 'builder.prefs.md'), '- 2026-11-04 | Keep modules small\n');
+  fs.writeFileSync(path.join(dir, 'builder.corrections.md'), '- 2026-11-04 | correction | any | Use studs\n');
+  fs.writeFileSync(path.join(dir, 'builder.md'), '- 2026-11-04: a lesson\n');
+  const db = openDb(':memory:');
+  addMessage(db, { role: 'builder', from: 'owner', text: 'Looks good: Shop' });
+  const b = buildBrief({ task: { ...task, engine: 'app' }, role: 'builder', root, db, memoryDir: dir });
+  const at = (s) => b.indexOf(s);
+  const order = ['## Research and rules', '## Owner preferences (standing)', '## Owner corrections', '## How your recent work landed', '## Lessons from earlier', '## Your task'].map(at);
+  assert.ok(order.every((n) => n >= 0), String(order));
+  assert.deepEqual([...order].sort((x, y) => x - y), order);
+  assert.match(b, /hq_research_save/);
+  assert.doesNotMatch(b, /hq_preferences_propose/, 'only the lead proposes from chat');
+  assert.match(buildBrief({ task, role: 'lead', root }), /hq_preferences_propose/);
+  // no data: no section
+  assert.doesNotMatch(buildBrief({ task, role: 'builder', root, db: openDb(':memory:'), memoryDir: fs.mkdtempSync(path.join(os.tmpdir(), 'hq-br2-')) }), /How your recent work landed|Owner preferences/);
+});

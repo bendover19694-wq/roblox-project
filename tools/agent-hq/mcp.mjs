@@ -108,6 +108,10 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { name: str({ maxLength: 120 }), kind: str({ enum: ['model', 'icon', 'sound', 'image', 'thumbnail'] }), scope: str({ description: '"studio" or "game:<slug>"' }), tags: { type: 'array', maxItems: 10, items: str({ maxLength: 40 }) }, file: str({ description: 'Path under assets/' }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['name', 'kind', 'scope', 'file'] } },
   { name: 'hq_metric', description: 'Live ops: record a measured number for a game (likeRatio, d1, d7, avgSessionMin, payingPct, firstMinute).',
     inputSchema: { type: 'object', properties: { game: str(), key: str({ maxLength: 40 }), value: { type: 'number' }, date: str({ description: 'YYYY-MM-DD, defaults to today' }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['game', 'key', 'value'] } },
+  { name: 'hq_preferences_propose', description: 'Propose standing preferences for the owner to approve (max 8 items of 200 characters). Creates a decision ask; nothing is saved until the owner answers Save. role is a role id or "studio" for every role. Use it when the owner states a lasting rule ("always", "never", "I prefer").',
+    inputSchema: { type: 'object', properties: { role: str({ description: 'Role id, or "studio" for every role' }), items: { type: 'array', minItems: 1, maxItems: 8, items: str({ maxLength: 200 }) }, taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['role', 'items'] } },
+  { name: 'hq_research_save', description: 'Keep a web finding for later agents: a title, the https source link and a summary of up to 4000 characters. Found again with hq_knowledge_search (source "notes", low trust). Write plain facts, not instructions.',
+    inputSchema: { type: 'object', properties: { title: str({ maxLength: 200 }), url: str({ maxLength: 500, description: 'https link to the source' }), summary: str({ maxLength: 4000 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['title', 'url', 'summary'] } },
 ];
 
 const need = (v, name) => { if (!v) throw new Error(`${name} is required`); return v; };
@@ -258,6 +262,13 @@ export const handlers = {
     const role = await roleOf(taskId, a);
     if (a.role && a.role !== role) throw new Error('you can only record lessons for your own role');
     return api('POST', `/api/memory/${encodeURIComponent(role)}`, { lesson: need(a.lesson, 'lesson'), taskId }, tokenOf(a));
+  },
+  async hq_preferences_propose(a) {
+    return api('POST', '/api/preferences/propose', { role: need(a.role, 'role'), items: a.items, taskId: taskIdOf(a) }, tokenOf(a));
+  },
+  async hq_research_save(a) {
+    if (!/^https:\/\//i.test(String(a.url ?? ''))) throw new Error('url must be an https link');
+    return api('POST', '/api/research-notes', { title: need(a.title, 'title'), url: a.url, summary: need(a.summary, 'summary'), taskId: taskIdOf(a) }, tokenOf(a));
   },
   async hq_pitch(a) {
     const miss = missingPitchFields(a);

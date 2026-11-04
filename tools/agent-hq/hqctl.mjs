@@ -21,6 +21,8 @@ Every command that touches a task (note, ask, media, complete, learn, pitch, ide
   node tools/agent-hq/hqctl.mjs stage <game> <toStage> <evidence> --task <taskId>      producer and lead: request the next stage
   node tools/agent-hq/hqctl.mjs asset <name> <kind> <scope> <file> --task <taskId> [--tags a,b]   librarian: add an asset to the index
   node tools/agent-hq/hqctl.mjs metric <game> <key> <value> --task <taskId> [--date YYYY-MM-DD]   live ops: record a measured number
+  node tools/agent-hq/hqctl.mjs prefs-propose <role> <items>               propose standing preferences (role id or studio; items = JSON array or one text) --task <taskId>
+  node tools/agent-hq/hqctl.mjs research-save <title> <url> <summary>      keep a web finding for later agents --task <taskId>
   node tools/agent-hq/hqctl.mjs market                                     latest Roblox charts snapshot
   node tools/agent-hq/hqctl.mjs knowledge-search <words> [--limit N]       search the local Roblox notes (LihFolk, Creator docs, cards, research); prints text
   node tools/agent-hq/hqctl.mjs knowledge-read <source> <path> [--section <heading words>]   read one note found by knowledge-search
@@ -60,11 +62,11 @@ if (opt.token) process.env.HQ_TASK_TOKEN = opt.token;
 const { handlers, api } = await import('./mcp.mjs');
 
 const [cmd, ...a] = pos;
-const arity = { gate: 1, next: 1, note: 2, ask: 4, media: 3, complete: 2, learn: 2, pitch: 1, idea: 1, market: 0, stage: 3, asset: 4, metric: 3, 'knowledge-search': 1, 'knowledge-read': 2, notebook: 0, 'notebook-add': 1, 'notebook-section': 1, 'notebook-mirror': 1 };
+const arity = { gate: 1, next: 1, note: 2, ask: 4, media: 3, complete: 2, learn: 2, pitch: 1, idea: 1, market: 0, stage: 3, asset: 4, metric: 3, 'knowledge-search': 1, 'knowledge-read': 2, notebook: 0, 'notebook-add': 1, 'notebook-section': 1, 'notebook-mirror': 1, 'prefs-propose': 2, 'research-save': 3 };
 if (!(cmd in arity)) fail(`unknown command "${cmd}". Run with --help.`);
-const TASK_COMMANDS = ['notebook-add', 'note', 'ask', 'media', 'complete', 'learn', 'pitch', 'idea', 'stage', 'asset', 'metric'];
+const TASK_COMMANDS = ['notebook-add', 'note', 'ask', 'media', 'complete', 'learn', 'pitch', 'idea', 'stage', 'asset', 'metric', 'prefs-propose', 'research-save'];
 if (TASK_COMMANDS.includes(cmd) && !process.env.HQ_TASK_TOKEN) fail(`"${cmd}" needs your task token: add --token <taskToken> (it is in your brief) or set HQ_TASK_TOKEN.`);
-if (['stage', 'asset', 'metric', 'pitch', 'idea', 'notebook-add'].includes(cmd) && !opt.task) fail(`"${cmd}" needs --task <taskId> (the working task of the role that may do this).`);
+if (['stage', 'asset', 'metric', 'pitch', 'idea', 'notebook-add', 'prefs-propose', 'research-save'].includes(cmd) && !opt.task) fail(`"${cmd}" needs --task <taskId> (the working task of the role that may do this).`);
 if (a.length !== arity[cmd]) fail(`"${cmd}" takes ${arity[cmd]} argument(s), got ${a.length}. Run with --help.`);
 
 try {
@@ -88,6 +90,11 @@ try {
     res = await handlers.hq_asset_add({ taskId: opt.task, name: a[0], kind: a[1], scope: a[2], file: a[3], tags: opt.tags ? opt.tags.split(',').map((t) => t.trim()).filter(Boolean) : [] });
   } else if (cmd === 'metric') {
     res = await handlers.hq_metric({ taskId: opt.task, game: a[0], key: a[1], value: Number(a[2]), ...(opt.date ? { date: opt.date } : {}) });
+  } else if (cmd === 'prefs-propose') {
+    let items = a[1]; try { const j = JSON.parse(a[1]); if (Array.isArray(j)) items = j; } catch { /* one plain text */ }
+    res = await handlers.hq_preferences_propose({ taskId: opt.task, role: a[0], items: Array.isArray(items) ? items : [items] });
+  } else if (cmd === 'research-save') {
+    res = await handlers.hq_research_save({ taskId: opt.task, title: a[0], url: a[1], summary: a[2] });
   } else if (cmd === 'knowledge-search') {
     text = await handlers.hq_knowledge_search({ q: a[0], ...(opt.limit ? { limit: Number(opt.limit) } : {}) });
   } else if (cmd === 'notebook') {

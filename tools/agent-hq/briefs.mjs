@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { listMessages } from './db.mjs';
 import { readCorrections } from './corrections.mjs';
+import { prefsFor } from './preferences.mjs';
+import { statsSection } from './feedback.mjs';
 import { isArtTask } from './art-routing.mjs';
 import { isRefTask } from './model-refs.mjs';
 
@@ -251,6 +253,41 @@ function usageSection(engine, settings = {}) {
   return `## Usage and notebook\n${lines.map((l) => `- ${l}`).join('\n')}`;
 }
 
+const PONYTAIL_RULES = [
+  'Ask first whether the code needs to exist at all.',
+  'Reuse what the repo has, then the standard library, a platform feature, an installed dependency; only then write the minimum code.',
+  'No unrequested abstractions or scaffolding. Fix the root cause, not the symptom.',
+  'Never cut validation, security or error handling that prevents data loss.',
+  'Leave one small runnable check for non-trivial logic.',
+];
+const PONYTAIL_MODES = new Set(['lite', 'full', 'ultra']);
+
+/** Lazy-senior coding rules (settings.ponytailMode). Claude engines load the plugin, so they get one line; the rest get the rules. */
+function ponytailSection(engine, settings = {}, writes = true) {
+  const mode = settings.ponytailMode ?? 'full';
+  if (!PONYTAIL_MODES.has(mode)) return null;
+  if (!(LLM_ENGINES.has(engine) || engine === 'antigravity')) return `Ponytail plugin is active at ${mode}; follow it.`;
+  if (!writes) return null; // the rules are about code: roles that only read or write docs skip them
+  const rules = mode === 'lite' ? PONYTAIL_RULES.slice(0, 3) : mode === 'ultra' ? [...PONYTAIL_RULES, 'Shortest working diff, no comments beyond one line.'] : PONYTAIL_RULES;
+  return `## Code style (ponytail ${mode})\n${rules.map((x) => `- ${x}`).join('\n')}`;
+}
+
+/** Standing owner preferences: the studio's, then the role's. Owner authority, shown before corrections. */
+function prefsSection(r, memoryDir, small) {
+  const list = prefsFor(memoryDir, r.id);
+  if (!list.length) return null;
+  const shown = small ? list.slice(-8) : list;
+  return `## Owner preferences (standing)\nRules the owner set for good. They carry the owner's authority: follow them even when a vault or an old lesson says otherwise.\n${shown.map((p) => p.text).map((x) => `- ${x}`).join('\n')}`;
+}
+
+/** Research habit. Engines with web access search it; LLM engines only get the save tool. */
+function researchLine(small, lead) {
+  const save = small ? 'Keep web finds: hq_research_save {title, url, summary}.' : 'When local knowledge and the notebook do not answer, research the web (official Roblox docs and DevForum first), cite sources, and keep what matters with hq_research_save {title, url (https), summary}; later agents find it with hq_knowledge_search (source "notes").';
+  const lines = small && lead ? [] : [save]; // the Lead on a small engine delegates research; its budget is tight
+  if (lead) lines.push('Owner states a lasting preference ("always", "never", "I prefer")? Propose it: hq_preferences_propose {role or "studio", items}.');
+  return `## Research and rules\n${lines.map((l) => `- ${l}`).join('\n')}`;
+}
+
 /**
  * Section order, built for prompt caching: what is the same for a role across tasks comes first, what changes comes last.
  *   Same per role: header, hard rules, skills, tools to prefer, rules for your role, usage and notebook (from settings), job,
@@ -296,6 +333,8 @@ export function buildBrief({ task, role, root, db, taskToken, memoryDir, referen
     r.mcp?.length ? `## Tools to prefer\nPrefer these when present: ${r.mcp.join(', ')}.` : null,
     rolesRulesSection(r),
     usageSection(engine, settings),
+    ponytailSection(engine, settings, r.mode === 'write'),
+    researchLine(small, r.id === 'lead'),
     `## Your job\n${r.job}`,
     gameVaultSection(root, small),
     `## Your knowledge chapters\n${chapterText}`,
@@ -315,8 +354,11 @@ export function buildBrief({ task, role, root, db, taskToken, memoryDir, referen
   }
   if (artRole) sameForRole.push(ART_SPECS);
 
+  const mem = memoryDir ?? path.join(root, 'tools/agent-hq/memory');
   const changes = [
+    prefsSection(r, mem, small),
     correctionsSection(r, memoryDir ?? path.join(root, 'tools/agent-hq/memory'), small),
+    statsSection(db, r.id, small),
     `## Lessons from earlier tasks (follow them)\n${lessons.length ? lessons.join('\n') : '(none yet)'}`,
     convo.length
       ? `## Conversation so far\n${convo.map((m) => `${m.from === 'owner' ? 'Owner' : r.label}: ${clip(m.text, small ? 300 : 500)}`).join('\n')}`

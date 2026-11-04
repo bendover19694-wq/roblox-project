@@ -47,6 +47,7 @@ export const FIELDS = [
   f('budget', 'Parallel task slots', 'int', 2, 'usage', 'How many tasks the app lane runs at the same time.', { min: 1, max: 4 }),
   f('dailySpendCap', 'Daily spend cap (USD)', 'number', 0, 'usage', 'Agents pause when today\'s spend reaches this. 0 means no cap. HQ never resumes by itself.', { min: 0, max: 500 }),
   f('replyStyle', 'Agent replies', 'enum', 'terse', 'usage', 'Terse asks agents for short notes: facts, paths, numbers.', { options: [{ value: 'terse', label: 'Terse' }, { value: 'normal', label: 'Normal' }] }),
+  f('ponytailMode', 'Code style (ponytail)', 'enum', 'full', 'usage', 'Lazy-senior coding rules. Claude engines load the ponytail plugin; other engines get the rules in their brief.', { options: [{ value: 'off', label: 'Off' }, { value: 'lite', label: 'Lite' }, { value: 'full', label: 'Full' }, { value: 'ultra', label: 'Ultra' }] }),
   f('screenshotCap', 'Screenshots per task', 'int', 4, 'usage', 'The most screenshots one agent should take. 0 means none.', { min: 0, max: 12 }),
   f('cheapLookups', 'Cheap vault lookups', 'bool', true, 'usage', 'Claude agents look things up in the vault through a small model.'),
   f('batchByRole', 'Batch by role', 'bool', true, 'usage', 'A worker takes the next task of the role it just ran, so its context is reused.'),

@@ -8,6 +8,7 @@ A local control room for the Roblox agent team. You message each of 16 role agen
 
 - **Open it:** double-click **"Agent HQ"** on your desktop, or `scripts/Agent HQ.bat`. It starts HQ in the background if it is not running and opens a signed-in tab (`http://127.0.0.1:4317/#owner=<owner token>`).
 - **Always on:** run `scripts/install-agent-hq-autostart.bat` once. HQ then starts hidden every time you sign in to Windows, and a keep-alive (`tools/agent-hq/keepalive.mjs`) restarts it within seconds if it crashes. `scripts/uninstall-agent-hq-autostart.bat` removes the autostart and the desktop shortcut.
+- **Newest version:** from `Documents\Agent-HQ-App` every launch updates to the newest version of its branch first (`scripts/agent-hq-update.ps1`); see GUIDE.md, Start and stop.
 - **Logs:** `.agent-hq/logs/server.log`. **Stop it:** end the two `node` processes in Task Manager (the keep-alive and the server).
 
 The page keeps the owner token in that browser's localStorage and removes it from the address bar. Opening http://127.0.0.1:4317 directly only works in a browser that has signed in once; otherwise it shows "Sign in to Agent HQ", so use the shortcut again. You can also start the server by hand with `node tools/agent-hq/server.mjs`. State lives in `<repo>/.agent-hq/` (gitignored): `hq.db`, `owner-token` (yours), `token` (the agents'), `logs/`, `media/`. Role memory is in `tools/agent-hq/memory/` (committed).

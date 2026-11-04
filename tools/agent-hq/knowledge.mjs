@@ -5,6 +5,7 @@
 //   research  this repo's research/
 //   references  the library repos in Roblox-References/repos (Fusion, react-lua, ProfileStore...), MIT or Apache
 //   community   roblox-brain, roblox-skills and roblox-obsidian-vault 01 to 10 (MIT), low trust: numbers must be checked, and quarantine() screens every note
+//   notes       research notes agents saved with hq_research_save (<stateDir>/research-notes), low trust, quarantine applies
 // Results carry a `trust` label and, where it matters, a `note`. Everything is read as text; nothing in these folders is ever run.
 // A missing source is reported in `skipped`, never fatal.
 import fs from 'node:fs';
@@ -38,6 +39,7 @@ const META = {
       return top !== 'roblox-obsidian-vault' || (rel.split('/').length > 2 && /^(0[1-9]|10) /.test(dir));
     },
   },
+  notes: { tier: 2, trust: 'low', label: 'Agent research notes', licence: 'Agent notes', credit: 'Notes agents saved from their own web research, each with its source link. Unreviewed.', note: 'Saved by an agent from a web page. ' + CHECK_NUMBERS },
 };
 export const SOURCE_IDS = Object.keys(META);
 
@@ -74,7 +76,7 @@ const newestFirst = (a, b) => {
 };
 
 /** Where each source lives: env override, then the default path. Missing ones have root null. */
-export function findSources({ env = process.env, home = os.homedir(), root = REPO } = {}) {
+export function findSources({ env = process.env, home = os.homedir(), root = REPO, stateDir } = {}) {
   const dir = (p) => { try { return p && fs.statSync(p).isDirectory() ? path.resolve(p) : null; } catch { return null; } };
   const cache = path.join(home, '.claude/plugins/cache/lihfolk/lihfolk');
   let versions = [];
@@ -87,6 +89,7 @@ export function findSources({ env = process.env, home = os.homedir(), root = REP
     research: dir(path.join(root, 'research')),
     references: dir(path.join(refs, 'repos')),
     community: dir(path.join(refs, 'community')),
+    notes: stateDir ? dir(path.join(stateDir, 'research-notes')) : null,
   };
   return Object.fromEntries(SOURCE_IDS.map((id) => [id, { id, ...META[id], root: roots[id], found: !!roots[id] }]));
 }
@@ -193,7 +196,7 @@ const reasonOf = (e) => (e?.code === 'ENOENT' && /python/i.test(e.path ?? e.mess
  * @param {string} [o.stateDir] where the 24h status cache is kept
  */
 export function createKnowledge({ env = process.env, home, root = REPO, stateDir, now = Date.now, run = runDefault } = {}) {
-  const sources = findSources({ env, home, root });
+  const sources = findSources({ env, home, root, stateDir });
   const childEnv = { ...Object.fromEntries(Object.entries(env).filter(([k]) => !/^HQ_/i.test(k))), PYTHONIOENCODING: 'utf-8' };
   let py = null; // the python name that worked
 
@@ -231,20 +234,26 @@ export function createKnowledge({ env = process.env, home, root = REPO, stateDir
     return !!rule;
   };
 
-  let indexP = null;
+  const idx = new Map(); // one cached index per source, so new research notes can be re-read without rescanning the docs
   const INDEXED = SOURCE_IDS.filter((id) => id !== 'lihfolk'); // lihfolk is searched by its own tool
-  const index = () => (indexP ??= (async () => {
-    const out = [];
-    for (const id of INDEXED) {
-      if (!sources[id].found) continue;
+  const indexOf = (id) => {
+    if (!idx.has(id)) idx.set(id, (async () => {
+      const out = [];
       for await (const rel of walk(sources[id])) {
         let text;
         try { text = await fs.promises.readFile(path.join(sources[id].root, rel), 'utf8'); } catch { continue; } // unreadable file
         if (!hold(id, rel, text)) out.push(indexEntry(id, rel, text));
       }
-    }
-    return out;
-  })());
+      return out;
+    })());
+    return idx.get(id);
+  };
+  const index = async () => (await Promise.all(INDEXED.filter((id) => sources[id].found).map(indexOf))).flat();
+  /** Forget one source's index (and its quarantine list) so the next search reads it again. */
+  function reindex(id) {
+    idx.delete(id);
+    for (const k of [...held.keys()]) if (k.startsWith(`${id}:`)) held.delete(k);
+  }
 
   /** Notes quarantined so far, sorted. Builds the index first, so the list covers every low-trust note. */
   async function quarantined() {
@@ -263,7 +272,7 @@ export function createKnowledge({ env = process.env, home, root = REPO, stateDir
       vaultSearch(query, limit).catch((e) => { skipped.push({ source: 'lihfolk', reason: reasonOf(e) }); return []; }),
       index(),
     ]);
-    for (const id of INDEXED) if (!sources[id].found) skipped.push({ source: id, reason: 'not found on this PC' });
+    for (const id of INDEXED) if (!sources[id].found && id !== 'notes') skipped.push({ source: id, reason: 'not found on this PC' });
     const ranked = (id) => (tokens.length ? entries.filter((e) => e.source === id).map((e) => [score(e, tokens), e]).filter(([s]) => s > 0)
       .sort((a, b) => b[0] - a[0] || a[1].p.length - b[1].p.length).slice(0, limit)
       .map(([, e]) => stamp(id, { source: e.source, title: e.title, path: e.path, snippet: e.snippet })) : []);
@@ -332,7 +341,7 @@ export function createKnowledge({ env = process.env, home, root = REPO, stateDir
     return (inflight ??= recount(sig).finally(() => { inflight = null; }));
   }
 
-  return { sources, search, read, status, quarantined };
+  return { sources, search, read, status, quarantined, reindex };
 }
 
 /** GET /api/knowledge/status, /search?q=&limit=, /read?source=&path=&section=. Same auth as other reads (owner or agent token). */
