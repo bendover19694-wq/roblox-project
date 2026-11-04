@@ -11,7 +11,10 @@
 .tab .rv-n { margin-left: 8px; }
 .seg.wide { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .seg.wide .seg-btn { white-space: nowrap; padding: 5px 11px; flex: none; }
-.rv-bulk .btn { color: var(--muted); }
+/* the subtitle runs the full width, as in the reference */
+.rv-page .page-head p { max-width: none; }
+.rv-wait { display: none; }
+.menu-item.danger { color: #ff9b9b; }
 .btn.rv-reject { background: transparent; border-color: #6a2c31; color: #ff9b9b; }
 .btn.rv-reject:hover:not(:disabled) { border-color: var(--err); }
 
@@ -19,6 +22,12 @@
 .rgroup { display: flex; flex-direction: column; gap: 14px; }
 .rgroup-head { display: flex; align-items: center; gap: 12px; min-height: 40px; }
 .rgroup-head h2 { font-size: 16px; font-weight: 600; }
+/* group tile: a purpose colour, same gradient recipe as the role tiles */
+.rtile { flex: none; width: 28px; height: 28px; display: inline-grid; place-items: center; border-radius: 28%; color: #fff; background: linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 48%), linear-gradient(135deg, var(--c, #9aa3ad), var(--c2, #6f8dff)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12); }
+.rtile[data-p="packaging"] { --c: #ff8a6b; --c2: #f5b83d; }
+.rtile[data-p="ui"] { --c: #d77cf0; --c2: #ff8a6b; }
+.rtile[data-p="3d-models"] { --c: #4fb0e0; --c2: #6f8dff; }
+.rtile[data-p="screens"] { --c: #3fc4b4; --c2: #52cf86; }
 .rgroup-head .rv-n { background: none; color: var(--muted); min-width: 0; padding: 0; font-size: 14px; font-weight: 500; }
 .rgrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .ritem { padding: 0; gap: 0; overflow: hidden; }
@@ -113,6 +122,8 @@ img.lb-able, img.ask-media, img.md-img, img.thumb { cursor: zoom-in; }
 @media (max-width: 760px) {
   .rv-page .btn, .rv-page .seg-btn, .rv-page .tab, .rv-page .select, .rv-page .check, .rv-page .rv-thumb { min-height: 44px; }
   .rv-page .rgroup-head { flex-wrap: wrap; }
+  .rv-wait { display: block; font-size: 15px; margin-bottom: 6px; }
+  .rv-title .chip { display: none; }
   .ritem-body { flex-wrap: wrap; row-gap: 2px; }
   .ritem-body h3 { max-width: 100%; flex: 1 1 100%; }
   .rv-meta { flex: 1 1 100%; }

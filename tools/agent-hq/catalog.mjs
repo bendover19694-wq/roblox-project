@@ -98,11 +98,56 @@ function lihfolkDir(override) {
   return fs.existsSync(path.join(dir, 'INDEX.md')) ? dir : null;
 }
 
-export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetch, addAsset, lihfolkPath }) {
+// A local Poly Haven mirror (CC0): <mirror>/models/<id>/ and <mirror>/hdris/<id>/, each with the 1K files and a SOURCE.txt.
+// There are no textures in it, so a texture is never "on this PC" and is always fetched from the network.
+const MIRROR_DIRS = { model: 'models', hdri: 'hdris' };
+
+function mirrorDir(override) {
+  const dir = override || process.env.HQ_POLYHAVEN_LOCAL || path.join(os.homedir(), 'Documents', 'PolyHaven-1K');
+  try { return fs.statSync(dir).isDirectory() ? dir : null; } catch { return null; }
+}
+
+/** The importable files (FILE_OK) under a mirror folder, as forward-slash relative paths. Links are not followed. */
+function mirrorFiles(dir, rel = '') {
+  let ents = [];
+  try { ents = fs.readdirSync(path.join(dir, rel), { withFileTypes: true }); } catch { return []; }
+  return ents.flatMap((e) => {
+    const r = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) return mirrorFiles(dir, r);
+    return e.isFile() && FILE_OK.test(e.name) ? [r] : [];
+  });
+}
+
+export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetch, addAsset, lihfolkPath, polyhavenLocal }) {
   const cacheFile = path.join(stateDir, 'catalog', 'polyhaven.json');
   let base = null; // Poly Haven and LihFolk, built once per refresh
   let packs = [];
   let packsAt = 0;
+  let localAt = 0; // which Poly Haven assets are in the mirror, rescanned each minute because a mirror can still be filling
+  let local = new Set();
+
+  // The mirror folder of one asset, or null. `type` may be unknown (asset not in the cached catalog): then every folder type is tried.
+  function mirrorFolder(slug, type) {
+    const m = mirrorDir(polyhavenLocal);
+    if (!m) return null;
+    for (const [t, sub] of Object.entries(MIRROR_DIRS)) {
+      const dir = path.join(m, sub, slug);
+      if ((!type || t === type) && fs.existsSync(dir) && fs.statSync(dir).isDirectory()) return { dir, type: t };
+    }
+    return null;
+  }
+  function onThisPc(e) {
+    if (Date.now() - localAt > PACK_SCAN_MS) {
+      local = new Set();
+      const m = mirrorDir(polyhavenLocal);
+      for (const [t, sub] of Object.entries(MIRROR_DIRS)) {
+        if (!m) break;
+        try { for (const d of fs.readdirSync(path.join(m, sub), { withFileTypes: true })) if (d.isDirectory()) local.add(`${t}:${d.name}`); } catch { /* no such folder */ }
+      }
+      localAt = Date.now();
+    }
+    return local.has(`${e.type}:${e.id.slice('polyhaven:'.length)}`);
+  }
 
   const get = (url) => fetchImpl(url, { headers: { 'User-Agent': USER_AGENT } });
   const cached = () => { try { return JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch { return { at: 0, assets: {} }; } };
@@ -167,7 +212,8 @@ export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetc
       if (score >= 0) scored.push([score, e]);
     }
     scored.sort((a, b) => b[0] - a[0] || a[1].name.localeCompare(b[1].name));
-    return { ...info(), found: scored.length, results: scored.slice(0, Math.min(limit, 100)).map(([, e]) => e) };
+    const page = scored.slice(0, Math.min(limit, 100)).map(([, e]) => (e.source === 'polyhaven' ? { ...e, onThisPc: onThisPc(e) } : e));
+    return { ...info(), found: scored.length, results: page };
   }
 
   // The files to get for one asset at one size. Roblox can't import EXR, so normals come as JPG.
@@ -208,35 +254,65 @@ export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetc
     }).filter((s) => s.files);
   }
 
-  // Saves one asset under assets/library/polyhaven/ and adds it to the asset index. Checks host, type and checksum.
+  // Reads the mirror's SOURCE.txt (name, link, tags) for an asset that is not in the cached catalog.
+  function entryFromSource(slug, mirror) {
+    let lines = [];
+    try { lines = fs.readFileSync(path.join(mirror.dir, 'SOURCE.txt'), 'utf8').split(/\r?\n/); } catch { /* no notes file */ }
+    const tags = (lines.find((l) => l.startsWith('Tags:')) ?? '').slice(5).split(',').map((t) => t.trim()).filter(Boolean);
+    return { id: `polyhaven:${slug}`, type: mirror.type, name: (lines[0] || slug).slice(0, 120), url: `https://polyhaven.com/a/${slug}`, tags };
+  }
+
+  // Saves one asset under assets/library/polyhaven/ and adds it to the asset index. A 1K asset that is in the local mirror is copied
+  // from it with no network; anything else is downloaded, with host, type and checksum checks.
   async function fetchAsset(id, res = '1k', scope = 'studio') {
     if (!['1k', '2k', '4k'].includes(res)) throw bad('res must be 1k, 2k or 4k');
-    const { slug, entry, files } = await filesFor(id);
-    const list = plan(entry.type, files, res);
-    if (!list.length) throw bad(`no ${res} files for this asset`);
-    if (list.reduce((n, f) => n + (f.size ?? 0), 0) > MAX_BYTES) throw bad('that is over the 300 MB limit, pick a smaller size');
+    const slug = /^polyhaven:([\w-]{1,80})$/.exec(id)?.[1];
+    if (!slug) throw bad('only Poly Haven assets can be fetched');
+    const known = all().find((e) => e.id === id);
+    const mirror = res === '1k' ? mirrorFolder(slug, known?.type) : null;
+    const mirrored = mirror ? mirrorFiles(mirror.dir) : []; // an empty folder (a mirror still filling) falls back to the network
     const folder = path.join(root, 'assets', 'library', 'polyhaven', slug);
     const saved = [];
-    for (const f of list) {
-      if (!DOWNLOAD_HOSTS.has(new URL(f.url).hostname)) throw bad('unexpected download host', 502);
-      const rel = path.normalize(f.name);
-      if (rel.startsWith('..') || path.isAbsolute(rel) || !FILE_OK.test(rel)) throw bad('unexpected file name', 502);
-      const r = await get(f.url);
-      if (!r.ok) throw bad(`download failed: ${r.status}`, 502);
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (f.md5 && crypto.createHash('md5').update(buf).digest('hex') !== f.md5) throw bad('a download failed its checksum', 502);
-      const to = path.join(folder, rel);
-      fs.mkdirSync(path.dirname(to), { recursive: true });
-      fs.writeFileSync(to, buf);
-      saved.push(to);
+    let entry;
+    let from = 'Poly Haven';
+    if (mirrored.length) {
+      from = 'this PC';
+      entry = known ?? entryFromSource(slug, mirror);
+      if (mirrored.reduce((n, rel) => n + fs.statSync(path.join(mirror.dir, rel)).size, 0) > MAX_BYTES) throw bad('that is over the 300 MB limit');
+      for (const rel of mirrored) {
+        const to = path.join(folder, rel);
+        fs.mkdirSync(path.dirname(to), { recursive: true });
+        fs.copyFileSync(path.join(mirror.dir, rel), to);
+        saved.push(to);
+      }
+      try { fs.copyFileSync(path.join(mirror.dir, 'SOURCE.txt'), path.join(folder, 'SOURCE.txt')); } catch { /* written below */ }
+    } else {
+      const got = await filesFor(id);
+      entry = got.entry;
+      const list = plan(entry.type, got.files, res);
+      if (!list.length) throw bad(`no ${res} files for this asset`);
+      if (list.reduce((n, f) => n + (f.size ?? 0), 0) > MAX_BYTES) throw bad('that is over the 300 MB limit, pick a smaller size');
+      for (const f of list) {
+        if (!DOWNLOAD_HOSTS.has(new URL(f.url).hostname)) throw bad('unexpected download host', 502);
+        const rel = path.normalize(f.name);
+        if (rel.startsWith('..') || path.isAbsolute(rel) || !FILE_OK.test(rel)) throw bad('unexpected file name', 502);
+        const r = await get(f.url);
+        if (!r.ok) throw bad(`download failed: ${r.status}`, 502);
+        const buf = Buffer.from(await r.arrayBuffer());
+        if (f.md5 && crypto.createHash('md5').update(buf).digest('hex') !== f.md5) throw bad('a download failed its checksum', 502);
+        const to = path.join(folder, rel);
+        fs.mkdirSync(path.dirname(to), { recursive: true });
+        fs.writeFileSync(to, buf);
+        saved.push(to);
+      }
     }
-    fs.writeFileSync(path.join(folder, 'SOURCE.txt'), `${entry.name}\nFrom Poly Haven: ${entry.url}\nLicence: CC0\n`);
+    if (!fs.existsSync(path.join(folder, 'SOURCE.txt'))) fs.writeFileSync(path.join(folder, 'SOURCE.txt'), `${entry.name}\nFrom Poly Haven: ${entry.url}\nLicence: CC0\n`);
     const main = saved.find((f) => /\.fbx$/i.test(f)) ?? saved.find((f) => /\.(jpe?g|png)$/i.test(f)) ?? saved[0];
     const file = path.relative(root, main).split(path.sep).join('/');
     if (/\.(fbx|jpe?g|png)$/i.test(main)) {
       addAsset(root, { name: entry.name, kind: /\.fbx$/i.test(main) ? 'model' : 'image', scope, tags: ['polyhaven', 'cc0', ...entry.tags].slice(0, 10).map((t) => t.slice(0, 40)), file });
     }
-    return { name: entry.name, folder: path.relative(root, folder).split(path.sep).join('/'), files: saved.length, main: file, licence: 'CC0' };
+    return { name: entry.name, folder: path.relative(root, folder).split(path.sep).join('/'), files: saved.length, main: file, licence: 'CC0', from };
   }
 
   return { search, info, refresh, refreshIfOld, sizes, fetchAsset };

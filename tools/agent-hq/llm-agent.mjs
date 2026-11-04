@@ -220,7 +220,7 @@ export function repoTools(role) {
 }
 
 // hq tools the model may call; claiming and lane tools belong to workers, not to a task.
-const HQ_ALLOWED = new Set(['hq_note', 'hq_ask_owner', 'hq_add_media', 'hq_complete', 'hq_create_task', 'hq_vault', 'hq_learn', 'hq_pitch', 'hq_idea_score', 'hq_stage_request', 'hq_asset_add', 'hq_metric', 'hq_list_tasks']);
+const HQ_ALLOWED = new Set(['hq_note', 'hq_ask_owner', 'hq_add_media', 'hq_complete', 'hq_create_task', 'hq_vault', 'hq_learn', 'hq_pitch', 'hq_idea_score', 'hq_stage_request', 'hq_asset_add', 'hq_metric', 'hq_list_tasks', 'hq_knowledge_search', 'hq_knowledge_read', 'hq_notebook_read', 'hq_notebook_add']);
 export function hqToolDefs(roleId) {
   return HQ_TOOLS.filter((t) => HQ_ALLOWED.has(t.name) && (t.name !== 'hq_create_task' || roleId === 'lead') && (!['hq_pitch', 'hq_idea_score'].includes(t.name) || roleId === 'scout'))
     .map((t) => {

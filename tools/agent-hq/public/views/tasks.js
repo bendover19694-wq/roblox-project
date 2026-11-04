@@ -1,6 +1,6 @@
 // Tasks list and task drawer.
 import { h, store, api, act, ic, btn, empty, pageHead, statePill, roleLabel, avatar, ago, fmtTime, engineLabel, selectEl, plain, gameName, creatorLabel, mediaUrl,
-  openModal, openDrawer, subscribe, onLog, upsert, notify, go, loadState, toast } from './core.js';
+  openModal, openDrawer, subscribe, onLog, upsert, notify, go, loadState, toast, inScope } from './core.js';
 import { taskForm } from './taskform.js';
 
 let roleFilter = '';
@@ -14,16 +14,17 @@ const GROUPS = [
 ];
 const PILL = { review: ['amber', 'Back to you'], working: ['green', 'Working now'], queued: ['blue', 'Queued'] };
 
-// Sentence-case status pill for the list rows; the drawer keeps statePill.
+// Tinted status pill for the list rows (no dot, no border); the drawer keeps statePill.
 function rowPill(state) {
   const [tone, text] = PILL[state] || ['grey', state];
-  return h('span', { class: 'spill', 'data-tone': tone }, text);
+  return h('span', { class: 'tpill', 'data-tone': tone }, text);
 }
 
+const since = (iso) => ago(iso) + (ago(iso) === 'just now' ? '' : ' ago');
+// Working rows say when they started; every other row says how long ago it last changed.
 function startedText(t) {
-  if (t.state === 'working' || (t.state === 'review' && t.startedAt && !t.endedAt)) return 'started ' + ago(t.startedAt) + (ago(t.startedAt) === 'just now' ? '' : ' ago');
-  if (t.endedAt) return 'ended ' + ago(t.endedAt) + (ago(t.endedAt) === 'just now' ? '' : ' ago');
-  return 'queued ' + ago(t.createdAt) + (ago(t.createdAt) === 'just now' ? '' : ' ago');
+  if (t.state === 'working') return 'started ' + since(t.startedAt);
+  return since(t.state === 'queued' ? t.createdAt : t.endedAt || t.startedAt || t.createdAt);
 }
 
 export function taskRow(t) {
@@ -79,7 +80,7 @@ export function newTaskModal(role) {
 
 export function render() {
   const games = store.gameList.length ? store.gameList : store.games;
-  const tasks = store.tasks.filter((t) => (!roleFilter || t.role === roleFilter) && (!gameFilter || t.game === gameFilter));
+  const tasks = store.tasks.filter((t) => inScope(t) && (!roleFilter || t.role === roleFilter) && (!gameFilter || t.game === gameFilter));
   const byAge = (a, b) => (a.createdAt < b.createdAt ? -1 : 1);
   const groups = GROUPS.map(([id, label, sub, states, tone]) => {
     const list = tasks.filter((t) => states.includes(t.state)).sort(byAge);
@@ -96,7 +97,7 @@ export function render() {
     pageHead('Tasks', 'Everything queued for the team.',
       selectEl([{ value: '', label: 'All games' }, ...games.map((g) => ({ value: g.slug, label: g.name }))], gameFilter, (v) => { gameFilter = v; notify(); }, 'sm'),
       selectEl([{ value: '', label: 'All agents' }, ...store.roles.map((r) => ({ value: r.id, label: r.label }))], roleFilter, (v) => { roleFilter = v; notify(); }, 'sm'),
-      btn('New task', () => newTaskModal(), { kind: 'primary', icon: 'plus' })),
+      btn('New task', () => newTaskModal(), { kind: 'primary tk-new', icon: 'plus' })),
     groups.length || doneBox ? [groups, doneBox] : empty('No tasks yet. Ask the Lead, or press New task.'));
 }
 

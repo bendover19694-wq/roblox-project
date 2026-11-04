@@ -44,13 +44,13 @@ test('recordPoints: one row per unique game, best rank, max players, lists', () 
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM game_points WHERE at = ?').get(at(0)).n, 3);
 });
 
-test('recordPoints prunes rows older than 35 days, relative to the snapshot', () => {
+test('recordPoints prunes rows older than 180 days, relative to the snapshot', () => {
   const db = mem();
   recordPoints(db, snap(0, ['a', 'A', [g(1, 'One', 1)]]));
-  recordPoints(db, snap(34 * 24, ['a', 'A', [g(1, 'One', 2)]]));
-  assert.equal(count(db), 2); // 34 days apart: both stay
-  recordPoints(db, snap(36 * 24, ['a', 'A', [g(1, 'One', 3)]]));
-  assert.deepEqual(db.prepare('SELECT playing FROM game_points ORDER BY at').all().map((r) => r.playing), [2, 3]); // day 0 is 36 days old
+  recordPoints(db, snap(179 * 24, ['a', 'A', [g(1, 'One', 2)]]));
+  assert.equal(count(db), 2); // 179 days apart: both stay
+  recordPoints(db, snap(181 * 24, ['a', 'A', [g(1, 'One', 3)]]));
+  assert.deepEqual(db.prepare('SELECT playing FROM game_points ORDER BY at').all().map((r) => r.playing), [2, 3]); // day 0 is 181 days old
 });
 
 test('backfill from stored snapshots runs once', () => {
@@ -131,7 +131,7 @@ test('gameDetail: 30 days of points, ranks on the latest charts, stats null when
   for (let d = 10; d <= 40; d += 10) recordPoints(db, mk(d * 24, d));
   const now = T0 + 40 * 24 * H;
   const d = gameDetail(db, '1', mk(40 * 24, 40), now);
-  assert.deepEqual(d.series.map((s) => s.playing), [10, 20, 30, 40]); // day 0 is outside the 30-day window (and the 35-day retention); day 10 is exactly 30 days back
+  assert.deepEqual(d.series.map((s) => s.playing), [10, 20, 30, 40]); // day 0 is outside the 30-day window (rows are kept 180 days); day 10 is exactly 30 days back
   assert.deepEqual(d.ranks, [{ sortId: 'top-earning', sortName: 'Top earning', rank: 1 }, { sortId: 'trending', sortName: 'Trending', rank: 2 }]);
   assert.deepEqual([d.stats.playing, d.stats.likePct, d.stats.visits], [40, 90, null]);
   const off = gameDetail(db, 1, snap(40 * 24, ['trending', 'Trending', [g(7, 'Other', 900)]]), now);

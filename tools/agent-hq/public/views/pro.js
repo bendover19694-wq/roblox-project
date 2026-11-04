@@ -4,6 +4,7 @@ import { h, ic, store, api, act, btn, empty, field, pageHead, selectEl, notify, 
 import { chip, lineChart, scoreRing, scoreTone, num } from './charts.js';
 import { gameIcon, risingRail, chartTable, splitSorts, trend, K, likeText, when } from './rising.js';
 import { openTaskDrawer } from './tasks.js';
+import { thumbtestStep } from './thumbtest.js';
 
 const SOON = 'Not built yet. Nothing here to click.';
 const STEPS = [
@@ -13,7 +14,7 @@ const STEPS = [
   { id: 'ideas', label: 'Weekly game ideas', icon: 'pitches', sub: 'Pitches from the last 7 days. Deciding on them happens in Pitches.' },
   { id: 'packs', label: 'Asset packs', icon: 'box', sub: 'What the Library catalog holds right now.' },
   { id: 'ads', label: 'Ads helper', icon: 'send', soon: 'Plan ad variants and judge them once they have enough impressions.' },
-  { id: 'thumbtest', label: 'Thumbnail tester', icon: 'grid', soon: 'Put an icon or thumbnail next to the games on today\'s charts before you ship it.' },
+  { id: 'thumbtest', label: 'Thumbnail tester', icon: 'grid', sub: 'See your icon or thumbnail beside today\'s trending games, as it would look on a PC or a phone.' },
   { id: 'promo', label: 'Promo clips', icon: 'play', soon: 'Short vertical clips for social posts.' },
   { id: 'thumbmaker', label: 'Thumbnail maker', icon: 'image', soon: 'Draft icon and thumbnail options that match your game\'s look.' },
   { id: 'builder', label: 'Asset builder', icon: 'hammer', soon: 'Describe a model or an effect and get a few variants back.' },
@@ -254,7 +255,7 @@ export function render(param = '') {
   need('market');
   if (data.ideas) watchIdeas();
   const sample = data.market?.latest?.sample === true;
-  const body = s.soon ? soonStep(s) : s.id === 'rising' ? risingStep() : s.id === 'history' ? historyStep(arg) : s.id === 'score' ? scoreStep() : s.id === 'ideas' ? ideasStep() : packsStep();
+  const body = s.soon ? soonStep(s) : s.id === 'rising' ? risingStep() : s.id === 'history' ? historyStep(arg) : s.id === 'score' ? scoreStep() : s.id === 'ideas' ? ideasStep() : s.id === 'thumbtest' ? thumbtestStep(data.market) : packsStep();
   return h('div', { class: 'page pro' },
     pageHead('Pro', 'Trend research and idea scoring, built on HQ\'s own chart history.', sample ? h('span', { class: 'chip static', 'data-tone': 'work' }, 'Sample data') : null),
     h('div', { class: 'pro-body' }, stepList(cur),

@@ -24,7 +24,7 @@ after(async () => { for (const s of opened) await s.close().catch(() => {}); });
 
 async function boot(opts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-'));
-  const s = await startServer({ root, port: 0, stateDir: dir, ...opts });
+  const s = await startServer({ root, port: 0, stateDir: dir, memoryDir: path.join(dir, 'memory'), ...opts }); // a temp memory dir: owner notes must never land in the repo's memory/
   opened.push(s);
   const base = `http://127.0.0.1:${s.port}`;
   const as = (tok) => async (method, p, body, headers = {}) => {
@@ -311,7 +311,7 @@ test('conversations: any role message queues a task; reset marker; threads and u
 test('role memory: append, dedupe, cap at 60, length limit', async () => {
   const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-mem-'));
   const { s, api } = await boot({ memoryDir, now: () => Date.parse('2026-03-04T10:00:00Z') });
-  assert.deepEqual((await api('GET', '/api/memory/builder')).json, { lessons: [] });
+  assert.deepEqual((await api('GET', '/api/memory/builder')).json, { lessons: [], corrections: [] });
   const a = await api('POST', '/api/memory/builder', { lesson: '  Run stylua first  ' });
   assert.equal(a.json.added, true);
   assert.deepEqual(a.json.lessons, [{ date: '2026-03-04', text: 'Run stylua first' }]);

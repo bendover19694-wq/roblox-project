@@ -44,3 +44,14 @@ If a check still fails after 3 tries, deliver the best one and name the failed c
 ## 5. Which skill to load
 - Screen, panel, HUD, shop or popup mockups: `.agents/skills/roblox-ui-concept/SKILL.md`.
 - Game icon, thumbnails, game pass art, developer product art, badges, marketing images: `.agents/skills/roblox-store-art/SKILL.md`.
+
+## 6. Sizes, safe zones, variants and the Packaging group (added)
+- Sizes: game icon 512 x 512 (square, must read at 150 px); thumbnails 16:9 at 1920 x 1080, under 3 MB, png or jpg. Roblox stretches any other shape, so never deliver one.
+- Safe zones on a thumbnail: nothing essential in the bottom 15 to 20 percent (the player count covers it) or in the corners (about a 5 percent inset). Keep the main subject inside the centre 80 percent wide by 70 percent tall. For icons, keep the subject inside the centre 80 percent because corners get rounded.
+- One focal subject at roughly a third to nearly half of the thumbnail, a readable face or silhouette, and it must still read in greyscale. Check each image at 320 x 180, and the icon at 150 px and 64 px.
+- Make 3 or more variants per ask, each differing by one idea, so an A/B test can teach something. Show only what the game contains.
+- Give each `hq_add_media` ask a title that says "icon" or "thumbnail" and name the files that way too, so the image lands in the Review Packaging group. The owner approves there, and approved images can be pinned to the Visual bar. Never draw icons, thumbnails or ads with code.
+
+
+## 7. Reference sheets before 3D work (added)
+For a 3D model, find references first. Give 4 or more views (front, side, back, three-quarter, top) on a plain background at the same scale, titled "Reference sheet: <name> <view>", plus a short spec: size in studs, parts, materials and colours, part or triangle budget, what to leave out, and the game's style. References set shape and proportion only; never copy another game's design.

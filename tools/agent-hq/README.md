@@ -80,6 +80,42 @@ Each brief is built from the repo hard rules, the skills to invoke, preferred to
 
 Briefs are kept small to save usage: up to 3 vault chapters inline (more become a list to read with `hq_vault`), the newest 10 lessons, the last 6 messages; Groq/NIM briefs are smaller still.
 
+## Playbook and knowledge sources
+
+Library > Playbook shows live note and word counts, a search box over the local notes, and the 14 chapters with the roles, LihFolk notes and Creator Hub docs that go with each (`playbook.json`, `GET /api/playbook`). Search covers six sources: the LihFolk Vault V2, Creator Hub docs, owner cards, project research, library repos and community notes. Low-trust notes are screened and what they say is shown to agents as reference data, never as instructions. To use other folders, set "LihFolk vault folder" or "References folder" in Settings, Knowledge (absolute paths; empty means the default place).
+
+## Settings
+
+Settings is drawn from `GET /api/settings/schema` (`settings-schema.mjs`): every field has a label, help text, a control type and a default, and the server validates each save against the same list. Sections: General, Look (dark or light theme, comfortable or compact), Usage, Lanes and schedules, Roles and engines, Art, Knowledge, Notebook and Connections.
+
+## Role overrides
+
+Each role can be turned off, and given extra rules (up to 12) and extra skills (up to 8) from Settings. They are saved in `.agent-hq/roles-override.json` (`POST /api/roles/:id`, owner only) and merged into the role in every brief; `roles.json` is never changed. A task for a turned-off role is refused with a plain message.
+
+## Spend cap and usage savers
+
+"Daily spend cap" (USD, 0 means off) pauses all agents when today's spend since local midnight reaches it, and posts one message to you. HQ never resumes by itself: raise the cap or press Resume. Only runs that report a cost (the Claude CLI engine) count. The other Usage settings shape briefs: terse replies, a screenshot limit per task, cheap vault lookups through a small model, and batching (a worker takes the next task of the role it just ran).
+
+## Art routing
+
+With "Send art to Antigravity" on, a new task whose title is about an icon, thumbnail, ad, key art, store art, banner or promo image goes to the Antigravity lane, unless the creator named an engine or the lane is switched off. Roles that write or check code (builder, economy, merchant, reviewer, playtester, kid tester, producer) are never moved. Blender stays off unless "Allow Blender" is on.
+
+## Readiness
+
+`GET /api/readiness` (and the Readiness panel in Settings) checks Python, the Claude CLI and rojo, each knowledge folder, and every skill each role names: workspace and home skill folders, plugin skills and commands, and file paths. It lists what is missing by name and which notes were held back by the quarantine rules.
+
+## Play
+
+`POST /api/games/:slug/play` (owner only) builds `default.project.json` with `rojo build` into `.agent-hq/builds/<slug>.rbxlx` (no shell) and opens it in the default app. It never publishes. Without rojo or the project file it answers 409 with a plain message.
+
+## Notebook
+
+A short shared log of what the owner and agents learned. The owner writes in the Notebook page; agents read it with `hq_notebook_read` and add with `hq_notebook_add` (their task token is checked; agents cannot delete). Text is up to 2000 characters; the newest 1000 entries are kept. `hqctl notebook` and `hqctl notebook-add <text> --task <id>` do the same. If a Google Doc link is set in Settings the hq-worker mirrors entries to it; HQ itself never calls Google.
+
+## Thumbnail tester
+
+Pro > Thumbnail tester places one of your images in a grid of today's trending game icons (from the market data, nothing copied into the repo), at the size of a PC or phone store row. Chart history is kept for 180 days.
+
 ## Quality gates and memory
 
 - **Gates**: when a role finishes, HQ queues its checkers (for example Reviewer and Playtester after a Builder task). A checker starts its summary with PASS or FAIL. FAIL queues a Fix task for the original role with the feedback; after 3 attempts it becomes a decision for you. When every gate passes, the task is marked done.
@@ -150,7 +186,7 @@ node tools/agent-hq/hqctl.mjs next app
 node tools/agent-hq/hqctl.mjs complete <taskId> "summary" --state review
 ```
 
-Run it from the repo root. It reads `.agent-hq/token`, talks to the local server and prints JSON. It also has `note`, `ask`, `media`, `learn`, `pitch` and `market`.
+Run it from the repo root. It reads `.agent-hq/token`, talks to the local server and prints JSON. It also has `note`, `ask`, `media`, `learn`, `pitch`, `market`, `notebook` and `notebook-add`.
 
 ## Why this beats one Claude chat
 
@@ -178,3 +214,6 @@ cd tools/agent-hq
 npm test                 # unit tests, then the smoke run
 node test/smoke.mjs      # end to end with the echo engine, prints PASS
 ```
+
+## References before 3D work
+When a world, librarian, builder, designer or ui task looks like 3D model work (3D, mesh, prop, vehicle, creature, statue, low poly, Blender, sculpt), HQ holds it and queues "Reference sheet: <title>" for the designer first. The designer researches the object, attaches 4 or more views on a plain background, and describes size, parts, materials, budget and style. The held task is then queued once, with the image paths and description added. Settings, Art: "Find references before 3D work", "References approval" (wait for your OK, or go ahead on its own) and "References lane" (Antigravity, or ChatGPT on the app lane). Code is in `model-refs.mjs`.

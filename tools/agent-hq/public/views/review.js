@@ -1,6 +1,7 @@
 // Review screen (images, visual bar, stages) and the shared ask card used by Home and the chats.
-import { h, ic, store, api, act, btn, empty, roleLabel, avatar, ago, mediaUrl, plain, gameName, statePill, upsert, notify, loadState, toast, openModal } from './core.js';
+import { h, ic, store, api, act, btn, empty, roleLabel, ago, mediaUrl, plain, gameName, statePill, upsert, notify, loadState, toast, openModal, inScope } from './core.js';
 import { openViewer, isVideo, VERDICT } from './viewer.js';
+import { popMenu } from './menu.js';
 
 export const askUi = { v: 0 }; // bumped when card UI state changes, so the chat repaints
 const modeOf = new Map(); // ask id -> open inline note mode
@@ -21,6 +22,24 @@ const MODES = {
   hold: { label: 'Hold: why is it parked?', ph: 'Reason. It is parked, not rejected.', submit: 'Hold it', prefix: 'hold:', required: true },
   reject: { label: 'Reject: why?', ph: 'Why is it rejected?', submit: 'Reject', prefix: 'reject:', required: true },
 };
+
+// Images are grouped by what they are for, in this order. The first four match the Visual bar categories.
+const PURPOSES = [['packaging', 'Packaging', 'image'], ['ui', 'UI', 'layout'], ['3d-models', '3D models', 'box'], ['screens', 'Screens', 'games'], ['other', 'Other', 'flag']];
+// Packaging is what sells the game (thumbnails, icons, trailers). Who made it decides first; the words in the title and file name decide the rest.
+const isSheet = (a) => /reference sheet/i.test(a.title || '');
+export function purposeOf(a) {
+  const t = `${a.title} ${a.mediaPath}`.toLowerCase();
+  if (isSheet(a)) return '3d-models';
+  if (a.role === 'thumbnails') return 'packaging';
+  if (a.role === 'designer' && /thumbnail|icon|trailer|logo|banner|key ?art|promo|cover/.test(t)) return 'packaging'; // designer art that names itself packaging
+  if (a.role === 'ui' || a.role === 'designer') return 'ui';
+  if (a.role === 'librarian') return '3d-models';
+  if (/thumbnail|icon|trailer|logo|banner|key ?art|promo|cover/.test(t)) return 'packaging';
+  if (/\b(ui|hud|menu|button|panel|layout|concept)\b/.test(t)) return 'ui';
+  if (/model|mesh|asset|contact|sheet|\b3d\b/.test(t)) return '3d-models';
+  if (['world', 'builder', 'playtester', 'kid-tester'].includes(a.role) || /screenshot|screen|build|playtest/.test(t)) return 'screens';
+  return 'other';
+}
 
 export const isMediaAsk = (a) => !!a.mediaPath; export const isReference = (a) => a.kind === 'reference';
 // Something the owner must decide (reference-only items need no decision).
@@ -156,7 +175,7 @@ function barTab() {
           r.note ? h('p', { class: 'muted small' }, r.note) : null,
           h('div', { class: 'row between' }, h('span', { class: 'muted small' }, agoTxt(r.createdAt)),
             btn('Remove', async () => { if (await act(() => api('DELETE', `/api/references/${r.id}`), 'Removed')) loadRefs(); }, { kind: 'ghost sm' })))))
-          : h('p', { class: 'muted small' }, 'Nothing pinned yet. Pin an approved image from the Images tab.'));
+          : h('p', { class: 'muted small' }, 'Nothing pinned yet. Approve a packaging image in Images & video, then press Add to Visual bar on its card.'));
     }));
 }
 
@@ -177,12 +196,9 @@ function reviewItem(ask, open) {
     h('div', { class: 'ritem-body' },
       h('h3', { title: plain(ask.title) }, plain(ask.title)),
       h('div', { class: 'rv-meta' }, ic(video ? 'play' : 'image', 13), h('span', { class: 'rv-line' }, [kind, task?.game ? gameName(task.game) : null, agoTxt(ask.createdAt), ask.superseded ? 'older version' : null].filter(Boolean).join(' · ')))),
-    v === 'open' && (ask.kind !== 'review' || !ask.mediaPath) ? h('div', { class: 'ritem-acts' }, ask.why ? h('p', { class: 'muted pre rv-why' }, ask.why) : null, actions(ask)) : null);
-}
-
-function groupLabel(a) {
-  if (/contact|sheet/i.test(a.title + ' ' + a.mediaPath)) return 'Contact sheets';
-  return roleLabel(a.role) + (['designer', 'thumbnails'].includes(a.role) ? ' art' : ' screenshots');
+    v === 'open' && isSheet(ask) && (store.settings.modelRefApproval || 'ask') === 'ask' ? h('p', { class: 'muted small' }, 'Approve to start the build') : null,
+    v === 'open' && (ask.kind !== 'review' || !ask.mediaPath) ? h('div', { class: 'ritem-acts' }, ask.why ? h('p', { class: 'muted pre rv-why' }, ask.why) : null, actions(ask))
+      : v === 'approved' && ask.mediaPath && purposeOf(ask) === 'packaging' ? h('div', { class: 'ritem-acts' }, btn('Add to Visual bar', () => pinModal(ask.mediaPath, ask.title), { kind: 'sm', icon: 'image' })) : null);
 }
 
 function rejectAllModal(ids) {
@@ -196,7 +212,7 @@ function rejectAllModal(ids) {
     }, { kind: 'danger' }))));
 }
 
-// Tile, purpose label, "media", count; Approve all and Reject all cover only that group's waiting items.
+// Tile, purpose, "media", count; Approve all and Reject all cover only that group's waiting items.
 async function bulkDo(path, ids, msg, ok) {
   if (!confirm(msg)) return;
   if (await act(() => api('POST', path, { ids }), ok)) loadState().catch(() => {});
@@ -204,26 +220,28 @@ async function bulkDo(path, ids, msg, ok) {
 
 function groupHead(g) {
   const ids = g.items.filter((a) => needsDecision(a) && a.kind === 'review').map((a) => a.id);
-  return h('div', { class: 'rgroup-head' }, avatar(g.role, 28), h('h2', {}, g.label), h('span', { class: 'muted' }, 'media'), h('span', { class: 'rv-n' }, g.items.length), h('span', { class: 'grow' }),
+  return h('div', { class: 'rgroup-head' }, h('span', { class: 'rtile', 'data-p': g.id, 'aria-hidden': 'true' }, ic(g.icon, 16)), h('h2', {}, g.label), h('span', { class: 'muted' }, 'media'), h('span', { class: 'rv-n' }, g.items.length), h('span', { class: 'grow' }),
     ids.length ? [btn(`Approve all ${ids.length}`, () => bulkDo('/api/asks/approve-all', ids, `Approve all ${ids.length} waiting in ${g.label}?`, 'Approved'), { kind: 'good sm', icon: 'check' }),
       btn('Reject all', () => rejectAllModal(ids), { kind: 'ghost sm' })] : null);
 }
 
 function imagesTab() {
-  const base = store.asks.filter((a) => (isMediaAsk(a) || a.kind === 'review' || isReference(a)) && (!agent || a.role === agent) && (older || !a.superseded));
+  const media = (a) => (isMediaAsk(a) || a.kind === 'review' || isReference(a)) && inScope(a);
+  const base = store.asks.filter((a) => media(a) && (!agent || a.role === agent) && (older || !a.superseded));
   const counts = { open: 0, changes: 0, held: 0, approved: 0, rejected: 0, all: base.length };
   for (const a of base) { const v = verdictOf(a); if (counts[v] != null && !(v === 'open' && isReference(a))) counts[v]++; }
   const shown = base.filter((a) => filter === 'all' || verdictOf(a) === filter);
-  const roleIds = [...new Set(store.asks.filter((a) => isMediaAsk(a) || a.kind === 'review' || isReference(a)).map((a) => a.role))];
-  const groups = new Map(); for (const a of shown) { const k = a.role + '|' + groupLabel(a); (groups.get(k) || groups.set(k, { label: groupLabel(a), role: a.role, items: [] }).get(k)).items.push(a); }
-  const order = (g) => store.roles.findIndex((r) => r.id === g.role); const sortedGroups = [...groups.values()].sort((a, b) => order(a) - order(b));
+  const roleIds = [...new Set(store.asks.filter(media).map((a) => a.role))];
+  const sortedGroups = PURPOSES.map(([id, label, icon]) => ({ id, label, icon, items: shown.filter((a) => purposeOf(a) === id) })).filter((g) => g.items.length);
   shownMedia = sortedGroups.flatMap((g) => g.items).filter((a) => a.mediaPath);
   const waitingIds = base.filter((a) => a.state === 'open' && !isReference(a)).map((a) => a.id);
-  const otherOpen = filter === 'open' && !agent ? store.asks.filter((a) => a.state === 'open' && !a.superseded && !isMediaAsk(a) && a.kind !== 'review' && !isReference(a)) : [];
-  const bulk = filter === 'open' && waitingIds.length ? h('div', { class: 'row gap wrap rv-bulk' },
-    btn('Clear the queue', () => bulkDo('/api/asks/approve-all', waitingIds, `Approve all ${waitingIds.length} waiting images?`, 'Queue cleared'), { kind: 'sm', icon: 'check', title: 'Approve everything waiting' }),
-    btn('Reject all…', () => rejectAllModal(waitingIds), { kind: 'rv-reject sm', icon: 'x' }),
-    btn('Empty the queue without approving anything', () => bulkDo('/api/asks/empty', waitingIds, `Remove ${waitingIds.length} waiting items from the queue without approving or rejecting them?`, 'Queue emptied'), { kind: 'ghost sm' })) : null;
+  const otherOpen = filter === 'open' && !agent ? store.asks.filter((a) => a.state === 'open' && !a.superseded && !isMediaAsk(a) && a.kind !== 'review' && !isReference(a) && inScope(a)) : [];
+  // The queue-wide actions sit behind a "..." at the end of the filter row, so the first group starts right under the filters.
+  const bulk = filter === 'open' && waitingIds.length ? popMenu({ label: 'Queue actions', items: [
+    { text: `Clear the queue: approve all ${waitingIds.length}`, icon: 'check', run: () => bulkDo('/api/asks/approve-all', waitingIds, `Approve all ${waitingIds.length} waiting images?`, 'Queue cleared') },
+    { text: `Reject all ${waitingIds.length}…`, icon: 'x', kind: 'danger', run: () => rejectAllModal(waitingIds) },
+    { text: 'Empty the queue without approving', icon: 'trash', run: () => bulkDo('/api/asks/empty', waitingIds, `Remove ${waitingIds.length} waiting items from the queue without approving or rejecting them?`, 'Queue emptied') },
+  ] }) : null;
   const opener = (a) => () => openViewer(shownMedia, shownMedia.indexOf(a));
   return h('div', { class: 'stack' },
     h('div', { class: 'row gap wrap between' },
@@ -231,9 +249,9 @@ function imagesTab() {
       h('div', { class: 'row gap wrap' },
         h('select', { class: 'select sm', 'aria-label': 'Agent', onchange: (e) => { agent = e.target.value; notify(); } },
           h('option', { value: '' }, 'Every agent'), roleIds.map((id) => h('option', { value: id, selected: id === agent }, roleLabel(id)))),
-        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: older, onchange: (e) => { older = e.target.checked; notify(); } }), h('span', {}, 'Older versions')))),
-    bulk,
-    sortedGroups.length ? sortedGroups.map((g) => h('section', { class: 'rgroup' }, groupHead(g), h('div', { class: 'rgrid' }, g.items.map((a) => reviewItem(a, opener(a))))))
+        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: older, onchange: (e) => { older = e.target.checked; notify(); } }), h('span', {}, 'Older versions')),
+        bulk)),
+    sortedGroups.length ? sortedGroups.map((g) => h('section', { class: 'rgroup' }, groupHead(g), h('div', { class: 'rgrid' + (g.items.length <= 2 ? ' few' : '') }, g.items.map((a) => reviewItem(a, opener(a))))))
       : (otherOpen.length ? null : empty(filter === 'open' ? 'Nothing waiting. When an agent makes an image or screenshot for you, it shows up here.' : 'Nothing in this filter')),
     otherOpen.length ? h('section', { class: 'rgroup' }, h('div', { class: 'rgroup-head' }, h('h2', {}, 'Other questions'), h('span', { class: 'rv-n' }, otherOpen.length)),
       h('div', { class: 'stack' }, otherOpen.map(askCard))) : null);
@@ -285,9 +303,10 @@ function stageCard(r) {
 
 function stagesTab() {
   if (Date.now() - stageAt > 8000) loadStages();
-  const pending = [...stages.open, ...stages.held];
-  const ready = store.gameList.filter((g) => g.stage === 'ready');
-  const kicked = stages.rejected;
+  const here = (r) => inScope({ game: r.game });
+  const pending = [...stages.open, ...stages.held].filter(here);
+  const ready = store.gameList.filter((g) => g.stage === 'ready' && inScope({ game: g.slug }));
+  const kicked = stages.rejected.filter(here);
   return h('div', { class: 'stack' },
     h('h2', { class: 'section-title' }, `Stage requests (${pending.length})`),
     pending.length ? pending.map(stageCard) : empty('No stage requests waiting'),
@@ -307,15 +326,17 @@ function stagesTab() {
 
 // param is an ask id for #/review/<id>: that ask opens in the viewer once per visit.
 export function render(param) {
-  const mediaOpen = store.asks.filter((a) => needsDecision(a) && (isMediaAsk(a) || a.kind === 'review')).length;
+  const mediaOpen = store.asks.filter((a) => needsDecision(a) && (isMediaAsk(a) || a.kind === 'review') && inScope(a)).length;
   const target = param && param !== viewerFor ? store.asks.find((a) => a.id === param && a.mediaPath) : null;
+  if (param === 'stages' && param !== viewerFor) tab = 'stages'; // #/review/stages: the link from a stuck card on Home
   viewerFor = param || '';
   if (target) tab = 'images';
-  const tabs = [['images', 'Images & video', mediaOpen], ['bar', 'Visual bar', refs.length], ['stages', 'Stages & publish', stages.open.length + stages.held.length]];
+  const tabs = [['images', 'Images & video', mediaOpen], ['bar', 'Visual bar', refs.length], ['stages', 'Stages & publish', [...stages.open, ...stages.held].filter((r) => inScope({ game: r.game })).length]];
   if (refsAt === 0) loadRefs();
   const page = h('div', { class: 'page rv-page' },
     h('header', { class: 'page-head' }, h('div', {},
       mediaOpen ? null : h('div', { class: 'overline', 'data-tone': 'green' }, 'All caught up'),
+      mediaOpen ? h('div', { class: 'rv-wait muted' }, `${mediaOpen} thing${mediaOpen === 1 ? '' : 's'} waiting for you`) : null, // phone only: the chip beside the title moves above it
       h('div', { class: 'rv-title' }, h('h1', {}, 'Review'), mediaOpen ? h('span', { class: 'chip', 'data-tone': 'need' }, `${mediaOpen} waiting for you`) : null),
       h('p', { class: 'muted' }, 'What the agents made for you. Approve it, ask for changes, or reject it; the agent picks up your verdict next.'))),
     h('div', { class: 'tabs', role: 'tablist' }, tabs.map(([id, l, n]) => h('button', { type: 'button', role: 'tab', class: 'tab', 'aria-selected': String(id === tab), onclick: () => { tab = id; notify(); } }, l, n ? h('span', { class: 'rv-n' }, n) : null))),

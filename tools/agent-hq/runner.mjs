@@ -18,7 +18,7 @@ function killTree(child) {
   } catch { /* already gone */ }
 }
 
-export function createRunner({ db, root, emit = () => {}, port = 4317, token = '', tickMs = 2000, echoMs = 150, engines: detected, memoryDir, providers = () => ({}) }) {
+export function createRunner({ db, root, emit = () => {}, port = 4317, token = '', tickMs = 2000, echoMs = 150, engines: detected, memoryDir, providers = () => ({}), briefFor, spendGuard }) {
   const stateDir = path.join(root, '.agent-hq');
   const logDir = path.join(stateDir, 'logs');
   fs.mkdirSync(logDir, { recursive: true });
@@ -54,7 +54,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
           HQ_URL: `http://127.0.0.1:${port}`, HQ_TOKEN: token, HQ_TASK: task.id, HQ_ROLE: task.role, HQ_TASK_TOKEN: taskToken,
         } } },
       }), { mode: 0o600 }); // holds the HQ token; owner-only, deleted when the task ends
-      const brief = buildBrief({ task, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) });
+      const brief = briefFor ? briefFor(task, taskToken) : buildBrief({ task, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) });
       let env = { ...process.env, HQ_ECHO_MS: String(echoMs) };
       if (llmKey) {
         // the brief can exceed the Windows command-line limit, so it goes in a file; the key only in this child's env
@@ -92,7 +92,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
         if (typeof cost === 'number') patch.costUsd = cost;
         const conv = ev.session_id ?? ev.conversation_id;
         if (conv) patch.conversationId = conv;
-        if (Object.keys(patch).length) { updateTask(db, task.id, patch); publish(task.id); }
+        if (Object.keys(patch).length && !stopped) { updateTask(db, task.id, patch); publish(task.id); } // output can arrive after stop() closed the db
       }
     };
     child.stdout.setEncoding('utf8');
@@ -151,7 +151,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
   }
 
   function tick() {
-    if (getSetting(db, 'paused', false)) return;
+    if (spendGuard?.() || getSetting(db, 'paused', false)) return;
     runSchedules();
     const budget = getSetting(db, 'budget', 2);
     while (procs.size < budget) {

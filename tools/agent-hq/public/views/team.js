@@ -32,9 +32,10 @@ function rosterRow(r, active) {
       h('div', { class: 'row gap between' },
         h('span', { class: 'roster-detail muted clip' }, detail),
         h('span', { class: 'roster-side muted nowrap' }, rel(when))),
-      done || st.queued ? h('div', { class: 'row gap between' },
-        done ? h('span', { class: 'roster-last muted clip', title: plain(done.title) }, ic('clock', 12), 'Last job: ' + plain(done.title)) : h('span'),
-        h('span', { class: 'roster-side muted nowrap row gap' }, done ? rel(done.endedAt || done.createdAt) : '',
+      // with no finished job, "N tasks waiting" and the Queued pill already say it, so no third row
+      done ? h('div', { class: 'row gap between' },
+        h('span', { class: 'roster-last muted', title: plain(done.title) }, ic('clock', 12), h('span', { class: 'clip' }, 'Last job: ' + plain(done.title))),
+        h('span', { class: 'roster-side muted nowrap row gap' }, rel(done.endedAt || done.createdAt),
           st.queued ? h('span', { class: 'spill', 'data-tone': 'blue' }, st.queued + ' queued') : null)) : null));
 }
 
@@ -72,6 +73,8 @@ function build(param) {
 }
 
 export function render(param) {
+  // Desktop: open the first working agent, else the Lead, so the right pane is never empty. Phone keeps the list as the page.
+  if (!param && window.matchMedia('(min-width: 761px)').matches) param = store.roles.find((r) => roleStatus(r.id).state === 'working')?.id || (store.roles.some((r) => r.id === 'lead') ? 'lead' : '');
   if (shell && shellKey === (param || '') && shell.isConnected) shell.__update();
   else { shell = build(param); shellKey = param || ''; }
   return shell;

@@ -3,6 +3,7 @@
 @font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-Medium.ttf") format("truetype"); }
 @font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-SemiBold.ttf") format("truetype"); }
 @font-face { font-family: "Inter"; font-weight: 700; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-Bold.ttf") format("truetype"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 300 700; font-style: normal; font-display: swap; src: url("/static/fonts/space-grotesk-latin-wght-normal.woff2") format("woff2"); }
 @font-face { font-family: "Geist Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url("/static/fonts/geist-mono-latin.woff2") format("woff2"); }
 
 /* Font check (home, 1920x1200, against app/home.png): Geist has one weight in the file we have (no fvar table), so headings and button labels render thin and the app's semi-bold titles are lost; Inter 400 to 700 matches the heavier headings and the Inter-like body, so Inter is the sans face. Geist Mono stays for code. */
@@ -45,6 +46,7 @@
   --sidew: 248px; --toph: 56px; --tabs-h: 0px;
   /* type */
   --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Space Grotesk", var(--font); /* headings, section titles and page titles only; body text stays Inter */
   --mono: "Geist Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
   /* depth and motion (old names kept so older rules inherit the new look) */
   --grad-accent: var(--grad);
@@ -65,3 +67,26 @@ body {
   background-attachment: fixed;
 }
 ::selection { background: rgba(139, 124, 255, 0.35); }
+
+/* Light theme: same token names, text at 4.5:1 or better on its surface (checked: text on bg 16:1, muted on panel 7.5:1, faint on bg 5.3:1, accent on panel 6:1). Set by Settings, Look. */
+html[data-theme="light"] {
+  --bg: #f3f4f9; --panel: #ffffff; --panel-2: #eef0f6; --input: #ffffff; --seg-on: #ffffff; --chip: #f1f2f8;
+  --side-bg: rgba(255, 255, 255, 0.94); --top-bg: rgba(243, 244, 249, 0.8);
+  --line: rgba(20, 24, 40, 0.1); --line-2: rgba(20, 24, 40, 0.22);
+  --text: #14171f; --muted: #4a4f5e; --faint: #5c6170; --placeholder: #666b7a;
+  --accent: #5a49d6; --accent-soft: rgba(90, 73, 214, 0.12); --accent-ink: #fff;
+  --card-line: rgba(20, 24, 40, 0.14); --nav-on: rgba(90, 73, 214, 0.12); --nav-on-line: rgba(90, 73, 214, 0.4);
+  --ok: #0f8a5c; --ok-text: #0b6b48; --ok-bg: #e2f5ec; --ok-line: #8fd1b5;
+  --warn: #b26b00; --warn-text: #7d4b00; --warn-bg: #fff2d8; --warn-line: #e3be72;
+  --err: #c0282d;
+  --info-text: #1a559b; --info-bg: #e3edfa;
+  --work-bg: #e8f3ef; --work-line: #9cc9b9;
+  --bubble: #e8e5ff; --bubble-line: #c4bdf5;
+  --lift: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 10px 24px -18px rgba(20, 24, 40, 0.35);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  color-scheme: light;
+}
+html[data-theme="light"] body { background: radial-gradient(1200px 700px at -10% -20%, rgba(124, 107, 255, 0.1), transparent 60%), var(--bg); }
+html[data-theme="light"] ::selection { background: rgba(90, 73, 214, 0.25); }
+/* Compact density: tighter spacing tokens; component padding is in pages.css. */
+html[data-density="compact"] { --s3: 10px; --s4: 12px; --s5: 18px; --s6: 24px; }

@@ -39,8 +39,13 @@
 .pg-info { display: flex; align-items: center; gap: 8px; background: var(--info-bg); color: var(--info-text); border: 1px solid rgba(136, 182, 235, 0.25); border-radius: var(--r-sm); padding: 8px 14px; font-size: 13px; }
 .pg-alt { font-size: 13px; margin: -2px 0 0; }
 .tabs .tab .count { margin-left: 8px; }
-.pg-head { align-items: flex-start; flex-wrap: nowrap; }
-.pg-head p { max-width: 58ch; }
+.pg-head { align-items: center; flex-wrap: nowrap; }
+.pg-head p { max-width: 104ch; }
+.pg-head > div:first-child { flex: 1 1 0; min-width: 0; }
+.pg-head > .row { flex: none; flex-wrap: nowrap; }
+/* the hunt panel: bold state first, then how it works */
+.pg-hunt { border: 1px solid var(--line-2); border-radius: 20px; background: rgba(255, 255, 255, 0.02); padding: 20px 30px; font-size: 14.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.pg-hunt strong { color: var(--text); font-weight: 600; }
 .pg-banner-img { margin: calc(-1 * var(--s4)) calc(-1 * var(--s4)) 4px; border-radius: 14px 14px 0 0; background: linear-gradient(115deg, hsl(var(--hue) 38% 20%), hsl(calc(var(--hue) + 70) 30% 11%) 70%); display: flex; align-items: flex-start; gap: 16px; padding: 20px var(--s4) 18px; }
 .pg-banner-img .tile { flex: none; width: 56px; height: 56px; border-radius: 15px; background: linear-gradient(135deg, hsl(var(--hue) 60% 48%), hsl(calc(var(--hue) + 40) 65% 58%)); border: 1px solid rgba(255, 255, 255, 0.25); display: grid; place-items: center; color: #fff; }
 .pg-bhead { display: flex; flex-direction: column; gap: 6px; min-width: 0; }

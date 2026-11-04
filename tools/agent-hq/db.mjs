@@ -205,7 +205,8 @@ export function gateTasks(db, id, since = '') {
 
 // Atomically take the oldest queued task for a lane and mark it working. Returns the task with its new `taskToken`, or null.
 // needsStudio tasks are skipped while the studio lanes are full (studioBusy:true forces that).
-export function claimNext(db, { engine, roles, studioBusy } = {}) {
+// preferRole: the oldest queued task of that role goes first (batching), else the oldest of all
+export function claimNext(db, { engine, roles, studioBusy, preferRole } = {}) {
   const vals = LANE_VALUES[engine];
   if (!vals) throw new Error(`bad lane ${engine}`);
   db.exec('BEGIN IMMEDIATE');
@@ -215,7 +216,8 @@ export function claimNext(db, { engine, roles, studioBusy } = {}) {
     const a = [...vals];
     if (roles?.length) { w.push(`role IN (${roles.map(() => '?').join(',')})`); a.push(...roles); }
     if (busy) w.push('needsStudio=0');
-    const r = db.prepare(`SELECT id FROM tasks WHERE ${w.join(' AND ')} ORDER BY createdAt ASC, rowid ASC LIMIT 1`).get(...a);
+    const pick = (extra, ...more) => db.prepare(`SELECT id FROM tasks WHERE ${w.join(' AND ')}${extra} ORDER BY createdAt ASC, rowid ASC LIMIT 1`).get(...a, ...more);
+    const r = (preferRole && pick(' AND role=?', preferRole)) || pick('');
     let task = null;
     if (r) {
       const taskToken = newToken();

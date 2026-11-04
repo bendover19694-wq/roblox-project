@@ -1,5 +1,8 @@
 import { h, store, api, act, btn, pageHead, selectEl, field, notify, toast, LANES, lastSeen, laneFresh, laneCfg, fmtTime } from './core.js';
 import { providersCard, agentModelsCard } from './models.js';
+import { loadSchema, schemaState, retrySchema, schemaSections } from './settings-fields.js';
+import { rolesEditor } from './roles-editor.js';
+import { readinessPanel } from './readiness.js';
 
 let draft = null; // schedules being edited
 const rid = () => 's_' + Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -107,31 +110,48 @@ function lanesStrip() {
     h('span', { class: 'muted' }, laneCfg(l.id).enabled === false ? 'paused' : 'last seen ' + lastSeen(l.id)))));
 }
 
-export function render() {
+// Keys this page draws itself in Run control, so the schema loop skips them.
+const SKIP = new Set(['budget', 'paused']);
+
+function runControl() {
   const budget = store.settings.budget ?? 2;
   const paused = !!store.settings.paused;
+  return h('section', { class: 'card stack sm' },
+    h('h2', { class: 'section-title' }, 'Run control'),
+    h('div', { class: 'row gap between' },
+      h('div', {}, h('strong', {}, 'Parallel agents'), h('p', { class: 'muted' }, 'How many tasks may run at the same time.')),
+      h('div', { class: 'seg', role: 'group', 'aria-label': 'Parallel agents' }, [1, 2, 3, 4].map((n) => h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(n === budget),
+        onclick: async () => { store.settings = { ...store.settings, budget: n }; notify(); await act(() => api('POST', '/api/settings', { key: 'budget', value: n })); } }, String(n))))),
+    h('div', { class: 'row gap between' },
+      h('div', {}, h('strong', {}, paused ? 'Paused' : 'Running'), h('p', { class: 'muted' }, paused ? 'Nothing new will start.' : 'Queued tasks start automatically.')),
+      btn(paused ? 'Resume' : 'Pause', () => act(() => api('POST', paused ? '/api/resume' : '/api/pause')), { icon: paused ? 'play' : 'pause', kind: paused ? 'primary' : '' })));
+}
+
+// Only shown when the schema could not be read.
+function youCard() {
+  return h('section', { class: 'card stack sm' },
+    h('h2', { class: 'section-title' }, 'You'),
+    field('Your name', h('input', { class: 'input', type: 'text', maxlength: 40, value: store.settings.ownerName || '', placeholder: 'Shown in the greeting on Home', 'aria-label': 'Your name',
+      onchange: async (e) => {
+        const v = e.target.value.trim().slice(0, 40);
+        if (await act(() => api('POST', '/api/settings', { key: 'ownerName', value: v }), 'Saved')) { store.settings = { ...store.settings, ownerName: v }; notify(); }
+      } })));
+}
+
+export function render() {
+  loadSchema();
+  const { schema, error } = schemaState();
+  const widgets = { providers: providersCard, roleEngines: agentModelsCard, laneSchedules: lanesCard, schedules };
+  let body;
+  if (schema) {
+    const { nodes, shown } = schemaSections(widgets, SKIP);
+    body = [...nodes, Object.entries(widgets).filter(([k]) => !shown.has(k)).map(([, f]) => f())]; // a custom widget the schema forgot still shows
+  } else {
+    body = [error ? h('section', { class: 'card stack sm', role: 'alert' }, h('p', { class: 'pg-warn' }, 'Could not read the settings list: ' + error), btn('Try again', retrySchema, { icon: 'refresh' })) : null,
+      youCard(), Object.values(widgets).map((f) => f())];
+  }
   return h('div', { class: 'page' },
     pageHead('Settings', 'Control which models your agents use, how many run at once, and when.'),
     lanesStrip(),
-    h('div', { class: 'stack' },
-      h('section', { class: 'card stack sm' },
-        h('h2', { class: 'section-title' }, 'Run control'),
-        h('div', { class: 'row gap between' },
-          h('div', {}, h('strong', {}, 'Parallel agents'), h('p', { class: 'muted' }, 'How many tasks may run at the same time.')),
-          h('div', { class: 'seg', role: 'group', 'aria-label': 'Parallel agents' }, [1, 2, 3, 4].map((n) => h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(n === budget),
-            onclick: async () => { store.settings = { ...store.settings, budget: n }; notify(); await act(() => api('POST', '/api/settings', { key: 'budget', value: n })); } }, String(n))))),
-        h('div', { class: 'row gap between' },
-          h('div', {}, h('strong', {}, paused ? 'Paused' : 'Running'), h('p', { class: 'muted' }, paused ? 'Nothing new will start.' : 'Queued tasks start automatically.')),
-          btn(paused ? 'Resume' : 'Pause', () => act(() => api('POST', paused ? '/api/resume' : '/api/pause')), { icon: paused ? 'play' : 'pause', kind: paused ? 'primary' : '' }))),
-      h('section', { class: 'card stack sm' },
-        h('h2', { class: 'section-title' }, 'You'),
-        field('Your name', h('input', { class: 'input', type: 'text', maxlength: 40, value: store.settings.ownerName || '', placeholder: 'Shown in the greeting on Home', 'aria-label': 'Your name',
-          onchange: async (e) => {
-            const v = e.target.value.trim().slice(0, 40);
-            if (await act(() => api('POST', '/api/settings', { key: 'ownerName', value: v }), 'Saved')) { store.settings = { ...store.settings, ownerName: v }; notify(); }
-          } }))),
-      providersCard(),
-      agentModelsCard(),
-      lanesCard(),
-      schedules()));
+    h('div', { class: 'stack' }, runControl(), body, rolesEditor(), readinessPanel()));
 }

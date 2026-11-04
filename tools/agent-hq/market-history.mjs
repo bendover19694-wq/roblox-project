@@ -1,11 +1,11 @@
-// Per-game chart history. One point per game per snapshot (game_points, kept 35 days) and cached game details
+// Per-game chart history. One point per game per snapshot (game_points, kept 180 days) and cached game details
 // (game_meta: icon, visits, ...). Tables are created here with CREATE TABLE IF NOT EXISTS, not in db.mjs.
 // Pure functions of (db, snapshot, clock); no network. market-routes.mjs does the fetching.
 import { latestMarketSnapshots } from './db.mjs';
 
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
-export const RETAIN_DAYS = 35;
+export const RETAIN_DAYS = 180;
 const MIN_BASE = 100; // under this many players at the baseline a % change says nothing, so the game is not ranked as rising
 const RISING_MAX = 16;
 const NEW_MAX = 20;
@@ -44,7 +44,7 @@ function flatten(snap) {
   return out;
 }
 
-/** Write one row per unique game for this snapshot and drop rows older than 35 days (relative to the snapshot). Returns the row count. */
+/** Write one row per unique game for this snapshot and drop rows older than 180 days (relative to the snapshot). Returns the row count. */
 export function recordPoints(db, snap) {
   const t = Date.parse(snap?.fetchedAt);
   if (Number.isNaN(t)) return 0;

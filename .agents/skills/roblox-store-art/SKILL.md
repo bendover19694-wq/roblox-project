@@ -48,3 +48,11 @@ Roblox game thumbnail, 16:9, 1920x1080. Foreground: a blocky Roblox-style R15 ch
 - Would a 9-year-old understand the game from this image in 5 seconds?
 - Does it look like this game (rockets, planets, mission control) and not like a generic simulator?
 - Is it different enough from the other variants to be worth testing?
+
+## Sizes, safe zones, variants and Packaging (added)
+- Deliver the icon at 512 x 512 (the Roblox minimum; a 1024 master is fine, but hand over the 512 x 512 file too) and thumbnails at 1920 x 1080, 16:9, under 3 MB. If this section and the icon section above differ, the 512 x 512 file is the one that counts.
+- Thumbnail safe zones: nothing essential in the bottom 15 to 20 percent or in the corners (about a 5 percent inset); main subject inside the centre 80 percent wide by 70 percent tall. Icons keep the subject inside the centre 80 percent.
+- Test every image at 320 x 180 (thumbnail) and at 150 px and 64 px (icon), and in greyscale. One focal subject at roughly a third to nearly half of the frame.
+- Make 3 or more variants per ask that differ by one idea each. Keep the control when the owner A/B tests; never judge a winner before about 7 days.
+- Attach each with `hq_add_media`; put "icon" or "thumbnail" in the ask title and in the file name so it lands in the Review Packaging group. Approved ones go to the Visual bar. Never draw store art with code.
+

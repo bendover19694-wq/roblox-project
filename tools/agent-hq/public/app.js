@@ -1,4 +1,4 @@
-import { h, ic, store, api, act, subscribe, notify, loadState, startEvents, refreshAll, roleLabel, avatar, gameName, studioLocks, toast, empty, token, signOut, ago, agentSpend } from './views/core.js';
+import { h, ic, store, api, act, subscribe, notify, loadState, startEvents, refreshAll, roleLabel, avatar, gameName, studioLocks, toast, empty, token, signOut, ago, agentSpend, scope, setScope, inScope, itemGame, rosterOrder, go } from './views/core.js';
 import * as home from './views/home.js';
 import * as lead from './views/lead.js';
 import * as team from './views/team.js';
@@ -13,7 +13,7 @@ import { openLightbox } from './views/lightbox.js';
 
 const views = { home, lead, team, tasks, review, settings };
 // Pages built by another module owner load on their own, so one broken page never takes the shell down.
-await Promise.all(['games', 'pitches', 'market', 'library', 'link', 'pro', 'help'].map(async (n) => {
+await Promise.all(['games', 'pitches', 'market', 'library', 'notebook', 'link', 'pro', 'help'].map(async (n) => {
   try { views[n] = await import(`./views/${n}.js`); } catch (e) {
     console.warn('page not available:', n, e.message);
     views[n] = { render: () => h('div', { class: 'page' }, empty(`The ${n} page is not available yet.`)) };
@@ -22,15 +22,15 @@ await Promise.all(['games', 'pitches', 'market', 'library', 'link', 'pro', 'help
 
 const SECTIONS = [
   ['Workspace', [['home', 'Home', 'home'], ['lead', 'Lead', 'sparkles'], ['team', 'Team', 'team'], ['tasks', 'Tasks', 'tasks'], ['review', 'Review', 'review']]],
-  ['Studio', [['games', 'Games', 'games'], ['pitches', 'Pitches', 'pitches'], ['market', 'Market', 'market'], ['library', 'Library', 'library'], ['pro', 'Pro', 'gem'], ['link', 'HQ Link', 'team']]],
+  ['Studio', [['games', 'Games', 'games'], ['pitches', 'Pitches', 'pitches'], ['market', 'Market', 'market'], ['library', 'Library', 'library'], ['notebook', 'Notebook', 'pencil'], ['pro', 'Pro', 'gem'], ['link', 'HQ Link', 'team']]],
 ];
-const PAGE_LABEL = { link: 'HQ Link', home: 'Home', lead: 'Lead', team: 'Team', tasks: 'Tasks', review: 'Review', games: 'Games', pitches: 'Pitches', market: 'Market', library: 'Library', pro: 'Pro', settings: 'Settings', help: 'Help' };
-const PAGE_SUB = { link: 'Work with another HQ', home: 'Overview', lead: 'Chat with the Lead', team: 'Roster', tasks: 'All work', review: 'Images and stages', games: 'All games', pitches: 'Ideas', market: 'Charts and benchmarks', library: 'Assets and knowledge', pro: 'Rising games and ideas', settings: 'Preferences', help: 'How HQ works' };
+const PAGE_LABEL = { link: 'HQ Link', home: 'Home', lead: 'Lead', team: 'Team', tasks: 'Tasks', review: 'Review', games: 'Games', pitches: 'Pitches', market: 'Market', library: 'Library', notebook: 'Notebook', pro: 'Pro', settings: 'Settings', help: 'Help' };
+const PAGE_SUB = { link: 'Work with another HQ', home: 'Overview', lead: 'Chat with the Lead', team: 'Roster', tasks: 'All work', review: 'Images and stages', games: 'All games', pitches: 'Ideas', market: 'Charts and benchmarks', library: 'Assets and knowledge', notebook: 'Notes for the team', pro: 'Rising games and ideas', settings: 'Preferences', help: 'How HQ works' };
 const NAV_TONE = { home: 'amber', team: 'green', tasks: 'green', review: 'grey', pitches: 'grey' };
 const NAV_WHAT = { home: ' need you', team: ' working', tasks: ' open', review: ' waiting', pitches: ' to decide' };
 const LIVE_UPDATED = new Set(['home', 'lead', 'review']); // these pages say when the numbers last changed, the rest say "watching"
 const TABS = [['home', 'Home', 'home', 'amber'], ['lead', 'Lead', 'sparkles'], ['tasks', 'Tasks', 'tasks', 'violet'], ['review', 'Review', 'review', 'grey']];
-const MORE = [['team', 'Team', 'team'], ['games', 'Games', 'games'], ['pitches', 'Pitches', 'pitches'], ['market', 'Market', 'market'], ['library', 'Library', 'library'], ['pro', 'Pro', 'gem'], ['link', 'HQ Link', 'team'], ['settings', 'Settings', 'settings'], ['help', 'Help', 'help']];
+const MORE = [['team', 'Team', 'team'], ['games', 'Games', 'games'], ['pitches', 'Pitches', 'pitches'], ['market', 'Market', 'market'], ['library', 'Library', 'library'], ['notebook', 'Notebook', 'pencil'], ['pro', 'Pro', 'gem'], ['link', 'HQ Link', 'team'], ['settings', 'Settings', 'settings'], ['help', 'Help', 'help']];
 
 const side = document.getElementById('side');
 const topbar = document.getElementById('topbar');
@@ -48,24 +48,29 @@ function route() {
   return { name: views[name] ? name : 'home', param };
 }
 
+// Sidebar numbers follow the game scope (the pages do too); the team count stays global because agents are not per game.
 function counts() {
-  const openAsks = store.asks.filter(needsDecision);
+  const openAsks = store.asks.filter(needsDecision).filter(inScope);
   return {
-    home: openAsks.length + store.tasks.filter(isBackToYou).length,
+    home: openAsks.length + store.tasks.filter((t) => isBackToYou(t) && inScope(t)).length,
     team: store.tasks.filter((t) => t.state === 'working').length,
-    tasks: store.tasks.filter((t) => ['queued', 'working', 'review'].includes(t.state)).length,
+    tasks: store.tasks.filter((t) => ['queued', 'working', 'review'].includes(t.state) && inScope(t)).length,
     review: openAsks.filter((a) => isMediaAsk(a) || a.kind === 'review').length,
-    pitches: store.pitches.filter((p) => p.state === 'proposed').length,
+    pitches: store.pitches.filter((p) => p.state === 'proposed' && inScope(p)).length,
   };
 }
 
 const games = () => (store.gameList.length ? store.gameList : store.games);
+// Things that need the owner: open asks and finished tasks waiting on a verdict. slug narrows to one game; none counts them all.
+const youItems = () => [...store.asks.filter(needsDecision), ...store.tasks.filter(isBackToYou)];
+const needsYou = (slug) => youItems().filter((i) => !slug || itemGame(i) === slug).length;
+const elsewhere = () => { const s = scope(); return s ? youItems().filter((i) => { const g = itemGame(i); return g && g !== s; }).length : 0; };
 const money = (n) => '$' + (n >= 100 ? n.toFixed(0) : n.toFixed(2));
 const sinceChange = () => { const a = ago(new Date(store.lastChange).toISOString()); return a === 'just now' ? a : a + ' ago'; };
 
 function navItem([id, label, icon], name, c) {
   return h('a', { class: 'nav-item', href: '#/' + id, 'aria-current': id === name ? 'page' : null },
-    ic(icon, 18), h('span', {}, label),
+    ic(icon, 20), h('span', {}, label),
     c[id] ? h('span', { class: 'count nav-count', 'data-tone': NAV_TONE[id], 'aria-label': c[id] + NAV_WHAT[id] }, c[id]) : null);
 }
 
@@ -83,7 +88,7 @@ function renderSide() {
     h('nav', { class: 'nav', 'aria-label': 'Main' }, SECTIONS.map(([title, items]) => [h('div', { class: 'nav-group' }, title), items.map((n) => navItem(n, name, c))])),
     h('div', { class: 'side-team' },
       h('div', { class: 'nav-group' }, 'Team'),
-      h('div', { class: 'avatar-grid' }, store.roles.map((r) => {
+      h('div', { class: 'avatar-grid' }, rosterOrder(store.roles).map((r) => {
         const unread = store.threads[r.id]?.unread || 0;
         return h('a', { class: 'avatar-link', href: '#/team/' + r.id, 'aria-label': r.label + (unread ? ', ' + unread + ' unread' : ''), 'aria-current': name === 'team' && param === r.id ? 'true' : null },
           avatar(r.id, 28), unread ? h('span', { class: 'unread-dot' }) : null);
@@ -91,8 +96,8 @@ function renderSide() {
     h('div', { class: 'side-foot' },
       h('a', { class: 'spend', href: '#/settings', 'aria-label': `Agent spend in the last 7 days: ${money(spend)}. Open Settings` },
         h('span', { class: 'spend-text' }, h('span', { class: 'spend-label' }, 'Agent spend · last 7 days'), h('strong', { class: 'spend-amt' }, money(spend))), ic('chevron', 14)),
-      h('a', { class: 'nav-item', href: '#/help', 'aria-current': name === 'help' ? 'page' : null }, ic('help', 18), h('span', {}, 'Help')),
-      h('a', { class: 'nav-item', href: '#/settings', 'aria-current': name === 'settings' ? 'page' : null }, ic('settings', 18), h('span', {}, 'Settings')),
+      h('a', { class: 'nav-item', href: '#/help', 'aria-current': name === 'help' ? 'page' : null }, ic('help', 20), h('span', {}, 'Help')),
+      h('a', { class: 'nav-item', href: '#/settings', 'aria-current': name === 'settings' ? 'page' : null }, ic('settings', 20), h('span', {}, 'Settings')),
       h('div', { class: 'foot-line foot-chip' }, h('span', { class: 'dot', 'data-on': working ? 'working' : 'idle' }), `${working} agent${working === 1 ? '' : 's'} working`,
         store.connected ? null : h('span', { class: 'offline' }, 'offline'),
         h('button', { type: 'button', class: 'btn sm push', onclick: () => act(() => api('POST', paused ? '/api/resume' : '/api/pause')) }, ic(paused ? 'play' : 'pause', 12), paused ? 'Resume' : 'Pause')),
@@ -101,16 +106,62 @@ function renderSide() {
         h('div', {}, h('div', { class: 'acct-name' }, owner || 'You'), h('div', { class: 'muted small' }, 'Owner')))));
 }
 
+// Game switcher: the menu lives in #overlay so the topbar can re-render under it without closing it.
+let swMenu = null;
+function openSwitcher() {
+  if (swMenu) { swMenu.close(); return; }
+  const trigger = topbar.querySelector('.switcher');
+  if (!trigger) return;
+  const cur = scope() || '';
+  const item = (label, slug, n) => h('button', { type: 'button', role: 'menuitemradio', class: 'sw-item', 'aria-checked': String(cur === slug), onclick: () => { close(); setScope(slug || null); } },
+    h('span', { class: 'sw-check' }, cur === slug ? ic('check', 14) : null), h('span', { class: 'grow clip' }, label),
+    h('span', { class: 'count', 'data-tone': n ? 'amber' : 'grey', 'aria-label': n + ' need you' }, n));
+  const add = h('button', { type: 'button', role: 'menuitem', class: 'sw-item add', onclick: () => { close(); if (views.games.addGame) views.games.addGame(); else go('#/games'); } }, h('span', { class: 'sw-check' }, ic('plus', 14)), h('span', { class: 'grow' }, 'New game'));
+  const menu = h('div', { class: 'sw-menu', role: 'menu', 'aria-label': 'Choose a game' }, item('All games', '', needsYou()), ...games().map((g) => item(g.name, g.slug, needsYou(g.slug))), h('div', { class: 'sw-sep', role: 'separator' }), add);
+  const rect = trigger.getBoundingClientRect();
+  menu.style.left = Math.max(8, rect.left) + 'px';
+  menu.style.top = rect.bottom + 6 + 'px';
+  const items = () => [...menu.querySelectorAll('.sw-item')];
+  const onKey = (e) => {
+    const all = items(); const i = all.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); }
+    else if (e.key === 'Tab') close();
+    else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
+      all[e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : e.key === 'ArrowDown' ? (i + 1) % all.length : (i <= 0 ? all.length - 1 : i - 1)]?.focus();
+    }
+  };
+  const back = h('div', { class: 'sw-back', onmousedown: () => close() });
+  function close(refocus) {
+    if (!swMenu) return;
+    swMenu = null;
+    document.removeEventListener('keydown', onKey, true);
+    back.remove(); menu.remove();
+    renderTop();
+    if (refocus) topbar.querySelector('.switcher')?.focus();
+  }
+  swMenu = { close };
+  document.getElementById('overlay').append(back, menu);
+  document.addEventListener('keydown', onKey, true);
+  renderTop();
+  (items().find((b) => b.getAttribute('aria-checked') === 'true') || items()[0])?.focus();
+}
+
 function renderTop() {
   const { name, param } = route();
   let ctx = '';
   if (name === 'team' && param) ctx = roleLabel(param);
   if (name === 'games' && param) { const [slug, more] = param.split('/'); ctx = gameName(slug) + (more === 'gate' ? ' · Publish gate' : ''); }
-  const n = games().length;
+  const cur = scope();
+  const n = needsYou(cur || undefined);
+  const label = cur ? gameName(cur) : 'All games';
+  const away = elsewhere();
   const live = !store.connected ? 'Offline' : LIVE_UPDATED.has(name) ? 'Live · updated ' + sinceChange() : 'Live · watching';
   topbar.replaceChildren(
     h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' },
-      h('a', { class: 'switcher', href: '#/games', 'aria-label': `All games, ${n}. Open Games` }, h('span', { class: 'sw-ic' }, ic('grid', 14)), h('span', { class: 'sw-name' }, 'All games'), h('span', { class: 'count' }, n), h('span', { class: 'sw-chev' }, ic('chevron', 14))),
+      h('button', { type: 'button', class: 'switcher', 'aria-haspopup': 'menu', 'aria-expanded': String(!!swMenu), 'aria-label': `${label}, ${n} need you. Choose a game`, onclick: openSwitcher },
+        h('span', { class: 'sw-ic' }, ic('grid', 13)), h('span', { class: 'sw-name' }, label), h('span', { class: 'count', 'data-tone': 'violet' }, n), h('span', { class: 'sw-chev' }, ic('chevronDown', 14))),
+      away ? h('button', { type: 'button', class: 'elsewhere', title: 'Show all games', onclick: () => setScope(null) }, `${away} need you elsewhere`) : null,
       h('span', { class: 'slash', 'aria-hidden': 'true' }, '/'),
       h('strong', { class: 'page-title', title: PAGE_SUB[name] }, PAGE_LABEL[name]), ctx ? h('span', { class: 'muted page-ctx' }, ' · ' + ctx) : null),
     h('div', { class: 'top-right' },
@@ -122,10 +173,10 @@ function renderTop() {
 // ---- phone shell: game strip on top, bottom tab bar, More sheet (hidden on desktop by shell.css) ----
 function renderStrip() {
   const { name, param } = route();
-  const cur = name === 'games' && param ? param.split('/')[0] : '';
+  const cur = name === 'games' && param ? param.split('/')[0] : scope() || '';
   strip.replaceChildren(
-    h('a', { class: 'strip-item', href: '#/games', 'aria-current': cur ? null : 'true' }, 'All games', h('span', { class: 'count' }, games().length)),
-    ...games().map((g) => h('a', { class: 'strip-item', href: '#/games/' + encodeURIComponent(g.slug), 'aria-current': cur === g.slug ? 'true' : null }, g.name)),
+    h('a', { class: 'strip-item', href: '#/games', onclick: () => setScope(null), 'aria-current': cur ? null : 'true' }, 'All games', h('span', { class: 'count' }, needsYou())),
+    ...games().map((g) => h('a', { class: 'strip-item', href: '#/games/' + encodeURIComponent(g.slug), onclick: () => setScope(g.slug), 'aria-current': cur === g.slug ? 'true' : null }, g.name)),
     h('button', { type: 'button', class: 'strip-item', onclick: () => (views.games.addGame ? views.games.addGame() : (location.hash = '#/games')) }, ic('plus', 14), 'New game'));
 }
 
@@ -184,10 +235,24 @@ function renderMain() {
   document.title = 'Agent HQ';
 }
 
-function renderAll() { renderSide(); renderTop(); renderStrip(); renderTabs(); renderMain(); }
+// Theme and density come from Settings (store.settings); the last values are kept in this browser so a reload does not flash.
+function applyLook() {
+  const root = document.documentElement;
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem('hq-look') || '{}'); } catch { /* none */ }
+  const st = store.loaded ? store.settings : seen;
+  const theme = st.theme === 'light' ? 'light' : 'dark';
+  const density = st.density === 'compact' ? 'compact' : 'comfortable';
+  root.dataset.theme = theme;
+  root.dataset.density = density;
+  document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme);
+  if (store.loaded && (seen.theme !== theme || seen.density !== density)) { try { localStorage.setItem('hq-look', JSON.stringify({ theme, density })); } catch { /* private mode */ } }
+}
+
+function renderAll() { applyLook(); renderSide(); renderTop(); renderStrip(); renderTabs(); renderMain(); }
 
 main.addEventListener('focusout', () => { setTimeout(() => { if (dirty && !typing()) renderMain(); }, 80); });
-window.addEventListener('hashchange', () => { dirty = false; closeMore?.(); renderAll(); main.focus({ preventScroll: true }); });
+window.addEventListener('hashchange', () => { dirty = false; closeMore?.(); swMenu?.close(); renderAll(); main.focus({ preventScroll: true }); });
 window.addEventListener('keydown', (e) => {
   if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
   const k = e.key.toLowerCase();

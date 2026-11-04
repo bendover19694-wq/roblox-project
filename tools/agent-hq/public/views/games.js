@@ -141,7 +141,7 @@ function overview(g) {
         cl && (cl.heading || (cl.bullets || []).length) ? h('div', { class: 'stack sm' },
           cl.heading ? h('strong', {}, cl.heading) : null,
           h('ul', { class: 'pg-bullets' }, (cl.bullets || []).map((b) => h('li', {}, b))))
-          : h('p', { class: 'muted' }, 'No changelog yet. The Producer fills this in when a version ships.'))),
+          : h('div', { class: 'pg-empty' }, ic('sparkles', 22), h('strong', {}, 'Nothing new yet'), h('p', {}, 'The Producer fills this in with what changed when a version ships.')))),
     h('div', { class: 'pg-grid2' }, openWork(g), todoCard(g)));
 }
 

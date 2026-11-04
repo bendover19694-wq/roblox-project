@@ -1,6 +1,7 @@
 // Demo studio for looking at the UI: real server, temp state, no agents running, no network. Run: npm run demo (HQ_PORT, default 4400).
 // The signed-in link is written to <state>/demo-url.txt, never printed.
 // Everything here is about Run a Space Agency. Market numbers, spin-off pitches and idea scores are SAMPLE data, labelled as such.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -69,12 +70,13 @@ const SORTS = [['top-trending', 'Trending'], ['up-and-coming', 'Up-and-Coming'],
 const STEPS = 120; const GAMES = 42;
 const firstStep = (n) => (n === 41 ? 100 : n === 42 ? 110 : 0); // two games reach the charts in the last week
 const RISERS = { 3: [114, 0.15], 5: [115, 0.2], 7: [112, 0.06], 9: [113, 0.08], 12: [116, 0.12], 15: [110, 0.03], 18: [114, 0.1], 22: [117, 0.3] }; // [first step of the climb, growth per step]
+// Sample series: a slow trend per game plus two gentle waves and tiny noise, so the sparklines read as trends, not zigzags.
 const players = (n, step) => {
   const base = 40000 / n ** 0.7; // game 1 is the biggest
-  const timeOfDay = 1 + 0.25 * Math.sin(((step % 4) / 4) * 2 * Math.PI + n);
-  const drift = 1 + 0.1 * Math.sin(step / 9 + n);
+  const trend = 1 + ((n % 5) - 2) * 0.0016 * step; // some games drift up, some down, over the 30 days
+  const wave = 1 + 0.045 * Math.sin(step / 13 + n) + 0.02 * Math.sin(step / 5.5 + 2 * n) + 0.006 * Math.sin(step * 1.9 + 3 * n);
   const [from, rate] = RISERS[n] ?? [STEPS, 0]; // a few games climb in the last day
-  return Math.round(base * timeOfDay * drift * (1 + Math.max(0, step - from) * rate));
+  return Math.round(base * trend * wave * (1 + Math.max(0, step - from) * rate));
 };
 const gameAt = (n, step) => ({ universeId: 9000000 + n, rootPlaceId: 9100000 + n, name: `Sample game ${n}`, playerCount: players(n, step), up: 8000 + ((n * 37) % 1500), down: 1000 + ((n * 53) % 800), genre: 'Sample', maturity: '', sponsored: false });
 const sampleSnapshot = (step) => ({
@@ -112,10 +114,37 @@ await api(`/api/idea-scores/${scored.id}/score`, {
   change: 'Sample advice: cut the second map and ship one asteroid belt first.',
 });
 
+// A finished Lead task with a run log (what hq_complete leaves behind), so the Lead chat shows "Worked through N steps".
+const plan = createTask(db, { role: 'lead', title: 'Plan the Titan mission tier', body: '', game: 'space-agency', createdBy: 'owner' });
+updateTask(db, plan.id, { state: 'done', startedAt: ago(3 * HOUR), endedAt: ago(2.5 * HOUR), summary: 'Wrote the Titan tier plan: three missions, a fuel gate and a 90 second first flight.', costUsd: 0.12 });
+const step = (name, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input }] } });
+fs.mkdirSync(path.join(stateDir, 'logs'), { recursive: true });
+fs.writeFileSync(path.join(stateDir, 'logs', `${plan.id}.ndjson`), [
+  step('hq_memory', { query: 'mission tiers' }), step('hq_task', { role: 'architect', title: 'Design the Titan tier' }),
+  JSON.stringify({ type: 'result', result: 'Plan written', total_cost_usd: 0.12 }),
+].join('\n') + '\n');
+addMessage(db, { role: 'lead', from: 'owner', text: 'plan the Titan mission tier' });
+addMessage(db, { role: 'lead', from: 'agent', text: 'Planned. Three missions, a fuel gate before Titan, and a **90 second** first flight. **Architect** takes the design next.', taskId: plan.id });
 addMessage(db, { role: 'lead', from: 'owner', text: 'can missions get their own reveal? like a big moment' });
 addMessage(db, { role: 'lead', from: 'agent', text: 'Yes. **UI** is making a reveal per mission tier: the countdown ends, the payout lands and the planet lights up. Rare trips take the whole screen; common ones stay small.' });
 addMessage(db, { role: 'lead', from: 'owner', text: "how's it going?" });
 addMessage(db, { role: 'lead', from: 'agent', text: 'Going well. **Build 12** is ready and both bugs Playtest found are fixed. Builder is on launch failure, and UI is on the rocket shop.\n\nIn Review for you: the **trailer and two thumbnails**, and the **mission reveals**.' });
+
+// ---- SAMPLE notebook entries (invented for the demo; one from the owner, two from agents) ----
+const note = (who, role, text, agoMs) => db.prepare('INSERT INTO notebook (id, at, who, role, game, text) VALUES (?,?,?,?,?,?)')
+  .run('n_' + crypto.randomBytes(6).toString('hex'), ago(agoMs), who, role, 'space-agency', text);
+note('agent', 'economy', 'Sample note: the first rocket should cost about 40 seconds of play. Anything under 25 felt free in the sample runs.', 5 * HOUR);
+note('agent', 'kid-tester', 'Sample note: the countdown text was too small to read on a phone. Needs a bigger font before the next test.', 3 * HOUR);
+note('owner', null, 'Sample note: no paid luck, ever. Cosmetics and boosts only.', HOUR);
+
+// HQ_DEMO_EXTRA=1 adds the rarer Home states (a held ask, a try-it ask, a failed gate, a built game) so they can be looked at.
+if (process.env.HQ_DEMO_EXTRA) {
+  const held = (await (await fetch(`http://127.0.0.1:${s.port}/api/asks?state=open`, { headers: { 'x-hq-token': s.ownerToken } })).json()).find((a) => a.kind === 'review' && a.mediaPath);
+  await api(`/api/asks/${held.id}/answer`, { answer: 'hold:Waiting for the second pass' });
+  await api('/api/asks', { role: 'kid-tester', kind: 'try', title: 'Try the countdown on your phone', why: 'Open the build on a phone and tell us if the countdown is readable.' });
+  await api('/api/asks', { role: 'builder', kind: 'decision', title: 'Gate failed 3 times: Launch failure: staging and the abort button', why: 'The reviewer found the abort button does not reset staging.', options: [{ id: 'retry', label: 'Retry', recommended: true }, { id: 'drop', label: 'Drop' }] });
+  updateGame(db, 'space-agency', { stage: 'built' });
+}
 
 fs.writeFileSync(path.join(stateDir, 'demo-url.txt'), `http://127.0.0.1:${s.port}/#owner=${s.ownerToken}\n`);
 console.log(`Demo HQ on port ${s.port}. Signed-in link: ${path.join(stateDir, 'demo-url.txt')}`);

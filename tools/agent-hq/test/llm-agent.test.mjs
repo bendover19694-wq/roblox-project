@@ -122,6 +122,11 @@ test('hq_pitch and hq_idea_score are scout-only; the model never sees the task c
     assert.ok(names('scout').includes(t), t);
     for (const role of ['lead', 'architect', 'builder', 'producer']) assert.ok(!names(role).includes(t), `${role} must not get ${t}`);
   }
+  for (const role of ['lead', 'scout', 'builder', 'ui', 'kid-tester', 'reviewer']) { // knowledge reads are open to every role
+    for (const t of ['hq_knowledge_search', 'hq_knowledge_read', 'hq_notebook_read', 'hq_notebook_add']) assert.ok(names(role).includes(t), `${role} gets ${t}`);
+  }
+  const know = hqToolDefs('builder').find((t) => t.function.name === 'hq_knowledge_read').function;
+  assert.deepEqual(know.parameters.required.sort(), ['path', 'source']);
   const idea = hqToolDefs('scout').find((t) => t.function.name === 'hq_idea_score').function;
   assert.deepEqual(Object.keys(idea.parameters.properties).sort(), ['change', 'ideaId', 'rows', 'verdict']);
   assert.deepEqual(idea.parameters.required.sort(), ['change', 'ideaId', 'rows', 'verdict']);

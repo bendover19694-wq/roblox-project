@@ -1,10 +1,12 @@
-import { h, store, api, act, ic, btn, empty, roleLabel, avatar, roleStatus, ago, fmtTime, go, plain, gameName, mediaUrl, studioLocks, loadFreshness, loadState, toast, notify } from './core.js';
-import { askCard, answer, isMediaAsk, needsDecision } from './review.js';
+import { h, store, api, act, ic, btn, empty, roleLabel, avatar, roleStatus, ago, fmtTime, go, plain, gameName, studioLocks, loadFreshness, loadState, toast, notify, inScope, rosterOrder } from './core.js';
+import { askCard, answer, isMediaAsk, needsDecision, verdictOf, noteOf } from './review.js';
 import { newTaskModal, openTaskDrawer, isBackToYou } from './tasks.js';
 
 let leadDraft = '';
 const replyOpen = new Set();
 const replyDraft = {};
+const building = new Set(); // game slugs whose newest build is being made
+let laterOpen = false;
 const noteOpen = new Set();
 const noteDraft = {};
 
@@ -32,37 +34,38 @@ function greeting() {
   };
 }
 
-const tile = (name) => h('span', { class: 'tile', 'aria-hidden': 'true' }, ic(name, 18));
+const tile = (name, tone) => h('span', { class: 'tile', 'data-tone': tone || null, 'aria-hidden': 'true' }, ic(name, 18));
 
-function imagesCard(media) {
-  const thumbs = media.filter((a) => !/\.(mp4|webm|mov)$/i.test(a.mediaPath)).slice(0, 4);
+// One line that sends the owner to Review; the pictures themselves live there.
+function reviewCard(media) {
   return h('article', { class: 'card ask group-card tile-card' }, tile('image'),
     h('div', { class: 'done-main' },
       h('span', { class: 'overline' }, 'Review'),
-      h('h3', {}, `${media.length} new image${media.length === 1 ? '' : 's'} from the agents`),
-      thumbs.length ? h('div', { class: 'thumb-row' }, thumbs.map((a) => h('img', { class: 'thumb', src: mediaUrl(a.mediaPath), alt: plain(a.title), loading: 'lazy' }))) : null,
+      h('h3', {}, `${media.length} new thing${media.length === 1 ? '' : 's'} to look at from the agents`),
       h('div', { class: 'row' }, btn('Review them', () => go('#/review'), { kind: 'sm' }))));
 }
 
 function tryCard(ask) {
   const open = replyOpen.has(ask.id);
-  const ta = open ? h('textarea', { class: 'textarea', rows: 3, placeholder: 'What happened when you tried it?', oninput: (e) => { replyDraft[ask.id] = e.target.value; } }) : null;
+  const ta = open ? h('textarea', { class: 'textarea', rows: 3, placeholder: 'What happened when you tried it?', 'aria-label': 'What happened', oninput: (e) => { replyDraft[ask.id] = e.target.value; } }) : null;
   if (ta) ta.value = replyDraft[ask.id] || '';
-  return h('article', { class: 'card ask', 'data-kind': 'try' },
-    h('div', { class: 'row gap' }, h('span', { class: 'overline' }, roleLabel(ask.role)), h('span', { class: 'chip static' }, 'Try it'), h('span', { class: 'muted grow end-text' }, ago(ask.createdAt))),
-    h('h3', {}, plain(ask.title)),
-    ask.why ? h('p', { class: 'muted pre' }, ask.why) : null,
-    ta,
-    h('div', { class: 'row gap wrap' },
-      open ? btn('Send reply', async () => {
-        const text = ta.value.trim();
-        if (!text) { ta.focus(); return; }
-        if (await act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: text }), 'Reply sent')) {
-          replyOpen.delete(ask.id); delete replyDraft[ask.id];
-          notify();
-        }
-      }, { kind: 'primary', icon: 'send' }) : btn('Reply', () => { replyOpen.add(ask.id); notify(); }, { icon: 'send' }),
-      btn('Done', () => act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: 'done' }), 'Marked done'), { icon: 'check' })));
+  return h('article', { class: 'card ask tile-card', 'data-kind': 'try' }, tile('gamepad', 'green'),
+    h('div', { class: 'done-main' },
+      h('div', { class: 'row gap' }, h('span', { class: 'overline', 'data-tone': 'green' }, 'Try it · ' + roleLabel(ask.role)), h('span', { class: 'muted small grow end-text' }, agoText(ask.createdAt))),
+      h('h3', {}, plain(ask.title)),
+      ask.why ? h('p', { class: 'muted pre' }, ask.why) : null,
+      ta,
+      h('div', { class: 'row gap wrap' },
+        open ? btn('Send reply', async () => {
+          const text = ta.value.trim();
+          if (!text) { ta.focus(); return; }
+          if (await act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: text }), 'Reply sent')) {
+            replyOpen.delete(ask.id); delete replyDraft[ask.id];
+            notify();
+          }
+        }, { kind: 'primary sm', icon: 'send' }) : btn('Reply', () => { replyOpen.add(ask.id); notify(); }, { kind: 'sm', icon: 'send' }),
+        btn('Done', () => act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: 'done' }), 'Marked done'), { kind: 'good sm', icon: 'check' }),
+        ask.taskId ? btn('Details', () => openTaskDrawer(ask.taskId), { kind: 'ghost sm' }) : null)));
 }
 
 function publishCards() {
@@ -74,15 +77,15 @@ function publishCards() {
 }
 
 function pickCard() {
-  const awaiting = store.pitches.filter((p) => p.state === 'proposed').length;
+  const awaiting = store.pitches.filter((p) => p.state === 'proposed' && inScope(p)).length;
   const inProgress = store.gameList.some((g) => !['live', 'graded'].includes(g.stage));
   if (!awaiting && (inProgress || !store.gameList.length)) return null;
   return h('article', { class: 'card ask tile-card', 'data-kind': 'pick' }, tile('pitches'),
     h('div', { class: 'done-main' },
-      h('span', { class: 'overline' }, 'Next game'),
-      h('h3', {}, 'Pick the next game'),
-      h('p', { class: 'muted' }, awaiting ? `${awaiting} pitch${awaiting === 1 ? '' : 'es'} await${awaiting === 1 ? 's' : ''} your decision.` : 'No game is in progress. Look at the pitches and pick one.'),
-      h('div', { class: 'row' }, h('a', { class: 'btn primary sm', href: '#/pitches' }, 'See the pitches'))));
+      h('span', { class: 'overline' }, 'Pick the next game'),
+      h('h3', {}, awaiting ? `${awaiting} pitch${awaiting === 1 ? '' : 'es'} await${awaiting === 1 ? 's' : ''} your decision` : 'No game is in progress'),
+      awaiting ? null : h('p', { class: 'muted' }, 'Look at the pitches and pick one.'),
+      h('div', { class: 'row' }, btn('See the pitches', () => go('#/pitches'), { kind: 'sm' }))));
 }
 
 // A finished piece of work waiting for the owner: a task in review, or an open review ask.
@@ -121,23 +124,64 @@ function doneCard({ task, ask }) {
         h('span', { class: 'muted small done-when' }, when))));
 }
 
+// A card for work the owner must unstick: a gate that failed for good, or a stage the producer keeps sending back.
+function stuckCard({ role, title, why, ask, href }) {
+  return h('article', { class: 'card ask tile-card stuck-card', 'data-kind': 'stuck' }, tile('alert', 'amber'),
+    h('div', { class: 'done-main' },
+      h('span', { class: 'overline', 'data-tone': 'amber' }, 'Stuck · your call'),
+      h('h3', {}, plain(title)),
+      why ? h('p', { class: 'muted pre done-body' }, why) : null,
+      h('div', { class: 'row gap wrap' },
+        (ask?.options || []).map((o) => btn(o.label, () => answer(ask, o.id), { kind: o.recommended ? 'primary sm' : 'sm' })),
+        btn('Open in Review', () => go(href), { kind: 'sm' }),
+        role ? h('span', { class: 'muted small done-when' }, roleLabel(role)) : null)));
+}
+const isGateAsk = (a) => a.kind === 'decision' && /^Gate failed/.test(a.title);
+// Stage requests that a game has had sent back twice or more and that are still waiting.
+const stuckStages = () => store.gameList.filter((g) => (g.reworkCount ?? 0) >= 2 && inScope({ game: g.slug })).map((g) => ({ g, r: store.stageRequests.find((x) => x.game === g.slug && x.state === 'open') })).filter((x) => x.r);
+
+// Parked items: asks held for later and stage requests on hold. One collapsed row; each line opens Review.
+function laterRow() {
+  const asks = store.asks.filter((a) => a.state === 'answered' && verdictOf(a) === 'held' && !a.superseded && inScope(a));
+  const stages = store.stageRequests.filter((r) => r.state === 'held' && inScope({ game: r.game }));
+  const n = asks.length + stages.length;
+  if (!n) return null;
+  const line = (title, why, href) => h('li', {}, h('a', { class: 'later-row', href }, h('span', { class: 'later-title' }, plain(title)), why ? h('span', { class: 'muted small later-why' }, plain(why)) : null, ic('chevron', 14)));
+  return h('details', { class: 'later', open: laterOpen, ontoggle: (e) => { laterOpen = e.target.open; } },
+    h('summary', {}, `Later (${n})`),
+    h('ul', { class: 'plain later-list' },
+      asks.map((a) => line(a.title, noteOf(a), a.mediaPath ? '#/review/' + a.id : '#/review')),
+      stages.map((r) => line(`${gameName(r.game)}: ${STAGE_NAME[r.fromStage] || r.fromStage} to ${STAGE_NAME[r.toStage] || r.toStage}`, r.reason, '#/review/stages'))));
+}
+
+// Order: finished work, the Review card, the next-game card, then everything else.
 function needsYou() {
-  const open = store.asks.filter(needsDecision);
+  const open = store.asks.filter((a) => needsDecision(a) && inScope(a));
   const media = open.filter(isMediaAsk);
   const rest = open.filter((a) => !isMediaAsk(a));
-  const cards = [...publishCards()];
+  const cards = [];
+  // A task whose review ask is already on Home is decided there, so it is not shown twice.
+  for (const t of store.tasks.filter((x) => isBackToYou(x) && inScope(x))) if (!open.some((a) => a.kind === 'review' && a.taskId === t.id)) cards.push(doneCard({ task: t }));
+  for (const a of rest) if (a.kind === 'review') cards.push(doneCard({ ask: a }));
+  if (media.length) cards.push(reviewCard(media));
   const pick = pickCard();
   if (pick) cards.push(pick);
-  // A task whose review ask is already on Home is decided there, so it is not shown twice.
-  for (const t of store.tasks.filter(isBackToYou)) if (!open.some((a) => a.kind === 'review' && a.taskId === t.id)) cards.push(doneCard({ task: t }));
-  if (media.length) cards.push(imagesCard(media));
-  for (const a of rest) cards.push(a.kind === 'try' ? tryCard(a) : a.kind === 'review' ? doneCard({ ask: a }) : askCard(a));
+  cards.push(...publishCards());
+  for (const a of rest) {
+    if (isGateAsk(a)) cards.push(stuckCard({ role: a.role, title: a.title, why: a.why, ask: a, href: '#/review' }));
+    else if (a.kind === 'try') cards.push(tryCard(a));
+    else if (a.kind !== 'review') cards.push(askCard(a));
+  }
+  for (const { g, r } of stuckStages()) cards.push(stuckCard({ role: r.role, title: `${g.name} keeps coming back from ${STAGE_NAME[r.toStage] || r.toStage}`, why: `The producer has sent it back ${g.reworkCount} times. Look at the evidence and say what happens next.`, href: '#/review/stages' }));
+  const later = laterRow();
+  if (later) cards.push(later);
   return cards.length ? cards : [empty('Nothing needs you right now')];
 }
 
+// Live now: roles that are busy, in the sidebar team order. With a game picked, only roles with work on that game.
 function liveNow() {
-  const rows = store.roles.map((r) => ({ r, st: roleStatus(r.id) })).filter((x) => x.st.state !== 'idle')
-    .sort((a, b) => (a.st.state === 'working' ? 0 : 1) - (b.st.state === 'working' ? 0 : 1));
+  const mine = (id) => store.tasks.some((t) => t.role === id && ['working', 'queued', 'review'].includes(t.state) && inScope(t));
+  const rows = rosterOrder(store.roles).map((r) => ({ r, st: roleStatus(r.id) })).filter((x) => x.st.state !== 'idle' && mine(x.r.id));
   const open = (id) => go('#/team/' + id);
   return h('section', { class: 'card' },
     h('h2', { class: 'sec-h' }, h('span', { class: 'live-dot', 'aria-hidden': 'true' }), 'Live now'),
@@ -159,19 +203,35 @@ function stageDots(stage) {
     h('span', { class: 'stage-word' }, STAGE_NAME[stage] || stage || 'No stage yet'));
 }
 
+// Build the newest version of a game and open it. The server never publishes; it only makes a local file.
+async function play(slug) {
+  if (building.has(slug)) return;
+  building.add(slug); notify();
+  await act(() => api('POST', `/api/games/${encodeURIComponent(slug)}/play`), 'The newest build is opening');
+  building.delete(slug); notify();
+}
+const playButton = (g) => {
+  const busy = building.has(g.slug);
+  return h('button', { type: 'button', class: 'btn primary play-btn', 'aria-busy': String(busy), onclick: () => play(g.slug) },
+    busy ? [h('span', { class: 'spin-ring', 'aria-hidden': 'true' }), 'Getting the newest build ready'] : [ic('play', 14), 'Play the newest build']);
+};
+
 function gamesCard() {
-  const games = store.gameList.length ? store.gameList : store.games.map((g) => ({ slug: g.slug, name: g.name }));
+  const games = (store.gameList.length ? store.gameList : store.games.map((g) => ({ slug: g.slug, name: g.name }))).filter((g) => inScope({ game: g.slug }));
   return h('section', { class: 'card stack sm' },
     h('h2', { class: 'section-title' }, 'Where each game is'),
     games.length ? games.map((g) => {
       const working = Array.isArray(g.working) ? g.working : store.tasks.filter((t) => t.game === g.slug && t.state === 'working').map((t) => t.role);
-      return h('a', { class: 'game-row game-card', href: '#/games/' + g.slug },
-        h('div', { class: 'row gap between' }, h('strong', {}, g.name), h('span', { class: 'row gap' },
-          g.version != null ? h('span', { class: 'muted small' }, 'v' + g.version) : null)),
-        g.stage ? stageDots(g.stage) : null,
-        g.nextStep ? h('p', { class: 'muted small' }, 'Now: ' + g.nextStep) : null,
-        working.length ? h('div', { class: 'row gap' }, [...new Set(working)].map((id) => avatar(id, 22)), h('span', { class: 'muted small' }, 'working on it: ' + [...new Set(working)].map(roleLabel).join(', ')))
-          : h('p', { class: 'muted small' }, "Nobody's working on it right now: ", h('span', { class: 'link', onclick: (e) => { e.preventDefault(); e.stopPropagation(); go('#/lead'); } }, 'ask the Lead')));
+      const playable = STAGES.indexOf(g.stage) >= STAGES.indexOf('built');
+      return h('div', { class: 'game-row game-card' },
+        h('a', { class: 'game-link', href: '#/games/' + g.slug },
+          h('div', { class: 'row gap between' }, h('strong', {}, g.name), h('span', { class: 'row gap' },
+            g.version != null ? h('span', { class: 'muted small' }, 'v' + g.version) : null)),
+          g.stage ? stageDots(g.stage) : null,
+          g.nextStep ? h('p', { class: 'muted small' }, 'Now: ' + g.nextStep) : null,
+          working.length ? h('div', { class: 'row gap' }, [...new Set(working)].map((id) => avatar(id, 22)), h('span', { class: 'muted small' }, 'working on it: ' + [...new Set(working)].map(roleLabel).join(', ')))
+            : h('p', { class: 'muted small' }, "Nobody's working on it right now: ", h('span', { class: 'link', onclick: (e) => { e.preventDefault(); e.stopPropagation(); go('#/lead'); } }, 'ask the Lead'))),
+        playable ? playButton(g) : null);
     }) : h('p', { class: 'muted' }, 'No games yet.'));
 }
 
@@ -202,9 +262,9 @@ function freshnessCard() {
 }
 
 export function render() {
-  const open = [...store.asks.filter(needsDecision), ...store.tasks.filter(isBackToYou)];
-  const working = store.tasks.filter((t) => t.state === 'working');
-  const queued = store.tasks.filter((t) => t.state === 'queued');
+  const open = [...store.asks.filter((a) => needsDecision(a) && inScope(a)), ...store.tasks.filter((t) => isBackToYou(t) && inScope(t))];
+  const working = store.tasks.filter((t) => t.state === 'working' && inScope(t));
+  const queued = store.tasks.filter((t) => t.state === 'queued' && inScope(t));
   const g = greeting();
   const paused = !!store.settings.paused;
 
@@ -226,10 +286,10 @@ export function render() {
   return h('div', { class: 'page' },
     h('header', { class: 'greet' }, h('h1', {}, g.name ? [g.hello + ', ', h('span', { class: 'grad-text' }, g.name)] : g.hello), h('p', { class: 'greet-date muted' }, g.when)),
     h('div', { class: 'chips' },
-      h('a', { class: 'chip', 'data-tone': open.length ? 'need' : null, href: '#/review' }, h('b', {}, open.length), ' need you'),
-      h('a', { class: 'chip', 'data-tone': working.length ? 'work' : null, href: '#/team' }, h('b', {}, working.length), ' working'),
-      h('a', { class: 'chip', href: '#/tasks' }, h('b', {}, queued.length), ' queued'),
-      h('span', { class: 'chip static' }, 'last change ', h('b', {}, agoText(new Date(store.lastChange).toISOString())))),
+      h('a', { class: 'chip', 'data-tone': open.length ? 'need' : null, href: '#/review' }, open.length + ' need you'),
+      h('a', { class: 'chip', 'data-tone': working.length ? 'work' : null, href: '#/team' }, working.length + ' working'),
+      h('a', { class: 'chip', href: '#/tasks' }, queued.length + ' queued'),
+      h('span', { class: 'chip static' }, 'last change ' + agoText(new Date(store.lastChange).toISOString()))),
     ask,
     h('div', { class: 'home-grid' },
       h('section', { class: 'stack' }, h('h2', { class: 'sec-h' }, 'Needs you', open.length ? h('span', { class: 'count', 'data-tone': 'amber' }, open.length) : null), needsYou()),

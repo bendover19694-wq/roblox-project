@@ -341,9 +341,40 @@ export const plain = (s) => String(s || '')
   .trim();
 
 export const gameName = (slug) => (store.gameList.find((g) => g.slug === slug) || store.games.find((g) => g.slug === slug))?.name || slug || '';
+
+// ---------- game scope: the topbar switcher narrows Home, Tasks, Review and Pitches to one game ----------
+const knownGames = () => (store.gameList.length ? store.gameList : store.games);
+let scopeSlug = null;
+try { scopeSlug = localStorage.getItem('hq-scope') || null; } catch { /* private mode: scope lasts for this page only */ }
+// A saved scope for a game that no longer exists must not hide everything, so it reads as "all games" until the list says otherwise.
+export function scope() {
+  const list = knownGames();
+  return scopeSlug && (!list.length || list.some((g) => g.slug === scopeSlug)) ? scopeSlug : null;
+}
+export function setScope(slug) {
+  scopeSlug = slug || null;
+  try { if (scopeSlug) localStorage.setItem('hq-scope', scopeSlug); else localStorage.removeItem('hq-scope'); } catch { /* not persisted */ }
+  notify();
+}
+// The game an item belongs to: a task or pitch carries it; an ask takes its task's game. Empty when it has none.
+// A pitch's `game` is an object (howItPlays, first60s...), not a slug, so only a string counts.
+export const itemGame = (item) => (typeof item?.game === 'string' && item.game) || (item?.taskId ? store.tasks.find((t) => t.id === item.taskId)?.game : '') || '';
+export function inScope(item) {
+  const s = scope();
+  if (!s) return true;
+  const g = itemGame(item);
+  return !g || g === s;
+}
+// Role display order for the sidebar team grid and Live now; ids not listed keep their place at the end.
+const ROSTER = ['lead', 'scout', 'architect', 'librarian', 'builder', 'ui', 'world', 'playtester', 'kid-tester', 'economy', 'thumbnails', 'producer', 'liveops', 'merchant', 'reviewer', 'designer'];
+export function rosterOrder(roles) {
+  const at = (r) => { const i = ROSTER.indexOf(r.id ?? r); return i < 0 ? ROSTER.length : i; };
+  return [...roles].sort((a, b) => at(a) - at(b));
+}
+
 export function creatorLabel(c) {
   if (!c || c === 'owner') return 'you';
-  if (c === 'lead') return 'the Lead';
+  if (c === 'lead') return 'Lead';
   if (c === 'schedule') return 'a schedule';
   if (c === 'gate') return 'a check';
   return roleById(c) ? roleLabel(c) : c;
