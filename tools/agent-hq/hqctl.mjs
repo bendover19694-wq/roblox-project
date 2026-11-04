@@ -25,6 +25,8 @@ Every command that touches a task (note, ask, media, complete, learn, pitch, ide
   node tools/agent-hq/hqctl.mjs knowledge-search <words> [--limit N]       search the local Roblox notes (LihFolk, Creator docs, cards, research); prints text
   node tools/agent-hq/hqctl.mjs knowledge-read <source> <path> [--section <heading words>]   read one note found by knowledge-search
   node tools/agent-hq/hqctl.mjs notebook [--limit N]                       read the shared notebook; prints text
+  node tools/agent-hq/hqctl.mjs notebook-section <id>                      read one game bible section (G1.3 = 3D models)
+  node tools/agent-hq/hqctl.mjs notebook-mirror <file> --lane-token <t> [--source <docUrl>]  store the exported Google Doc text (lane worker)
   node tools/agent-hq/hqctl.mjs notebook-add <text> --task <taskId>        add one short note to the shared notebook
   node tools/agent-hq/hqctl.mjs --help
 `;
@@ -34,7 +36,7 @@ const flags = new Set();
 const pos = [];
 const opt = {}; // --state, --task, --tags, --date, --section, --limit
 for (let i = 0; i < argv.length; i++) {
-  if (['--state', '--task', '--tags', '--date', '--token', '--section', '--limit'].includes(argv[i])) opt[argv[i].slice(2)] = argv[++i];
+  if (['--state', '--task', '--tags', '--date', '--token', '--section', '--limit', '--lane-token', '--source'].includes(argv[i])) opt[argv[i].slice(2)] = argv[++i];
   else if (argv[i] === '--manual') flags.add('manual');
   else if (argv[i] === '--help' || argv[i] === '-h') flags.add('help');
   else pos.push(argv[i]);
@@ -58,7 +60,7 @@ if (opt.token) process.env.HQ_TASK_TOKEN = opt.token;
 const { handlers, api } = await import('./mcp.mjs');
 
 const [cmd, ...a] = pos;
-const arity = { gate: 1, next: 1, note: 2, ask: 4, media: 3, complete: 2, learn: 2, pitch: 1, idea: 1, market: 0, stage: 3, asset: 4, metric: 3, 'knowledge-search': 1, 'knowledge-read': 2, notebook: 0, 'notebook-add': 1 };
+const arity = { gate: 1, next: 1, note: 2, ask: 4, media: 3, complete: 2, learn: 2, pitch: 1, idea: 1, market: 0, stage: 3, asset: 4, metric: 3, 'knowledge-search': 1, 'knowledge-read': 2, notebook: 0, 'notebook-add': 1, 'notebook-section': 1, 'notebook-mirror': 1 };
 if (!(cmd in arity)) fail(`unknown command "${cmd}". Run with --help.`);
 const TASK_COMMANDS = ['notebook-add', 'note', 'ask', 'media', 'complete', 'learn', 'pitch', 'idea', 'stage', 'asset', 'metric'];
 if (TASK_COMMANDS.includes(cmd) && !process.env.HQ_TASK_TOKEN) fail(`"${cmd}" needs your task token: add --token <taskToken> (it is in your brief) or set HQ_TASK_TOKEN.`);
@@ -90,6 +92,10 @@ try {
     text = await handlers.hq_knowledge_search({ q: a[0], ...(opt.limit ? { limit: Number(opt.limit) } : {}) });
   } else if (cmd === 'notebook') {
     text = await handlers.hq_notebook_read({ ...(opt.limit ? { limit: Number(opt.limit) } : {}) });
+  } else if (cmd === 'notebook-section') {
+    text = await handlers.hq_notebook_read({ section: a[0] });
+  } else if (cmd === 'notebook-mirror') {
+    text = await handlers.hq_notebook_mirror({ markdown: fs.readFileSync(a[0], 'utf8'), laneToken: opt['lane-token'], ...(opt.source ? { source: opt.source } : {}) });
   } else if (cmd === 'notebook-add') {
     res = await handlers.hq_notebook_add({ taskId: opt.task, text: a[0] });
   } else if (cmd === 'knowledge-read') {

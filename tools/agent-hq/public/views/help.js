@@ -19,6 +19,7 @@ const SECTIONS = [
     ['Market', 'Roblox charts, benchmarks and breakouts from public data, refreshed on a schedule.'],
     ['Library', 'Assets, the systems catalogue, the knowledge vault and skills.'],
     ['Pro', 'Rising games, chart history, score my idea, weekly ideas and asset packs, all from your own HQ data.'],
+    ['Full guide', 'The owner's guide is tools/agent-hq/GUIDE.md in the repo: every page, the notebook, usage savers and troubleshooting.'],
     ['Settings', 'How many agents run at once, which model each uses, worker lanes and schedules.'],
   ]],
   ['Live telemetry', [

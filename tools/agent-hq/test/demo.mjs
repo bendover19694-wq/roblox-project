@@ -1,6 +1,7 @@
 // Demo studio for looking at the UI: real server, temp state, no agents running, no network. Run: npm run demo (HQ_PORT, default 4400).
 // The signed-in link is written to <state>/demo-url.txt, never printed.
 // Everything here is about Run a Space Agency. Market numbers, spin-off pitches and idea scores are SAMPLE data, labelled as such.
+import { parseSections } from '../notebook-doc.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -136,6 +137,15 @@ const note = (who, role, text, agoMs) => db.prepare('INSERT INTO notebook (id, a
 note('agent', 'economy', 'Sample note: the first rocket should cost about 40 seconds of play. Anything under 25 felt free in the sample runs.', 5 * HOUR);
 note('agent', 'kid-tester', 'Sample note: the countdown text was too small to read on a phone. Needs a bigger font before the next test.', 3 * HOUR);
 note('owner', null, 'Sample note: no paid luck, ever. Cosmetics and boosts only.', HOUR);
+
+// ---- SAMPLE game bible mirror (invented text, labelled sample; in real use the hourly worker mirrors the owner's Google Doc) ----
+fs.writeFileSync(path.join(stateDir, 'notebook-doc.json'), JSON.stringify({ syncedAt: ago(20 * 60 * 1000), source: null, sections: parseSections([
+  '# **S0 Studio rules**', 'Sample: small team, Mild maturity, no paid luck.',
+  '# **G1 Run a Space Agency**', 'Sample game card text.',
+  '## **G1.1 World and characters**', 'Sample: a bright cartoon solar system. The crew are friendly space mice.',
+  '## **G1.2 Map**', 'Sample: Earth, Moon, Mars, Titan on one stylised map.',
+  '## **G1.3 3D models**', 'Sample list of rockets.', '### **G1.3.1 Starter rocket**', 'Sample: round and chunky, red nose.',
+  '## **G1.4 Art and UI style**', 'Sample: **big** rounded shapes, bold colours.'].join('\n\n')) }));
 
 // HQ_DEMO_EXTRA=1 adds the rarer Home states (a held ask, a try-it ask, a failed gate, a built game) so they can be looked at.
 if (process.env.HQ_DEMO_EXTRA) {

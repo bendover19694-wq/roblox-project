@@ -178,7 +178,7 @@ test('Visual bar: pinned house references are listed for designer, thumbnails an
     assert.ok(b.includes('### UI icons\n- .agent-hq/media/uploads/ref1.png (chunky outlines)'));
     assert.ok(b.includes('### Screens\n- assets/concepts/t_9-1.png'));
     assert.ok(b.includes('### Packaging\n- .agent-hq/media/uploads/pack.png'));
-    assert.ok(!b.includes('secret') && !b.includes('3D models'));
+    assert.ok(!b.includes('secret') && !b.includes('### 3D models'));
     assert.ok(b.indexOf('## House references') < b.indexOf('## Your task'));
   }
   for (const role of ['builder', 'reviewer', 'lead']) assert.doesNotMatch(buildBrief({ task, role, root, references }), /House references/);

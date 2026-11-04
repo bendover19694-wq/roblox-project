@@ -103,11 +103,11 @@ test('initialize echoes protocol version', async () => {
   assert.equal(r.result.serverInfo.name, 'agent-hq');
 });
 
-test('tools/list has the 25 tools', async () => {
-  const r = await task.rpc('tools/list', {});
+test('tools/list has the 26 tools', async () => {
+  const r = await ide.rpc('tools/list', {});
   assert.deepEqual(r.result.tools.map((t) => t.name).sort(), [
     'hq_add_media', 'hq_ask_owner', 'hq_asset_add', 'hq_catalog_fetch', 'hq_catalog_search', 'hq_claim_task', 'hq_complete', 'hq_create_task', 'hq_idea_score', 'hq_knowledge_read', 'hq_knowledge_search', 'hq_lane_gate',
-    'hq_learn', 'hq_link_read', 'hq_link_say', 'hq_link_share', 'hq_list_tasks', 'hq_metric', 'hq_next_task', 'hq_note', 'hq_notebook_add', 'hq_notebook_read', 'hq_pitch', 'hq_stage_request', 'hq_vault',
+    'hq_learn', 'hq_link_read', 'hq_link_say', 'hq_link_share', 'hq_list_tasks', 'hq_metric', 'hq_next_task', 'hq_note', 'hq_notebook_add', 'hq_notebook_mirror', 'hq_notebook_read', 'hq_pitch', 'hq_stage_request', 'hq_vault',
   ]);
 });
 

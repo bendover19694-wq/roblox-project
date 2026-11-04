@@ -1,5 +1,7 @@
 # Agent HQ
 
+Full owner's guide: [GUIDE.md](GUIDE.md).
+
 A local control room for the Roblox agent team. You message each of 16 role agents individually in a Teams-style chat, approve their output in one inbox ("Needs you"), and watch them work. No npm dependencies, only Node 24+. No `claude` or `agy` command line needed.
 
 ## Start
@@ -110,7 +112,7 @@ With "Send art to Antigravity" on, a new task whose title is about an icon, thum
 
 ## Notebook
 
-A short shared log of what the owner and agents learned. The owner writes in the Notebook page; agents read it with `hq_notebook_read` and add with `hq_notebook_add` (their task token is checked; agents cannot delete). Text is up to 2000 characters; the newest 1000 entries are kept. `hqctl notebook` and `hqctl notebook-add <text> --task <id>` do the same. If a Google Doc link is set in Settings the hq-worker mirrors entries to it; HQ itself never calls Google.
+A short shared log of what the owner and agents learned. The owner writes in the Notebook page; agents read it with `hq_notebook_read` and add with `hq_notebook_add` (their task token is checked; agents cannot delete). Text is up to 2000 characters; the newest 1000 entries are kept. `hqctl notebook` and `hqctl notebook-add <text> --task <id>` do the same. If a Google Doc link is set in Settings the hq-worker mirrors entries to it; HQ itself never calls Google. The game bible (the Doc split by section IDs such as G1.3) is mirrored by the worker with `hq_notebook_mirror` (`hqctl notebook-mirror <file>`) and read one section at a time with `hq_notebook_read {section}` (`hqctl notebook-section <id>`); the Notebook page lists the sections. Routes: `GET /api/notebook/doc`, `GET /api/notebook/doc/:id`, `POST /api/notebook/doc` (owner or lane worker).
 
 ## Thumbnail tester
 

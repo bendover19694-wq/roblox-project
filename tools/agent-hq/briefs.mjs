@@ -247,6 +247,7 @@ function usageSection(engine, settings = {}) {
   if (s.cheapLookups && engine === 'app') lines.push('For vault and docs lookups, spawn the `lihfolk:lihfolk-lookup` subagent on a small model instead of reading notes yourself.');
   lines.push(s.blenderFallback ? 'Blender is on, as the last step only: after the catalog, asset packs and Claude Design have failed.' : 'Blender is off: do not open Blender.');
   lines.push('Read hq_notebook_read at the start, and add a short hq_notebook_add entry when you learn something the owner or other agents need.');
+  lines.push('The game bible is split by section. Read only what your task needs, for example hq_notebook_read {section: "G1.3"} for 3D models, G1.1 for world and characters, G1.2 for the map, G1.4 for style. Never read the whole bible.');
   return `## Usage and notebook\n${lines.map((l) => `- ${l}`).join('\n')}`;
 }
 

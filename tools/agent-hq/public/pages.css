@@ -218,3 +218,10 @@ html[data-theme="light"] .count[data-tone="blue"] { background: var(--info-text)
 html[data-theme="light"] .count[data-tone="violet"] { background: var(--accent); color: #fff; }
 html[data-theme="light"] .switcher .count, html[data-theme="light"] .strip-item .count { background: var(--accent-soft); color: var(--accent); }
 html[data-theme="light"] .btn.primary:disabled { background: linear-gradient(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.72)), var(--grad); color: var(--faint); }
+
+/* Notebook: game bible panel */
+.nb-bible-h { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.nb-sec-btn { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 8px; text-align: left; background: none; border: 0; border-radius: 8px; color: inherit; font: inherit; cursor: pointer; }
+.nb-sec-btn:hover { background: var(--panel-2); }
+.nb-sec-btn[aria-expanded="true"] { background: var(--panel-2); }
+.nb-sec-body { padding: 4px 12px 12px 30px; overflow-wrap: anywhere; }

@@ -747,7 +747,7 @@ ${task.body}`;
     const blocked = decide();
     if (blocked) { touchLane(engine, {}); return blocked; }
     touchLane(engine, { lastRunAt: nowIso() });
-    return out(true, 'ok');
+    return { ...out(true, 'ok'), laneToken: nb.issueLaneToken(engine) }; // for hq_notebook_mirror
   });
 
   // ---- the Visual bar: approved images pinned as house references ----
@@ -1170,7 +1170,7 @@ ${task.body}`;
   route('GET', /^\/api\/readiness$/, () => readiness());
   const play = createPlay({ root, stateDir, ...playOpts });
   route('POST', /^\/api\/games\/([^/]+)\/play$/, ({ m }) => play(needGame(m[1]).slug));
-  mountNotebook(route, { db, str, bad, isObj, agentTask, gameSlugs, emit, getDoc: () => settingsAll().notebookDoc, HttpError }); // /api/notebook // GET /api/knowledge/status, /search, /read
+  const nb = mountNotebook(route, { db, str, bad, isObj, agentTask, gameSlugs, emit, getDoc: () => settingsAll().notebookDoc, HttpError, stateDir, touchLane, now }); // /api/notebook // GET /api/knowledge/status, /search, /read
 
   // title patterns across everything on the charts right now
   route('GET', /^\/api\/market\/titles$/, () => {
