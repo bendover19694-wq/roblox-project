@@ -220,3 +220,6 @@ node test/smoke.mjs      # end to end with the echo engine, prints PASS
 
 ## References before 3D work
 When a world, librarian, builder, designer or ui task looks like 3D model work (3D, mesh, prop, vehicle, creature, statue, low poly, Blender, sculpt), HQ holds it and queues "Reference sheet: <title>" for the designer first. The designer researches the object, attaches 4 or more views on a plain background, and describes size, parts, materials, budget and style. The held task is then queued once, with the image paths and description added. Settings, Art: "Find references before 3D work", "References approval" (wait for your OK, or go ahead on its own) and "References lane" (Antigravity, or ChatGPT on the app lane). Code is in `model-refs.mjs`.
+
+
+Games: the Lead can create one (`hq_game_create`), tag tasks with `game`, and move work with `hq_task_move` or `POST /api/tasks/:id/game` (moves child and gate tasks too). Code is in `games-admin.mjs`.

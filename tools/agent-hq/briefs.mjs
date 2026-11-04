@@ -114,7 +114,7 @@ const ASSET_INDEX =
 const APP_NOTE = "Running in the Claude desktop app: stay inside this role's files and tools.";
 
 const DELEGATION =
-  'Lead only: hq_create_task to delegate work to the roles below, one task per role, with a clear title and body; never do specialist work yourself.';
+  'Lead only: hq_create_task (pass game), one task per role, clear title and body; new game: hq_game_create first; wrong game: hq_task_move. Never do specialist work yourself.';
 
 const isPath = (s) => s.includes('/');
 function attachedImages(task) {

@@ -55,7 +55,7 @@ To add a game, copy the `G1` block and number it `G2` with the same sub-numbers.
 
 Writing in the Doc: write under the right heading. Keep the ID at the start of the heading. Do not rename IDs, agents look sections up by them. Agents only append rows to the log tables (`G1.9` or `S4`).
 
-The Doc: [Agent HQ Notebook](https://docs.google.com/document/d/1298Oz9RoRi67ZJHx7eD10moOtqWGXqAJLFpSInVnGNM/edit). Paste this link under Settings, Notebook.
+The Doc: [Agent HQ Notebook](https://docs.google.com/document/d/1iRL3enkABlllkXPBrSgrDA2bFgEYvbaICuPaK9XWcCo/edit). Paste this link under Settings, Notebook.
 
 How sync works: the hourly worker reads the Doc with the Drive connector and sends the text to HQ (`hq_notebook_mirror`), using the short-lived lane token the lane gate gives it. Agents working on a task cannot sync; only the owner or the worker can.
 
@@ -77,6 +77,9 @@ In Settings you can turn a role off and add up to 12 extra rules and 8 extra ski
 
 ## Readiness
 Settings, Readiness checks Python, the Claude CLI and rojo, each knowledge folder and every skill each role names. It lists what is missing by name. Fix those first when an agent says a tool is not found.
+
+## Several games
+Ask the Lead "Create a new game call it Top Eleven" and it makes the game, then files every task under it. Work under the wrong game: open the task and change its Game; its follow-up tasks move with it. With All games picked, Home groups Needs you by game.
 
 ## Play the newest build
 On a game, press Play. HQ builds the project with rojo into `.agent-hq/builds/` and opens the file. It never publishes. If rojo or the project file is missing, you get a plain message.

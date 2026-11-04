@@ -15,7 +15,7 @@ const CHROME = process.env.HQ_CHROME || (process.platform === 'win32' ? 'C:/Prog
 const SANDBOX = process.platform === 'linux' ? ['--no-sandbox'] : [];
 const OFFENDERS = Number((process.argv.find((a) => a.startsWith('--offenders=')) || '--offenders=5').split('=')[1]) || 5;
 const DEVICES = {
-  desktop: { dir: 'app', w: 1280, h: 800, scale: 1.5, mobile: false, out: [1920, 1200] },
+  desktop: { dir: 'app', w: Number(process.env.HQ_SHOT_W) || 1280, h: 800, scale: 1.5, mobile: false, out: [Math.round((Number(process.env.HQ_SHOT_W) || 1280) * 1.5), 1200] }, // HQ_SHOT_W: narrower desktop check
   phone: { dir: 'phone', w: 390, h: 763, scale: 3, mobile: true, out: [1170, 2289] },
 };
 const DEFAULTS = [

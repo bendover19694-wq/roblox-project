@@ -15,6 +15,11 @@
 .brand-tag { font-size: 12px; }
 .search-box { flex: none; display: flex; align-items: center; gap: var(--s2); width: 100%; height: 30px; background: var(--input); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 0 var(--s2); color: var(--muted); cursor: pointer; text-align: left; font-size: 13px; transition: border-color 0.18s, color 0.18s; }
 .search-box:hover { border-color: rgba(255, 255, 255, 0.28); color: var(--text); }
+.search-box { min-width: 0; white-space: nowrap; }
+.search-box .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.search-box kbd { flex: none; }
+.side { container-type: inline-size; }
+@container (max-width: 210px) { .search-box kbd { display: none; } }
 kbd { font: 12px var(--mono); background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; color: var(--muted); }
 .nav { display: flex; flex-direction: column; gap: 2px; flex: none; }
 .nav-group { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: #8b8e97; padding: var(--s4) var(--s2) var(--s1); }

@@ -1,6 +1,6 @@
 // Tasks list and task drawer.
 import { h, store, api, act, ic, btn, empty, pageHead, statePill, roleLabel, avatar, ago, fmtTime, engineLabel, selectEl, plain, gameName, creatorLabel, mediaUrl,
-  openModal, openDrawer, subscribe, onLog, upsert, notify, go, loadState, toast, inScope } from './core.js';
+  openModal, openDrawer, subscribe, onLog, upsert, notify, go, loadState, toast, inScope, scope } from './core.js';
 import { taskForm } from './taskform.js';
 
 let roleFilter = '';
@@ -29,11 +29,12 @@ function startedText(t) {
 
 export function taskRow(t) {
   const gate = t.createdBy === 'gate' || t.gateFor;
-  const meta = [roleLabel(t.role), 'from ' + creatorLabel(t.createdBy), t.game ? gameName(t.game) : null, startedText(t)].filter(Boolean).join(' · ');
+  const meta = [roleLabel(t.role), 'from ' + creatorLabel(t.createdBy), startedText(t)].filter(Boolean).join(' · ');
   return h('button', { type: 'button', class: 'trow', 'data-state': t.state, onclick: () => openTaskDrawer(t.id) },
     avatar(t.role, 30),
     h('span', { class: 'trow-main' },
       h('span', { class: 'trow-title' }, plain(t.title),
+        !scope() && t.game ? h('span', { class: 'chip static game-chip', title: 'Game' }, gameName(t.game)) : null,
         gate ? h('span', { class: 'chip static', title: 'Automatic check of another task' }, 'gate') : null,
         t.attempt > 1 ? h('span', { class: 'chip static', title: 'Rework round' }, 'attempt ' + t.attempt) : null,
         t.reworkCount > 0 ? h('span', { class: 'chip static', title: 'Times sent back for rework' }, `sent back ${t.reworkCount}x`) : null,
@@ -139,14 +140,18 @@ export function openTaskDrawer(id) {
       ['Role', roleLabel(t.role)], ['Engine', engineLabel(t.engine) + (t.model ? ' / ' + t.model : '')],
       ['Created', fmtTime(t.createdAt) + ' by ' + t.createdBy], ['Started', fmtTime(t.startedAt) || 'not yet'],
       ['Ended', fmtTime(t.endedAt) || 'not yet'], ['Cost', t.costUsd != null ? '$' + Number(t.costUsd).toFixed(3) : 'unknown'],
-      t.game ? ['Game', t.game] : null, t.needsStudio ? ['Studio', 'needed'] : null, t.parentId ? ['Parent', t.parentId] : null, t.gateFor ? ['Checks', t.gateFor] : null, t.attempt > 1 ? ['Attempt', String(t.attempt)] : null, t.reworkCount > 0 ? ['Sent back', `${t.reworkCount} time${t.reworkCount === 1 ? '' : 's'} for rework`] : null,
+      t.needsStudio ? ['Studio', 'needed'] : null, t.parentId ? ['Parent', t.parentId] : null, t.gateFor ? ['Checks', t.gateFor] : null, t.attempt > 1 ? ['Attempt', String(t.attempt)] : null, t.reworkCount > 0 ? ['Sent back', `${t.reworkCount} time${t.reworkCount === 1 ? '' : 's'} for rework`] : null,
     ].filter(Boolean);
     const actions = h('div', { class: 'row gap wrap' },
       ['queued', 'working'].includes(t.state) ? btn('Cancel', () => act(() => api('POST', `/api/tasks/${id}/cancel`), 'Canceled'), { kind: 'danger', icon: 'x' }) : null,
       ['failed', 'canceled', 'review', 'done'].includes(t.state) ? btn('Retry', () => act(() => api('POST', `/api/tasks/${id}/retry`), 'Back in the queue'), { icon: 'refresh' }) : null);
+    const gameList = store.gameList.length ? store.gameList : store.games;
+    const gamePick = h('label', { class: 'row gap game-pick' }, h('span', { class: 'muted' }, 'Game'),
+      selectEl([{ value: '', label: 'No game' }, ...gameList.map((g) => ({ value: g.slug, label: g.name }))], t.game || '', (v) => act(() => api('POST', `/api/tasks/${id}/game`, { game: v || null }), 'Moved with its follow-up tasks'), 'sm'));
     head.replaceChildren(
       h('div', { class: 'row gap between' }, h('h3', { class: 'drawer-title' }, plain(t.title)), statePill(t.state)),
       h('dl', { class: 'meta' }, meta.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])),
+      gamePick,
       t.body ? h('div', { class: 'block' }, h('h4', {}, 'Brief'), h('p', { class: 'pre' }, t.body)) : null,
       Array.isArray(t.attachPaths) && t.attachPaths.length ? h('div', { class: 'block' }, h('h4', {}, 'Attached'), h('div', { class: 'attach-grid' }, t.attachPaths.map((p) => h('a', { href: mediaUrl(p), target: '_blank', rel: 'noopener' }, h('img', { class: 'md-img', src: mediaUrl(p), alt: 'Attached screenshot', loading: 'lazy' }))))) : null,
       t.summary ? h('div', { class: 'block' }, h('h4', {}, 'Summary'), h('p', { class: 'pre' }, t.summary)) : null,

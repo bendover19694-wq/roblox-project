@@ -1,5 +1,5 @@
 // Agent HQ server: HTTP API, SSE, static files. Zero dependencies.
-import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs';
+import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { mountGamesAdmin } from './games-admin.mjs';
 import { createAssetCatalog, mountCatalog, CATALOG_OWNER_ONLY } from './catalog.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -377,7 +377,7 @@ ${task.body}`;
   const route = (method, re, fn, opts = {}) => routes.push([method, re, fn, opts]);
 
   route('GET', /^\/api\/health$/, () => ({ ok: true }));
-  mountLink(route, link, { str, bad, isObj, agentTask, HttpError });
+  mountLink(route, link, { str, bad, isObj, agentTask, HttpError }); mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError });
 
   route('GET', /^\/api\/state$/, () => {
     const asks = D.listAsks(db);
@@ -412,7 +412,7 @@ ${task.body}`;
     if (parentId && !TASK_ID.test(parentId)) throw bad('parentId is not a task id');
     const slugs = gameSlugs();
     // With a single game there is nothing to choose: file the task under it so Games > Open work shows it.
-    const game = body.game === undefined || body.game === null || body.game === '' ? (slugs.length === 1 ? slugs[0] : null) : oneOf(body.game, 'game', slugs);
+    const game = body.game === undefined || body.game === null || body.game === '' ? (maker?.game && slugs.includes(maker.game) ? maker.game : slugs.length === 1 ? slugs[0] : null) : oneOf(body.game, 'game', slugs);
     return queueTask({
       title: str(body.title, 'title', { max: 200, required: true }),
       body: str(body.body, 'body', { max: 20000 }) ?? '',

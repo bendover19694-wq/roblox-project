@@ -28,8 +28,10 @@ try {
   $head = (G rev-parse HEAD).Trim()
   $new = (G rev-parse "origin/$b").Trim()
   if ($head -eq $new) { "Agent HQ is up to date ($($new.Substring(0,7)))."; return }
-  if (G status --porcelain) { 'Local changes in the app copy: not updating, staying on the current version.'; return }
-  Step "checkout --detach origin/$b ($($head.Substring(0,7)) to $($new.Substring(0,7)))" { G checkout --quiet --detach "origin/$b" | Out-Null }
+  # Agent work (games, assets, memory) stays in the app copy. Git carries it across the checkout and
+  # refuses only when the update would overwrite one of those changed files; then stay on this version.
+  try { Step "checkout --detach origin/$b ($($head.Substring(0,7)) to $($new.Substring(0,7)))" { G checkout --quiet --detach "origin/$b" | Out-Null } }
+  catch { 'The update would overwrite local work in the app copy: staying on the current version.'; return }
   # Stop only this copy's server; keepalive.mjs (or the next launch) restarts it on the new code.
   $key = ([IO.Path]::GetFullPath($AppDir)).TrimEnd('\', '/').ToLowerInvariant().Replace('\', '/')
   $mine = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object {

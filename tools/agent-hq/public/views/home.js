@@ -1,4 +1,4 @@
-import { h, store, api, act, ic, btn, empty, roleLabel, avatar, roleStatus, ago, fmtTime, go, plain, gameName, studioLocks, loadFreshness, loadState, toast, notify, inScope, rosterOrder } from './core.js';
+import { h, store, api, act, ic, btn, empty, roleLabel, avatar, roleStatus, ago, fmtTime, go, plain, gameName, studioLocks, loadFreshness, loadState, toast, notify, inScope, rosterOrder, scope, itemGame } from './core.js';
 import { askCard, answer, isMediaAsk, needsDecision, verdictOf, noteOf } from './review.js';
 import { newTaskModal, openTaskDrawer, isBackToYou } from './tasks.js';
 
@@ -160,22 +160,38 @@ function needsYou() {
   const media = open.filter(isMediaAsk);
   const rest = open.filter((a) => !isMediaAsk(a));
   const cards = [];
+  const gm = new Map(); // card -> game slug, so All games can group by game
+  const tag = (card, item) => { gm.set(card, itemGame(item)); return card; };
   // A task whose review ask is already on Home is decided there, so it is not shown twice.
-  for (const t of store.tasks.filter((x) => isBackToYou(x) && inScope(x))) if (!open.some((a) => a.kind === 'review' && a.taskId === t.id)) cards.push(doneCard({ task: t }));
-  for (const a of rest) if (a.kind === 'review') cards.push(doneCard({ ask: a }));
-  if (media.length) cards.push(reviewCard(media));
+  for (const t of store.tasks.filter((x) => isBackToYou(x) && inScope(x))) if (!open.some((a) => a.kind === 'review' && a.taskId === t.id)) cards.push(tag(doneCard({ task: t }), t));
+  for (const a of rest) if (a.kind === 'review') cards.push(tag(doneCard({ ask: a }), a));
+  if (media.length) cards.push(tag(reviewCard(media), media[0]));
   const pick = pickCard();
   if (pick) cards.push(pick);
   cards.push(...publishCards());
   for (const a of rest) {
-    if (isGateAsk(a)) cards.push(stuckCard({ role: a.role, title: a.title, why: a.why, ask: a, href: '#/review' }));
-    else if (a.kind === 'try') cards.push(tryCard(a));
-    else if (a.kind !== 'review') cards.push(askCard(a));
+    if (isGateAsk(a)) cards.push(tag(stuckCard({ role: a.role, title: a.title, why: a.why, ask: a, href: '#/review' }), a));
+    else if (a.kind === 'try') cards.push(tag(tryCard(a), a));
+    else if (a.kind !== 'review') cards.push(tag(askCard(a), a));
   }
   for (const { g, r } of stuckStages()) cards.push(stuckCard({ role: r.role, title: `${g.name} keeps coming back from ${STAGE_NAME[r.toStage] || r.toStage}`, why: `The producer has sent it back ${g.reworkCount} times. Look at the evidence and say what happens next.`, href: '#/review/stages' }));
   const later = laterRow();
   if (later) cards.push(later);
-  return cards.length ? cards : [empty('Nothing needs you right now')];
+  if (!cards.length) return [empty('Nothing needs you right now')];
+  return scope() ? cards : groupByGame(cards, gm);
+}
+
+// All games: with items from more than one game, a small header per game (name, count); "No game" last.
+function groupByGame(cards, gm) {
+  const games = new Set([...gm.values()]);
+  if (games.size < 2) return cards;
+  const order = [...store.gameList.map((g) => g.slug).filter((s) => games.has(s)), ...[...games].filter((s) => s && !store.gameList.some((g) => g.slug === s)), ''].filter((s, i, a) => games.has(s) && a.indexOf(s) === i);
+  const out = cards.filter((c) => !gm.has(c));
+  for (const s of order) {
+    const mine = cards.filter((c) => gm.get(c) === s);
+    out.push(h('h3', { class: 'game-group' }, s ? gameName(s) : 'No game', h('span', { class: 'count' }, mine.length)), ...mine);
+  }
+  return out;
 }
 
 // Live now: roles that are busy, in the sidebar team order. With a game picked, only roles with work on that game.

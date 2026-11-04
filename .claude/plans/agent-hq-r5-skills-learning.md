@@ -45,3 +45,21 @@ Do:
 4. Test on temp copies only: make a temp git repo with two commits, a fake OLD folder with a fake `.agent-hq`, and run both scripts with `-WhatIf` and against the temp paths (parameters for every path, defaults pointing at the real ones). Show the output in your report. Do not run against the real OLD folder or the real shortcuts.
 5. GUIDE.md "Start and stop": how the app copy works, that every launch updates to the newest version, how to move to a new branch, where backups go, and how to go back to the old version.
 Done when: both scripts pass `-WhatIf` and the temp-copy run; `npm test` exits 0; your report gives the exact command the lead runs for the real switch.
+
+## Round 5b (owner, 2026-11-04): games the Lead can create, requests organised by game, search bar fit
+
+Live data: the owner asked the Lead "Create a new game call it Top Eleven". The Lead had no way to create a game, and `hq_create_task` has no `game` field, so 23 Top Eleven tasks and their asks landed under Run a Space Agency. Home shows 18 "Needs you" items from both games mixed. The sidebar search box text wraps to two lines on the owner's screen (Windows display scaling, sidebar is narrower in CSS px).
+
+Facts: `POST /api/games` (`server.mjs:773`, owner only today) and `PATCH /api/games/:slug` (`:781`) exist. Tasks carry `game`; asks follow their task's game. Child tasks link by `parentId` (checks, fixes, reworks, changes) and gate tasks by `gateFor`.
+
+### T4 [owner: exec-4] [deps: none] [status: done]
+Files: NEW `APP/games-admin.mjs` (or similar) and `APP/test/games-admin.test.mjs`. EDIT `APP/server.mjs` (mount and owner-only lines only; it must stay at 1417 lines or fewer), `APP/mcp.mjs`, `APP/llm-agent.mjs`, `APP/hqctl.mjs`, `APP/briefs.mjs` (lead lines), `APP/roles.json` (lead rules and doneWhen only), `APP/public/views/home.js`, `APP/public/views/tasks.js`, `APP/public/shell.css`, `APP/public/workspace.css`, `APP/test/mcp.test.mjs` only for the tool count (it must stay under 500 lines), `APP/README.md`, `APP/GUIDE.md`.
+Do:
+1. Lead can create a game: `hq_game_create { name, pitch? }` (lead with its task token only; slug made from the name; refuse a duplicate name with the existing slug in the message). It calls the same create path as `POST /api/games`, posts one owner-visible message "Lead created the game <name>", and returns the game.
+2. Tasks get a game: `hq_create_task` accepts optional `game` (must be a known slug); without it, the new task inherits the lead task's game.
+3. Move work between games: `POST /api/tasks/:id/game { game }` (game is a known slug or null) for the owner, or for the Lead with its task token. Moves the task and every descendant (by `parentId` and `gateFor`, depth limit 6) and returns the moved ids. MCP `hq_task_move { taskIds: [..max 50], game }` (lead only) and `hqctl task-move`. Emit the task updates.
+4. Lead brief and rules: when the owner asks for a new game, create it with `hq_game_create` before planning, and pass `game` on every task for it; if work is under the wrong game, move it with `hq_task_move` and say so in one line.
+5. Owner UI: the task drawer gets a "Game" select (All games list plus "No game") that calls the move route. Home, when the scope is All games and more than one game has items: group "Needs you" by game with a small header (game name, count; "No game" last). Task rows show a small game chip when the scope is All games.
+6. Search bar fit: the sidebar search must stay on one line at any width the sidebar can have and at 125% and 150% Windows scaling. Placeholder truncates with an ellipsis; the Ctrl K hint shrinks or hides when space is tight. Check by rendering at a narrower desktop viewport (for example 1024x700 and 1280x720 CSS px through CDP `Emulation.setDeviceMetricsOverride`, or a `--shot` option you add to `test/visual.mjs`) and looking at the image.
+Tests: lead creates a game (non-lead refused, duplicate refused), create_task with game and inherited game, move route moves descendants and refuses an unknown game and a non-lead agent, owner move works.
+Done when: `npm test` exits 0; `server.mjs` 1417 or fewer; `HQ_SHOT_DIR="C:/Users/aryam/Documents/Agent-HQ-Reference" HQ_SHOT_PORT=4464 node test/visual.mjs --only=home,tasks` exits 0 and you looked at the images, plus the narrow-viewport check of the sidebar. Report under 10 lines.
