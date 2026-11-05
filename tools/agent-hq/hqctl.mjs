@@ -25,6 +25,7 @@ Every command that touches a task (note, ask, media, complete, learn, pitch, ide
   node tools/agent-hq/hqctl.mjs research-save <title> <url> <summary>      keep a web finding for later agents --task <taskId>
   node tools/agent-hq/hqctl.mjs game-create <name> [pitch] --task <taskId>    lead: create a game
   node tools/agent-hq/hqctl.mjs task-move <game|none> <taskId...> --task <leadTaskId>   lead: move tasks and their children to a game
+  node tools/agent-hq/hqctl.mjs game-check <slug>                          run a game's tests, format and lint inside its folder (read only)
   node tools/agent-hq/hqctl.mjs market                                     latest Roblox charts snapshot
   node tools/agent-hq/hqctl.mjs knowledge-search <words> [--limit N]       search the local Roblox notes (LihFolk, Creator docs, cards, research); prints text
   node tools/agent-hq/hqctl.mjs knowledge-read <source> <path> [--section <heading words>]   read one note found by knowledge-search
@@ -64,7 +65,7 @@ if (opt.token) process.env.HQ_TASK_TOKEN = opt.token;
 const { handlers, api } = await import('./mcp.mjs');
 
 const [cmd, ...a] = pos;
-const arity = { gate: 1, next: 1, note: 2, ask: 4, media: 3, complete: 2, learn: 2, pitch: 1, idea: 1, market: 0, stage: 3, asset: 4, metric: 3, 'knowledge-search': 1, 'knowledge-read': 2, notebook: 0, 'notebook-add': 1, 'notebook-section': 1, 'notebook-mirror': 1, 'prefs-propose': 2, 'research-save': 3, 'game-create': 1, 'task-move': 2 };
+const arity = { gate: 1, next: 1, note: 2, ask: 4, media: 3, complete: 2, learn: 2, pitch: 1, idea: 1, market: 0, stage: 3, asset: 4, metric: 3, 'knowledge-search': 1, 'knowledge-read': 2, notebook: 0, 'notebook-add': 1, 'notebook-section': 1, 'notebook-mirror': 1, 'prefs-propose': 2, 'research-save': 3, 'game-create': 1, 'task-move': 2, 'game-check': 1 };
 if (!(cmd in arity)) fail(`unknown command "${cmd}". Run with --help.`);
 const TASK_COMMANDS = ['game-create', 'task-move', 'notebook-add', 'note', 'ask', 'media', 'complete', 'learn', 'pitch', 'idea', 'stage', 'asset', 'metric', 'prefs-propose', 'research-save'];
 if (TASK_COMMANDS.includes(cmd) && !process.env.HQ_TASK_TOKEN) fail(`"${cmd}" needs your task token: add --token <taskToken> (it is in your brief) or set HQ_TASK_TOKEN.`);
@@ -103,6 +104,8 @@ try {
     res = await handlers.hq_task_move({ taskId: opt.task, game: a[0] === 'none' ? null : a[0], taskIds: a.slice(1) });
   } else if (cmd === 'research-save') {
     res = await handlers.hq_research_save({ taskId: opt.task, title: a[0], url: a[1], summary: a[2] });
+  } else if (cmd === 'game-check') {
+    text = await handlers.hq_game_check({ game: a[0] });
   } else if (cmd === 'knowledge-search') {
     text = await handlers.hq_knowledge_search({ q: a[0], ...(opt.limit ? { limit: Number(opt.limit) } : {}) });
   } else if (cmd === 'notebook') {

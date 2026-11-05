@@ -46,7 +46,7 @@ export function gameSection({ task, games, root, sections }) {
     '## Your game',
     `${g.name} (${g.slug}), stage: ${g.stage}.`,
     `Work folder: ${dir === '.' ? 'the repo root (src/)' : `${dir}/`}. Docs: ${at('docs/')}. Rojo project: ${at('default.project.json')}. Game bible chapter: ${gameChapter(sections, g)}.`,
-    `Run tests from the work folder${dir === '.' ? '' : ` (cd ${dir})`}, for example lune run tests/run.`,
+    `Run the checks with hq_game_check {game: "${g.slug}"} (tests, format, lint inside the game folder); do not cd.`,
     "Only change files inside this game's folder unless the task says otherwise; never edit the other game's files.",
   ].join('\n');
 }

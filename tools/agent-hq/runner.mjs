@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { getTask, updateTask, listTasks, createTask, nextRunnable, getSetting, setSetting, issueTaskToken, listReferences } from './db.mjs';
 import { buildBrief, loadRoles } from './briefs.mjs';
 import { detectEngines, spawnEngine } from './engines.mjs';
+import { gameFolder } from './game-context.mjs';
 
 const mcpPath = path.join(import.meta.dirname, 'mcp.mjs');
 const llmAgentPath = path.join(import.meta.dirname, 'llm-agent.mjs');
@@ -64,7 +65,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
           HQ_ROOT: root, HQ_LLM_PROVIDER: engine, HQ_LLM_KEY: llmKey, HQ_LLM_MODEL: model ?? '', HQ_BRIEF_FILE: briefPath,
           HQ_ROLE_JSON: JSON.stringify({ id: role?.id, mode: role?.mode, files: role?.files ?? [], allowedTools: role?.allowedTools ?? [] }) };
       }
-      child = spawnEngine({ engine, exe, brief, model, mcpConfigPath, cwd: root, allowedTools: role?.allowedTools ?? [], env });
+      child = spawnEngine({ engine, exe, brief, model, mcpConfigPath, cwd: root, allowedTools: role?.allowedTools ?? [], files: role?.files ?? [], gameDir: task.game ? gameFolder(root, task.game) : '.', env });
     } catch (e) {
       return fail(task.id, `spawn failed: ${e.message}`);
     }

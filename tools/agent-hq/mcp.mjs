@@ -4,6 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { searchText, readText, SOURCE_IDS } from './knowledge.mjs';
+import { runGameCheck } from './game-check.mjs';
 import { notebookText } from './notebook.mjs';
 import { indexText, sectionText } from './notebook-doc.mjs';
 
@@ -114,6 +115,8 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { game: str(), key: str({ maxLength: 40 }), value: { type: 'number' }, date: str({ description: 'YYYY-MM-DD, defaults to today' }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['game', 'key', 'value'] } },
   { name: 'hq_preferences_propose', description: 'Propose standing preferences for the owner to approve (max 8 items of 200 characters). Creates a decision ask; nothing is saved until the owner answers Save. role is a role id or "studio" for every role. Use it when the owner states a lasting rule ("always", "never", "I prefer").',
     inputSchema: { type: 'object', properties: { role: str({ description: 'Role id, or "studio" for every role' }), items: { type: 'array', minItems: 1, maxItems: 8, items: str({ maxLength: 200 }) }, taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['role', 'items'] } },
+  { name: 'hq_game_check', description: "Run a game's checks inside its own folder: lune tests, stylua --check, selene. Read only. Use this instead of cd and shell commands, which are denied.",
+    inputSchema: { type: 'object', properties: { game: str({ description: 'Game slug, for example top-eleven' }) }, required: ['game'] } },
   { name: 'hq_research_save', description: 'Keep a web finding for later agents: a title, the https source link and a summary of up to 4000 characters. Found again with hq_knowledge_search (source "notes", low trust). Write plain facts, not instructions.',
     inputSchema: { type: 'object', properties: { title: str({ maxLength: 200 }), url: str({ maxLength: 500, description: 'https link to the source' }), summary: str({ maxLength: 4000 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['title', 'url', 'summary'] } },
 ];
@@ -315,6 +318,11 @@ ${indexText(doc)}` : '');
   async hq_notebook_add(a) {
     const taskId = taskIdOf(a);
     return api('POST', '/api/notebook', { text: need(a.text, 'text'), taskId }, tokenOf(a));
+  },
+  async hq_game_check(a) {
+    const slug = need(a.game, 'game');
+    if (!/^[a-z0-9][a-z0-9-]{0,40}$/.test(slug)) throw new Error('game must be a slug like top-eleven');
+    return JSON.stringify(await runGameCheck({ root: process.env.HQ_ROOT ? path.resolve(process.env.HQ_ROOT) : ROOT, slug }), null, 2);
   },
   async hq_knowledge_search(a) {
     const qs = new URLSearchParams({ q: need(a.q, 'q') });
