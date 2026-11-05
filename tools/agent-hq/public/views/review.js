@@ -1,5 +1,5 @@
 // Review screen (images, visual bar, stages) and the shared ask card used by Home and the chats.
-import { h, ic, store, api, act, btn, empty, roleLabel, ago, mediaUrl, plain, gameName, statePill, upsert, notify, loadState, toast, openModal, inScope } from './core.js';
+import { h, ic, store, api, act, btn, empty, roleLabel, ago, mediaUrl, plain, gameName, statePill, upsert, notify, loadState, toast, openModal, inScope, multiGame, byGame, gameHead } from './core.js';
 import { openViewer, isVideo, VERDICT } from './viewer.js';
 import { popMenu } from './menu.js';
 
@@ -232,7 +232,10 @@ function imagesTab() {
   for (const a of base) { const v = verdictOf(a); if (counts[v] != null && !(v === 'open' && isReference(a))) counts[v]++; }
   const shown = base.filter((a) => filter === 'all' || verdictOf(a) === filter);
   const roleIds = [...new Set(store.asks.filter(media).map((a) => a.role))];
-  const sortedGroups = PURPOSES.map(([id, label, icon]) => ({ id, label, icon, items: shown.filter((a) => purposeOf(a) === id) })).filter((g) => g.items.length);
+  // Under All games with several games: one block per game, then the purposes inside it.
+  const purposes = (list) => PURPOSES.map(([id, label, icon]) => ({ id, label, icon, items: list.filter((a) => purposeOf(a) === id) })).filter((g) => g.items.length);
+  const parts = (multiGame() ? byGame(shown) : [['', shown]]).map(([game, list]) => ({ game, groups: purposes(list) })).filter((p) => p.groups.length);
+  const sortedGroups = parts.flatMap((p) => p.groups);
   shownMedia = sortedGroups.flatMap((g) => g.items).filter((a) => a.mediaPath);
   const waitingIds = base.filter((a) => a.state === 'open' && !isReference(a)).map((a) => a.id);
   const otherOpen = filter === 'open' && !agent ? store.asks.filter((a) => a.state === 'open' && !a.superseded && !isMediaAsk(a) && a.kind !== 'review' && !isReference(a) && inScope(a)) : [];
@@ -251,7 +254,8 @@ function imagesTab() {
           h('option', { value: '' }, 'Every agent'), roleIds.map((id) => h('option', { value: id, selected: id === agent }, roleLabel(id)))),
         h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: older, onchange: (e) => { older = e.target.checked; notify(); } }), h('span', {}, 'Older versions')),
         bulk)),
-    sortedGroups.length ? sortedGroups.map((g) => h('section', { class: 'rgroup' }, groupHead(g), h('div', { class: 'rgrid' + (g.items.length <= 2 ? ' few' : '') }, g.items.map((a) => reviewItem(a, opener(a))))))
+    sortedGroups.length ? parts.map((p) => [multiGame() ? gameHead(p.game, p.groups.reduce((n, g) => n + g.items.length, 0)) : null,
+      p.groups.map((g) => h('section', { class: 'rgroup' }, groupHead(g), h('div', { class: 'rgrid' + (g.items.length <= 2 ? ' few' : '') }, g.items.map((a) => reviewItem(a, opener(a))))))])
       : (otherOpen.length ? null : empty(filter === 'open' ? 'Nothing waiting. When an agent makes an image or screenshot for you, it shows up here.' : 'Nothing in this filter')),
     otherOpen.length ? h('section', { class: 'rgroup' }, h('div', { class: 'rgroup-head' }, h('h2', {}, 'Other questions'), h('span', { class: 'rv-n' }, otherOpen.length)),
       h('div', { class: 'stack' }, otherOpen.map(askCard))) : null);

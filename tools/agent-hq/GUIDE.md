@@ -81,6 +81,9 @@ Settings, Readiness checks Python, the Claude CLI and rojo, each knowledge folde
 ## Several games
 Ask the Lead "Create a new game call it Top Eleven" and it makes the game, then files every task under it. Work under the wrong game: open the task and change its Game; its follow-up tasks move with it. With All games picked, Home groups Needs you by game.
 
+## Work organised by game
+HQ knows which game each piece of work is for. A new task gets its game from, in order: the task it follows up, the game picked in the top switcher, or a single game named in its title or details. With All games picked and more than one game, New task has a Game select and Ask the Lead has a "for:" choice; leave it on All games or none and the agent asks the Lead which game it is. Every agent brief starts its game section with the game's work folder, docs, Rojo project and game bible chapter, and says to stay inside that folder. Under All games, Tasks and Review group by game, and Team, Live now and the Lead chat show a game chip. Tasks, "..." menu, Clear finished work deletes done and canceled tasks older than an hour and their answered requests (open work stays).
+
 ## Play the newest build
 On a game, press Play. HQ builds the project with rojo into `.agent-hq/builds/` and opens the file. It never publishes. If rojo or the project file is missing, you get a plain message.
 

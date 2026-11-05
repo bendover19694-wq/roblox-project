@@ -1,5 +1,5 @@
 // Team: Teams-style messenger. Roster on the left, one conversation on the right.
-import { h, store, ic, roleStatus, avatar, ago, plain } from './core.js';
+import { h, store, ic, roleStatus, avatar, ago, plain, scope, gameChip } from './core.js';
 import { chatView } from './chat.js';
 
 export const live = true; // app.js keeps this view mounted so typing is never interrupted
@@ -27,7 +27,7 @@ function rosterRow(r, active) {
     avatar(r.id, 40),
     h('div', { class: 'roster-main' },
       h('div', { class: 'row gap between' },
-        h('span', { class: 'roster-name' }, r.label, th?.unread ? h('span', { class: 'badge inline', 'aria-label': th.unread + ' unread' }, th.unread) : null),
+        h('span', { class: 'roster-name' }, r.label, scope() ? null : gameChip(st.task?.game), th?.unread ? h('span', { class: 'badge inline', 'aria-label': th.unread + ' unread' }, th.unread) : null),
         h('span', { class: 'spill', 'data-tone': PILL[st.state][1] }, PILL[st.state][0])),
       h('div', { class: 'row gap between' },
         h('span', { class: 'roster-detail muted clip' }, detail),
@@ -59,7 +59,7 @@ function build(param) {
     const working = store.tasks.filter((t) => t.state === 'working').length;
     const queued = store.tasks.filter((t) => t.state === 'queued').length;
     const need = store.asks.filter((a) => a.state === 'open').length;
-    const s = JSON.stringify([working, queued, need, param, store.roles.map((r) => { const st = roleStatus(r.id); const l = store.threads[r.id]; return [r.id, st.state, st.queued, st.task?.title, l?.last?.id, l?.unread]; })]);
+    const s = JSON.stringify([working, queued, need, param, store.roles.map((r) => { const st = roleStatus(r.id); const l = store.threads[r.id]; return [r.id, st.state, st.queued, st.task?.title, st.task?.game, l?.last?.id, l?.unread]; })]);
     if (s !== sig) {
       sig = s;
       roster.replaceChildren(

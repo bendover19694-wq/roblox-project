@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { listMessages } from './db.mjs';
+import { listMessages, listGames } from './db.mjs';
+import { gameSection } from './game-context.mjs';
 import { readCorrections } from './corrections.mjs';
 import { prefsFor } from './preferences.mjs';
 import { statsSection } from './feedback.mjs';
@@ -309,7 +310,7 @@ This task only finds references. Build no model here.
 - ${settings.modelRefApproval === 'auto' ? 'The build starts the moment you complete this task, so the description must be complete.' : 'The build waits until the owner approves the sheet.'}`;
 }
 
-export function buildBrief({ task, role, root, db, taskToken, memoryDir, references, settings }) {
+export function buildBrief({ task, role, root, db, taskToken, memoryDir, references, settings, docSections }) {
   const roles = loadRoles();
   const r = typeof role === 'string' ? roles.find((x) => x.id === role) : role;
   if (!r) throw new Error(`unknown role: ${role}`);

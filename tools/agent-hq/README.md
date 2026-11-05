@@ -38,6 +38,9 @@ The page keeps the owner token in that browser's localStorage and removes it fro
 - **Settings** now starts with the worker lanes strip (Claude app worker, Antigravity design lane, last seen), which used to sit on Home.
 - **Phone** (760px wide and below): the sidebar hides. A game strip runs along the top (All games, one tab per game, New game), the page title and New task sit under it, and a bottom bar holds Home, Lead, Tasks, Review and More. More opens a sheet with Team, Games, Pitches, Market, Library, Pro, HQ Link, Settings and Help. Every tap target is at least 44px.
 
+## Game-aware work
+`game-context.mjs` infers a task's game (parent task, the owner's selected game, then a single game named in the text), builds the "## Your game" brief section (work folder, docs, Rojo project, game bible chapter) and serves `POST /api/tasks/clear-finished` (owner only). Under All games the Tasks and Review pages group by game.
+
 ## Live telemetry
 
 The game reports counts and nothing personal: `StatsService` (in `src/server/Services`) folds joins, leaves, purchases, errors and frame rates into aggregates with no user ids, and every minute writes them to a DataStore called `HQStats`. HQ reads that DataStore through Roblox Open Cloud. Nothing is measurable until the game is published and has players (in Studio the writes fail silently).

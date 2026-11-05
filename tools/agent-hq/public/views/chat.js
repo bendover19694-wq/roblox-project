@@ -2,7 +2,7 @@
 // chatView() returns {node, update}; the owner view calls update() on every store change,
 // so the composer is never rebuilt while you type.
 import { h, store, api, act, ic, btn, empty, loadMessages, reloadMessages, markRead, avatar, roleById, roleLabel, roleStatus,
-  engineOf, engineLabel, ago, fmtTime, statePill, openDrawer, upsert, notify, plain, imageFiles, mediaUrl, toast, gameName } from './core.js';
+  engineOf, engineLabel, ago, fmtTime, statePill, openDrawer, upsert, notify, plain, imageFiles, mediaUrl, toast, gameName, gameChip, scope } from './core.js';
 import { markdown } from './library.js';
 import { openTaskDrawer, newTaskModal } from './tasks.js';
 import { askCard, askUi } from './review.js';
@@ -39,7 +39,7 @@ function taskChip(t) {
   const label = h('span', { class: 'grow clip' }, 'Worked through the task');
   const body = h('div', { class: 'worked-body', hidden: true });
   const toggle = h('button', { type: 'button', class: 'worked-head', 'aria-expanded': 'false', title: plain(t.title) },
-    ic('check', 14), label, ic('chevron', 14));
+    ic('check', 14), label, scope() ? null : gameChip(t.game), ic('chevron', 14));
   const paint = (list) => {
     if (list.length) label.textContent = `${t.state === 'working' ? 'Working' : 'Worked'} through ${list.length} step${list.length === 1 ? '' : 's'}`;
     body.replaceChildren(...(list.length ? list.slice(0, 40).map((x) => h('div', { class: 'worked-step' }, x)) : [h('div', { class: 'muted small' }, 'No steps recorded yet')]),
@@ -188,6 +188,7 @@ export function chatView(role, { back = false } = {}) {
     const text = input.value.trim();
     if (!text && !attach.length) { input.focus(); return; }
     const body = { role, text: text || 'See the attached screenshot.' };
+    if (role === 'lead' && scope()) body.game = scope();
     if (attach.length) body.attachPaths = [...attach];
     const m = await act(() => api('POST', '/api/messages', body));
     if (!m) return;

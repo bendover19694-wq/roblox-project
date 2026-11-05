@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { addMessage, createAsk, createPitch, createTask, getGame, latestMarketSnapshots, saveMarketSnapshot, setSetting, updateGame, updateTask } from '../db.mjs';
+import { addMessage, createAsk, createGame, createPitch, createTask, getGame, latestMarketSnapshots, saveMarketSnapshot, setSetting, updateGame, updateTask } from '../db.mjs';
 import { computeBreakouts } from '../market.mjs';
 import { recordPoints, upsertMeta } from '../market-history.mjs';
 import { normalizePitch } from '../pitches.mjs';
@@ -31,7 +31,7 @@ updateGame(db, 'space-agency', { stage: 'designed', nextStep: 'The plans (number
 
 // ---- tasks: finished work waiting for the owner, work in flight, queued work, and done work with a cost ----
 const task = (role, title, state, extra = {}) => {
-  const t = createTask(db, { role, title, body: extra.body ?? '', game: 'space-agency', createdBy: 'lead' });
+  const t = createTask(db, { role, title, body: extra.body ?? '', game: extra.game ?? 'space-agency', createdBy: 'lead' });
   if (state !== 'queued') updateTask(db, t.id, { state, startedAt: ago(extra.startedAgo ?? HOUR), summary: extra.summary ?? null, costUsd: extra.costUsd ?? null });
   return t;
 };
@@ -46,6 +46,14 @@ task('librarian', 'Find 12 rocket models and a launch gantry', 'queued');
 for (const [role, title, days, cost] of [['playtester', 'Playtest build 11: the first session', 1, 0.22], ['builder', 'Fix the countdown that restarted on rejoin', 2, 0.35], ['architect', 'Plan the Titan mission tier', 3, 0.51], ['librarian', 'Register the rocket icons in the asset index', 5, 0.09], ['economy', 'Set the Mars payout curve', 6, 0.14]]) {
   task(role, title, 'done', { startedAgo: days * 24 * HOUR, costUsd: cost, summary: 'Done and checked.' });
 }
+
+// A second SAMPLE game (invented, labelled) so grouping by game shows under All games.
+createGame(db, { slug: 'sample-eleven', name: 'Sample Eleven' });
+const sg = { game: 'sample-eleven' };
+task('ui', 'Sample: lineup screen with drag to swap', 'review', { ...sg, costUsd: 0.2, summary: 'Sample result: a lineup grid where players swap by drag.' });
+task('builder', 'Sample: match clock and half time', 'working', sg);
+task('economy', 'Sample: transfer budget curve', 'queued', sg);
+createAsk(db, { taskId: task('architect', 'Sample: league format', 'review', sg).id, role: 'architect', kind: 'decision', title: 'Sample: eight or twelve teams per league?', why: 'Sample question for the second game.', options: [{ id: '8', label: 'Eight', recommended: true }, { id: '12', label: 'Twelve' }] });
 
 // finished work is linked to its task, as hq_add_media does
 createAsk(db, { role: 'thumbnails', taskId: thumbs.id, kind: 'review', title: 'Use this thumbnail?', why: '', mediaPath: 'assets/marketing/thumbnail_draft.png' });
@@ -150,7 +158,7 @@ fs.writeFileSync(path.join(stateDir, 'notebook-doc.json'), JSON.stringify({ sync
   '## **G1.1 World and characters**', 'Sample: a bright cartoon solar system. The crew are friendly space mice.',
   '## **G1.2 Map**', 'Sample: Earth, Moon, Mars, Titan on one stylised map.',
   '## **G1.3 3D models**', 'Sample list of rockets.', '### **G1.3.1 Starter rocket**', 'Sample: round and chunky, red nose.',
-  '## **G1.4 Art and UI style**', 'Sample: **big** rounded shapes, bold colours.'].join('\n\n')) }));
+  '## **G1.4 Art and UI style**', 'Sample: **big** rounded shapes, bold colours.', '# **G2 Sample Eleven**', 'Sample game card text for the second game.'].join('\n\n')) }));
 
 // HQ_DEMO_EXTRA=1 adds the rarer Home states (a held ask, a try-it ask, a failed gate, a built game) so they can be looked at.
 if (process.env.HQ_DEMO_EXTRA) {

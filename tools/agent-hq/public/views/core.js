@@ -365,6 +365,15 @@ export function inScope(item) {
   const g = itemGame(item);
   return !g || g === s;
 }
+// Under "All games" with more than one game, lists group by game. byGame returns [[slug or '', items]], No game last.
+export const multiGame = () => !scope() && knownGames().length > 1;
+export function byGame(list, gameOf = itemGame) {
+  const m = new Map();
+  for (const x of list) { const g = gameOf(x) || ''; if (!m.has(g)) m.set(g, []); m.get(g).push(x); }
+  return [...m].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : knownGames().findIndex((g) => g.slug === a) - knownGames().findIndex((g) => g.slug === b)));
+}
+export const gameHead = (slug, n) => h('h3', { class: 'game-group' }, slug ? gameName(slug) : 'No game', h('span', { class: 'count' }, n));
+export const gameChip = (slug) => (slug ? h('span', { class: 'chip static game-chip', title: 'Game' }, gameName(slug)) : null);
 // Role display order for the sidebar team grid and Live now; ids not listed keep their place at the end.
 const ROSTER = ['lead', 'scout', 'architect', 'librarian', 'builder', 'ui', 'world', 'playtester', 'kid-tester', 'economy', 'thumbnails', 'producer', 'liveops', 'merchant', 'reviewer', 'designer'];
 export function rosterOrder(roles) {

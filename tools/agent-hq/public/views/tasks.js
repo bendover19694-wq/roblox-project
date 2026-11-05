@@ -1,6 +1,7 @@
 // Tasks list and task drawer.
 import { h, store, api, act, ic, btn, empty, pageHead, statePill, roleLabel, avatar, ago, fmtTime, engineLabel, selectEl, plain, gameName, creatorLabel, mediaUrl,
-  openModal, openDrawer, subscribe, onLog, upsert, notify, go, loadState, toast, inScope, scope } from './core.js';
+  openModal, openDrawer, subscribe, onLog, upsert, notify, go, loadState, toast, inScope, scope, multiGame, byGame, gameHead, gameChip, token } from './core.js';
+import { popMenu } from './menu.js';
 import { taskForm } from './taskform.js';
 
 let roleFilter = '';
@@ -34,7 +35,7 @@ export function taskRow(t) {
     avatar(t.role, 30),
     h('span', { class: 'trow-main' },
       h('span', { class: 'trow-title' }, plain(t.title),
-        !scope() && t.game ? h('span', { class: 'chip static game-chip', title: 'Game' }, gameName(t.game)) : null,
+        scope() ? null : gameChip(t.game),
         gate ? h('span', { class: 'chip static', title: 'Automatic check of another task' }, 'gate') : null,
         t.attempt > 1 ? h('span', { class: 'chip static', title: 'Rework round' }, 'attempt ' + t.attempt) : null,
         t.reworkCount > 0 ? h('span', { class: 'chip static', title: 'Times sent back for rework' }, `sent back ${t.reworkCount}x`) : null,
@@ -79,6 +80,18 @@ export function newTaskModal(role) {
     taskForm({ key: 'modal:' + (role || ''), role, onDone: () => { close(); notify(); } }));
 }
 
+// One list, or under All games with several games a list per game (No game last).
+const rowsByGame = (list) => (multiGame() ? byGame(list, (t) => t.game).map(([g, l]) => [gameHead(g, l.length), h('div', { class: 'tlist' }, l.map(taskRow))]) : h('div', { class: 'tlist' }, list.map(taskRow)));
+const clearFinished = async () => {
+  const body = h('div', { class: 'stack' }, h('p', {}, 'This deletes done and canceled tasks that ended over an hour ago, and their answered requests. Open work is kept.'),
+    h('div', { class: 'row gap end' }, btn('Cancel', () => close(), { kind: 'ghost' }), btn('Clear finished work', async () => {
+      const r = await act(() => api('POST', '/api/tasks/clear-finished'), 'Cleared');
+      close();
+      if (r) { await loadState().catch(() => {}); notify(); }
+    }, { kind: 'danger' })));
+  const close = openModal('Clear finished work?', body);
+};
+
 export function render() {
   const games = store.gameList.length ? store.gameList : store.games;
   const tasks = store.tasks.filter((t) => inScope(t) && (!roleFilter || t.role === roleFilter) && (!gameFilter || t.game === gameFilter));
@@ -87,18 +100,19 @@ export function render() {
     const list = tasks.filter((t) => states.includes(t.state)).sort(byAge);
     return list.length ? h('section', { class: 'tgroup', 'aria-label': label },
       h('h2', { class: 'tgroup-head' }, h('span', { class: 'count', 'data-tone': tone }, list.length), h('span', { class: 'tgroup-title' }, label), h('span', { class: 'muted tgroup-sub' }, sub)),
-      h('div', { class: 'tlist' }, list.map(taskRow))) : null;
+      rowsByGame(list)) : null;
   }).filter(Boolean);
   const done = tasks.filter((t) => ['done', 'failed', 'canceled'].includes(t.state))
     .sort((a, b) => ((b.endedAt || b.createdAt) < (a.endedAt || a.createdAt) ? -1 : 1));
   const doneBox = done.length ? h('details', { class: 'tdone', open: showDone, ontoggle: (e) => { showDone = e.target.open; } },
     h('summary', {}, `Show done and dropped (${done.length})`),
-    h('div', { class: 'tlist' }, done.slice(0, 100).map(taskRow))) : null;
+    rowsByGame(done.slice(0, 100))) : null;
   return h('div', { class: 'page' },
     pageHead('Tasks', 'Everything queued for the team.',
       selectEl([{ value: '', label: 'All games' }, ...games.map((g) => ({ value: g.slug, label: g.name }))], gameFilter, (v) => { gameFilter = v; notify(); }, 'sm'),
       selectEl([{ value: '', label: 'All agents' }, ...store.roles.map((r) => ({ value: r.id, label: r.label }))], roleFilter, (v) => { roleFilter = v; notify(); }, 'sm'),
-      btn('New task', () => newTaskModal(), { kind: 'primary tk-new', icon: 'plus' })),
+      btn('New task', () => newTaskModal(), { kind: 'primary tk-new', icon: 'plus' }),
+      token ? popMenu({ label: 'More task actions', items: [{ text: 'Clear finished work', icon: 'trash', run: clearFinished }] }) : null),
     groups.length || doneBox ? [groups, doneBox] : empty('No tasks yet. Ask the Lead, or press New task.'));
 }
 

@@ -1,8 +1,9 @@
-import { h, store, api, act, ic, btn, empty, roleLabel, avatar, roleStatus, ago, fmtTime, go, plain, gameName, studioLocks, loadFreshness, loadState, toast, notify, inScope, rosterOrder, scope, itemGame } from './core.js';
+import { h, store, api, act, ic, btn, empty, roleLabel, avatar, roleStatus, ago, fmtTime, go, plain, gameName, studioLocks, loadFreshness, loadState, toast, notify, inScope, rosterOrder, scope, itemGame, multiGame, gameChip, selectEl } from './core.js';
 import { askCard, answer, isMediaAsk, needsDecision, verdictOf, noteOf } from './review.js';
 import { newTaskModal, openTaskDrawer, isBackToYou } from './tasks.js';
 
 let leadDraft = '';
+let askGame = ''; // "for:" chip of Ask the Lead under All games
 const replyOpen = new Set();
 const replyDraft = {};
 const building = new Set(); // game slugs whose newest build is being made
@@ -205,7 +206,7 @@ function liveNow() {
     rows.length ? h('ul', { class: 'live' }, rows.map(({ r, st }) => h('li', { class: 'live-row' + (st.task ? ' on' : ''), 'data-state': st.task ? 'working' : 'queued', role: 'button', 'aria-label': 'Open the ' + r.label + ' chat', onclick: () => open(r.id), tabindex: '0', onkeydown: (e) => { if (e.key === 'Enter') open(r.id); } },
       avatar(r.id, 28),
       h('span', { class: 'live-main' },
-        h('span', { class: 'live-role' }, r.label),
+        h('span', { class: 'live-role' }, r.label, scope() ? null : gameChip(st.task?.game)),
         h('span', { class: 'live-what muted' }, st.task ? 'On: ' + plain(st.task.title) : st.queued ? `${st.queued} task${st.queued === 1 ? '' : 's'} waiting` : 'Work is in review')),
       h('span', { class: 'live-end' }, st.task ? h('span', { class: 'spin-ring', role: 'img', 'aria-label': 'Working' }) : st.queued ? h('span', { class: 'live-q' }, st.queued + ' queued') : null))))
       : h('p', { class: 'muted' }, 'Everyone is idle.'));
@@ -293,10 +294,12 @@ export function render() {
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
-    if (await act(() => api('POST', '/api/messages', { role: 'lead', text }), 'Sent to the Lead')) { leadDraft = ''; input.value = ''; }
+    if (await act(() => api('POST', '/api/messages', { role: 'lead', text, game: scope() || askGame || undefined }), 'Sent to the Lead')) { leadDraft = ''; input.value = ''; }
   } }, avatar('lead', 28), input,
   go_ask,
   h('div', { class: 'ask-tools' },
+    multiGame() ? h('label', { class: 'row gap ask-for' }, h('span', { class: 'muted small' }, 'for:'),
+      selectEl([{ value: '', label: 'All games' }, ...store.gameList.map((g) => ({ value: g.slug, label: g.name }))], askGame, (v) => { askGame = v; }, 'sm')) : null,
     btn('New task', () => newTaskModal(), { icon: 'plus' }),
     btn(paused ? 'Resume all' : 'Pause all', () => act(() => api('POST', paused ? '/api/resume' : '/api/pause'), paused ? 'Resumed' : 'Paused'), { icon: paused ? 'play' : 'pause' })));
 
