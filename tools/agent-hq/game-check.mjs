@@ -9,7 +9,10 @@ const TAIL = 4096;
 const tail = (s) => { const t = String(s ?? ''); return t.length > TAIL ? t.slice(-TAIL) : t; };
 
 // Tests run agent-written code: never hand it HQ's tokens or provider keys.
-export const scrubbedEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => !/^(HQ_|ANTHROPIC|OPENAI|GROQ|NVIDIA|NIM_)/i.test(k)));
+// Allowlist: only what the tools need to start and find their files.
+const ENV_KEEP = /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|COMSPEC|TEMP|TMP|HOME|USERPROFILE|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|PROGRAMDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE|OS|LANG|LC_ALL|TERM)$/i;
+// ponytail: same Windows user, so test code could still read .agent-hq from disk; a separate low-privilege user would close that.
+export const scrubbedEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => ENV_KEEP.test(k)));
 
 /** The tool's real path from PATH, looked up outside the repo, so a lune.exe planted in a game folder can never run. */
 export function resolveTool(cmd, root, lookup = findExe) {

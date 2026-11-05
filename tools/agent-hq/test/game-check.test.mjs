@@ -52,7 +52,7 @@ test('claudeArgs scopes edits to the role files in the game folder', () => {
 
 test('game check: tests never see HQ tokens or provider keys', async () => {
   const { scrubbedEnv } = await import('../game-check.mjs');
-  const env = scrubbedEnv({ PATH: 'p', HQ_TOKEN: 'a', HQ_TASK_TOKEN: 'b', GROQ_API_KEY: 'c', ANTHROPIC_API_KEY: 'd', HOME: 'h' });
+  const env = scrubbedEnv({ PATH: 'p', HQ_TOKEN: 'a', HQ_TASK_TOKEN: 'b', GROQ_API_KEY: 'c', ANTHROPIC_API_KEY: 'd', HOME: 'h', GITHUB_TOKEN: 'e', AWS_SECRET_ACCESS_KEY: 'f' });
   assert.deepEqual(Object.keys(env).sort(), ['HOME', 'PATH']);
 });
 

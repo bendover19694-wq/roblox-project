@@ -323,8 +323,9 @@ ${indexText(doc)}` : '');
     const slug = need(a.game, 'game');
     if (!/^[a-z0-9][a-z0-9-]{0,40}$/.test(slug)) throw new Error('game must be a slug like top-eleven');
     // Tests run code agents wrote: only from a real task, and only for that task's own game.
-    const t = await api('GET', `/api/tasks/${encodeURIComponent(taskIdOf(a))}`, undefined, tokenOf(a)).catch(() => null);
-    if (!t) throw new Error('hq_game_check needs your task (taskId and taskToken)');
+    // the server checks the task token and that the task is working; the client-supplied id must match it
+    const t = await api('POST', '/api/tasks/whoami', { taskId: taskIdOf(a) }, tokenOf(a)).catch(() => null);
+    if (!t) throw new Error('hq_game_check needs your working task (taskId and taskToken)');
     if (t.game !== slug) throw new Error(`your task is for ${t.game ?? 'no game'}, not ${slug}`);
     return JSON.stringify(await runGameCheck({ root: process.env.HQ_ROOT ? path.resolve(process.env.HQ_ROOT) : ROOT, slug }), null, 2);
   },

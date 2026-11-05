@@ -82,3 +82,15 @@ test('moving a task moves its children and gate tasks', async () => {
   assert.equal((await agent('POST', `/api/tasks/${parent.id}/game`, { game: 'top-eleven', taskId: b.id, taskToken: b.taskToken })).status, 403);
   assert.equal((await agent('POST', `/api/tasks/${parent.id}/game`, { game: 'top-eleven', taskId: lead.id, taskToken: lead.taskToken })).status, 200);
 });
+
+test('whoami: the server finds the task from its token; a wrong token, a wrong id or the owner is refused', async () => {
+  const { owner, agent, working } = await hq();
+  const b = await working('builder');
+  const me = await agent('POST', '/api/tasks/whoami', { taskId: b.id, taskToken: b.taskToken });
+  assert.equal(me.status, 200);
+  assert.equal(me.json.id, b.id);
+  assert.equal(me.json.role, 'builder');
+  assert.equal((await agent('POST', '/api/tasks/whoami', { taskId: b.id, taskToken: 'f'.repeat(64) })).status, 403);
+  assert.equal((await agent('POST', '/api/tasks/whoami', { taskId: 't_000000000000', taskToken: b.taskToken })).status, 403);
+  assert.equal((await owner('POST', '/api/tasks/whoami', {})).status, 403);
+});

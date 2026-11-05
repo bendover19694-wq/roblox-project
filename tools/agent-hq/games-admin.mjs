@@ -17,6 +17,12 @@ export function moveTasks(db, D, rootId, game, depth = 6) {
 }
 
 export function mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError }) {
+  // The working task that the caller's task token belongs to (verified here, not trusted from the client). Used by hq_game_check.
+  route('POST', /^\/api\/tasks\/whoami$/, ({ body, who, headers }) => {
+    if (who !== 'agent') throw new HttpError(403, 'agents only');
+    const t = agentTask(body, null, headers);
+    return { id: t.id, role: t.role, game: t.game ?? null };
+  });
   // Lead only, with its task token. The owner uses POST /api/games.
   route('POST', /^\/api\/games\/lead-create$/, ({ body, who, headers }) => {
     if (!isObj(body)) throw bad('body must be an object');
