@@ -77,10 +77,12 @@ test('game check: the type check is reported as skipped without the Roblox defin
   assert.ok(t.skipped && /globalTypes/.test(t.tail));
 });
 
-test('runner: a Studio task gets the project Roblox_Studio MCP entry', async () => {
+test('runner: Studio MCP only for Studio roles, pinned to the Roblox launcher, never from repo files', async () => {
   const { studioServer } = await import('../runner.mjs');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-studio-'));
-  assert.equal(studioServer(dir), null);
-  fs.writeFileSync(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { Roblox_Studio: { command: 'cmd.exe', args: ['/c', 'x.bat'] } } }));
-  assert.deepEqual(studioServer(dir), { command: 'cmd.exe', args: ['/c', 'x.bat'] });
+  const env = { LOCALAPPDATA: 'C:/Users/x/AppData/Local', SystemRoot: 'C:/Windows' };
+  assert.equal(studioServer({ mcp: [] }, { env, exists: () => true }), null);
+  assert.equal(studioServer({ mcp: ['Roblox_Studio'] }, { env, exists: () => false }), null);
+  const s = studioServer({ mcp: ['Roblox_Studio'] }, { env, exists: () => true });
+  assert.match(s.command, /System32[\\/]cmd\.exe$/);
+  assert.deepEqual(s.args, ['/c', path.join('C:/Users/x/AppData/Local', 'Roblox', 'mcp.bat')]);
 });

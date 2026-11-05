@@ -54,6 +54,13 @@ export function createLearningHooks({ db, D, memoryDir, postMessage, queueTask, 
   }
 
   return {
+    /** A task asking again replaces its older open questions, so Home never shows the same request three times. Images are kept. */
+    supersede(ask, emit = () => {}) {
+      if (!ask?.taskId || ask.kind === 'review' || ask.kind === 'reference') return [];
+      const old = db.prepare("SELECT id FROM asks WHERE taskId=? AND role=? AND state='open' AND kind=? AND id<>?").all(ask.taskId, ask.role, ask.kind, ask.id);
+      for (const { id } of old) emit('ask', D.answerAsk(db, id, { answer: null, state: 'dismissed' }));
+      return old.map((r) => r.id);
+    },
     /** Call on every task update. */
     taskChanged(t) {
       if (!t || t.gateFor) return;

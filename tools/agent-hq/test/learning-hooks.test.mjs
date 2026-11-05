@@ -156,3 +156,18 @@ test('a gate FAIL that tries to steer later agents is not saved as a lesson', as
   assert.equal(saved, false);
   assert.ok(!fs2.existsSync(path2.join(dir, 'builder.md')) || !/ignore all previous/i.test(fs2.readFileSync(path2.join(dir, 'builder.md'), 'utf8')));
 });
+
+test('an agent asking again replaces its older open question; images stay', async () => {
+  const { api, agent } = await boot();
+  const t = (await api('POST', '/api/tasks', { title: 'UI audit', role: 'ui' })).json;
+  const claim = await agent('POST', `/api/tasks/${t.id}/claim`, { engine: 'app' });
+  const ask = (title, kind = 'try') => agent('POST', '/api/asks', { taskId: t.id, taskToken: claim.json.taskToken, kind, title });
+  const a1 = (await ask('Open Studio please')).json;
+  await agent('POST', '/api/asks', { taskId: t.id, taskToken: claim.json.taskToken, kind: 'review', title: 'Shop shot', mediaPath: 'assets/concepts/x.png' });
+  const a2 = (await ask('Open Studio and add types')).json;
+  const open = (await api('GET', '/api/asks?state=open')).json;
+  const mine = open.filter((a) => a.taskId === t.id);
+  assert.ok(mine.some((a) => a.id === a2.id));
+  assert.ok(!mine.some((a) => a.id === a1.id), 'the older try ask is dismissed');
+  assert.ok(mine.some((a) => a.kind === 'review'), 'image asks are kept');
+});

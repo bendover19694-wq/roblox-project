@@ -534,7 +534,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
       title: str(body.title, 'title', { max: 200, required: true }), why: str(body.why, 'why', { max: 20000 }) ?? '',
       options: parseOptions(body.options), mediaPath,
     });
-    emit('ask', ask);
+    emit('ask', ask); if (agent) lh?.supersede(ask, emit); // an agent asking again replaces its older open question
     return ask;
   });
 

@@ -19,9 +19,14 @@ function killTree(child) {
   } catch { /* already gone */ }
 }
 
-/** The Roblox_Studio entry of the project's .mcp.json, or null. */
-export function studioServer(root) {
-  try { return JSON.parse(fs.readFileSync(path.join(root, '.mcp.json'), 'utf8')).mcpServers?.Roblox_Studio ?? null; } catch { return null; }
+/**
+ * The Roblox Studio MCP server, pinned to Roblox's own launcher outside the repo (never read from repo files agents can edit).
+ * Only for roles that list Roblox_Studio in their mcp, on tasks that need Studio. Null when Studio's MCP launcher is not installed.
+ */
+export function studioServer(role, { env = process.env, exists = fs.existsSync } = {}) {
+  if (!(role?.mcp ?? []).includes('Roblox_Studio')) return null;
+  const bat = env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, 'Roblox', 'mcp.bat') : null;
+  return bat && exists(bat) ? { command: path.join(env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe'), args: ['/c', bat] } : null;
 }
 
 export function createRunner({ db, root, emit = () => {}, port = 4317, token = '', tickMs = 2000, echoMs = 150, engines: detected, memoryDir, providers = () => ({}), briefFor, spendGuard }) {
@@ -55,7 +60,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     const taskToken = issueTaskToken(db, task.id); // per-task secret: proves to the server which task is calling
     try {
       mcpConfigPath = path.join(stateDir, `mcp-${task.id}.json`);
-      const studio = task.needsStudio ? studioServer(root) : null; // Studio tasks get the project's Roblox Studio MCP too
+      const studio = task.needsStudio ? studioServer(role) : null; // Studio tasks of Studio roles get the Roblox Studio MCP too
       fs.writeFileSync(mcpConfigPath, JSON.stringify({
         mcpServers: { hq: { command: process.execPath, args: [mcpPath], env: {
           HQ_URL: `http://127.0.0.1:${port}`, HQ_TOKEN: token, HQ_TASK: task.id, HQ_ROLE: task.role, HQ_TASK_TOKEN: taskToken,
