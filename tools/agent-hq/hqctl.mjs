@@ -25,7 +25,7 @@ Every command that touches a task (note, ask, media, complete, learn, pitch, ide
   node tools/agent-hq/hqctl.mjs research-save <title> <url> <summary>      keep a web finding for later agents --task <taskId>
   node tools/agent-hq/hqctl.mjs game-create <name> [pitch] --task <taskId>    lead: create a game
   node tools/agent-hq/hqctl.mjs task-move <game|none> <taskId...> --task <leadTaskId>   lead: move tasks and their children to a game
-  node tools/agent-hq/hqctl.mjs game-check <slug>                          run a game's tests, format and lint inside its folder (read only)
+  node tools/agent-hq/hqctl.mjs game-check <slug> --task <id>              run your task's game tests, format and lint inside its folder
   node tools/agent-hq/hqctl.mjs market                                     latest Roblox charts snapshot
   node tools/agent-hq/hqctl.mjs knowledge-search <words> [--limit N]       search the local Roblox notes (LihFolk, Creator docs, cards, research); prints text
   node tools/agent-hq/hqctl.mjs knowledge-read <source> <path> [--section <heading words>]   read one note found by knowledge-search
@@ -105,7 +105,7 @@ try {
   } else if (cmd === 'research-save') {
     res = await handlers.hq_research_save({ taskId: opt.task, title: a[0], url: a[1], summary: a[2] });
   } else if (cmd === 'game-check') {
-    text = await handlers.hq_game_check({ game: a[0] });
+    text = await handlers.hq_game_check({ game: a[0], taskId: opt.task });
   } else if (cmd === 'knowledge-search') {
     text = await handlers.hq_knowledge_search({ q: a[0], ...(opt.limit ? { limit: Number(opt.limit) } : {}) });
   } else if (cmd === 'notebook') {

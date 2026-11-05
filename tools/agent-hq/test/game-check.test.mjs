@@ -49,3 +49,17 @@ test('claudeArgs scopes edits to the role files in the game folder', () => {
     assert.ok(!a.some((x) => x.startsWith('Edit(')));
   }
 });
+
+test('game check: tests never see HQ tokens or provider keys', async () => {
+  const { scrubbedEnv } = await import('../game-check.mjs');
+  const env = scrubbedEnv({ PATH: 'p', HQ_TOKEN: 'a', HQ_TASK_TOKEN: 'b', GROQ_API_KEY: 'c', ANTHROPIC_API_KEY: 'd', HOME: 'h' });
+  assert.deepEqual(Object.keys(env).sort(), ['HOME', 'PATH']);
+});
+
+test('game check: a tool planted inside the repo is never run', async () => {
+  const { resolveTool } = await import('../game-check.mjs');
+  const root = path.resolve('C:/repo');
+  assert.equal(resolveTool('lune', root, () => path.join(root, 'games', 'x', 'lune.exe')), null);
+  assert.equal(resolveTool('lune', root, () => 'C:/tools/lune.exe'), 'C:/tools/lune.exe');
+  assert.equal(resolveTool('lune', root, () => null), null);
+});

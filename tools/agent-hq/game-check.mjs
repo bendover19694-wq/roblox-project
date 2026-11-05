@@ -3,13 +3,27 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { gameFolder } from './game-context.mjs';
+import { findExe } from './readiness.mjs';
 
 const TAIL = 4096;
 const tail = (s) => { const t = String(s ?? ''); return t.length > TAIL ? t.slice(-TAIL) : t; };
 
-export function defaultRun(cmd, args, { cwd, timeout }) {
+// Tests run agent-written code: never hand it HQ's tokens or provider keys.
+export const scrubbedEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => !/^(HQ_|ANTHROPIC|OPENAI|GROQ|NVIDIA|NIM_)/i.test(k)));
+
+/** The tool's real path from PATH, looked up outside the repo, so a lune.exe planted in a game folder can never run. */
+export function resolveTool(cmd, root, lookup = findExe) {
+  const p = lookup(cmd);
+  if (!p) return null;
+  const inside = path.resolve(p).toLowerCase().startsWith(path.resolve(root).toLowerCase() + path.sep);
+  return inside ? null : p;
+}
+
+export function defaultRun(cmd, args, { cwd, timeout, root }) {
   return new Promise((resolve) => {
-    execFile(cmd, args, { cwd, timeout, shell: false, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    const exe = resolveTool(cmd, root ?? cwd);
+    if (!exe) return resolve({ missing: true, code: null, out: '' });
+    execFile(exe, args, { cwd, timeout, env: scrubbedEnv(), shell: false, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
       const out = `${stdout ?? ''}${stderr ?? ''}`;
       if (err?.code === 'ENOENT') return resolve({ missing: true, code: null, out: '' });
       resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, out: err?.killed ? `${out}\n(timed out)` : out });
@@ -37,7 +51,7 @@ export async function runGameCheck({ root, slug, run = defaultRun, exists = fs.e
   const steps = [];
   for (const [cmd, args] of plan) {
     const label = [cmd, ...args].join(' ');
-    const r = await run(cmd, args, { cwd, timeout: 120000 });
+    const r = await run(cmd, args, { cwd, timeout: 120000, root });
     if (r.missing) steps.push({ cmd: label, ok: true, skipped: true, code: null, tail: `${cmd} is not installed; skipped` });
     else steps.push({ cmd: label, ok: r.code === 0, code: r.code, tail: tail(r.out) });
   }

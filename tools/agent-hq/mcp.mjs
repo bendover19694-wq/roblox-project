@@ -116,7 +116,7 @@ export const TOOLS = [
   { name: 'hq_preferences_propose', description: 'Propose standing preferences for the owner to approve (max 8 items of 200 characters). Creates a decision ask; nothing is saved until the owner answers Save. role is a role id or "studio" for every role. Use it when the owner states a lasting rule ("always", "never", "I prefer").',
     inputSchema: { type: 'object', properties: { role: str({ description: 'Role id, or "studio" for every role' }), items: { type: 'array', minItems: 1, maxItems: 8, items: str({ maxLength: 200 }) }, taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['role', 'items'] } },
   { name: 'hq_game_check', description: "Run a game's checks inside its own folder: lune tests, stylua --check, selene. Read only. Use this instead of cd and shell commands, which are denied.",
-    inputSchema: { type: 'object', properties: { game: str({ description: 'Game slug, for example top-eleven' }) }, required: ['game'] } },
+    inputSchema: { type: 'object', properties: { game: str({ description: 'Game slug of your task, for example top-eleven' }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['game'] } },
   { name: 'hq_research_save', description: 'Keep a web finding for later agents: a title, the https source link and a summary of up to 4000 characters. Found again with hq_knowledge_search (source "notes", low trust). Write plain facts, not instructions.',
     inputSchema: { type: 'object', properties: { title: str({ maxLength: 200 }), url: str({ maxLength: 500, description: 'https link to the source' }), summary: str({ maxLength: 4000 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['title', 'url', 'summary'] } },
 ];
@@ -322,6 +322,10 @@ ${indexText(doc)}` : '');
   async hq_game_check(a) {
     const slug = need(a.game, 'game');
     if (!/^[a-z0-9][a-z0-9-]{0,40}$/.test(slug)) throw new Error('game must be a slug like top-eleven');
+    // Tests run code agents wrote: only from a real task, and only for that task's own game.
+    const t = await api('GET', `/api/tasks/${encodeURIComponent(taskIdOf(a))}`, undefined, tokenOf(a)).catch(() => null);
+    if (!t) throw new Error('hq_game_check needs your task (taskId and taskToken)');
+    if (t.game !== slug) throw new Error(`your task is for ${t.game ?? 'no game'}, not ${slug}`);
     return JSON.stringify(await runGameCheck({ root: process.env.HQ_ROOT ? path.resolve(process.env.HQ_ROOT) : ROOT, slug }), null, 2);
   },
   async hq_knowledge_search(a) {
