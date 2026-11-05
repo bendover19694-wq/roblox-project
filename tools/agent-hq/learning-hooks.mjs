@@ -3,6 +3,7 @@
 //  - Gate FAIL reasons become lessons for the worked role; owner criticism and stage rejections become owner corrections.
 import fs from 'node:fs';
 import path from 'node:path';
+import { quarantine } from './knowledge.mjs';
 
 export const LESSON_CAP = 40;
 export const MAX_ROUNDS = 3;
@@ -46,7 +47,8 @@ export function createLearningHooks({ db, D, memoryDir, postMessage, queueTask, 
     seen.add(`plan:${lead.id}`);
     const rows = list.slice(0, 20).map((k) => `- ${roleLabel(k.role)} | ${k.state} | ${oneLine(k.title, 100)} | ${oneLine(k.state === 'failed' ? k.error || k.summary : k.summary, 300) || '(no summary)'}`).join('\n');
     return queueTask({
-      title: `Results in: ${baseTitle(lead.title)}${round > 1 ? ` (round ${round})` : ''}`.slice(0, 200), role: 'lead', game: lead.game, parentId: lead.id, createdBy: 'results',
+      // base trimmed first so the round suffix (the loop cap) is never cut off
+      title: `Results in: ${baseTitle(lead.title).slice(0, 170)}${round > 1 ? ` (round ${round})` : ''}`, role: 'lead', game: lead.game, parentId: lead.id, createdBy: 'results',
       body: `Your plan "${lead.title}" has finished. Results, one line per task (role | state | title | summary):\n${rows}\n\nCheck them against the owner's request. Tell the owner in plain words what is done and what is not. Queue fixes only for real failures.`.slice(0, 20000),
     });
   }
@@ -70,6 +72,7 @@ export function createLearningHooks({ db, D, memoryDir, postMessage, queueTask, 
     gateFail(orig, g) {
       const reason = oneLine(String(g.summary ?? '').replace(/^\s*fail\w*[:\s.,-]*/i, ''), 300);
       const head = `${roleLabel(g.role)} FAIL on ${oneLine(orig.title.replace(/^(?:Fix|Rework|Check): /, ''), 60)}: `;
+      if (quarantine(reason)) return false; // agent text: never keep a line that tries to steer later agents
       return saveLesson(memoryDir, orig.role, head + (reason || 'no reason given'), nowIso().slice(0, 10));
     },
     /** The owner said something critical in a role's thread. Agent text never reaches this. */
