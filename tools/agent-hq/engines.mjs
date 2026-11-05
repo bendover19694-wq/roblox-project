@@ -59,25 +59,28 @@ export function scopedWriteTools(allowedTools = [], files = [], gameDir = '.') {
 }
 
 /** Arguments for the claude CLI. Pure so it can be tested. Headless default mode denies anything not allowed. */
-export function claudeArgs({ brief, model, allowedTools = [], files = [], gameDir = '.', mcpConfigPath }) {
-  const { allowed, disallowed } = scopedWriteTools(allowedTools, files, gameDir);
+// Windows exposes a PowerShell tool next to Bash; every allow rule is written for Bash, so PowerShell is always off.
+export function claudeArgs({ brief, model, allowedTools = [], files = [], gameDir = '.', mcpConfigPath, studio = false }) {
+  const scoped = scopedWriteTools(allowedTools, files, gameDir);
+  const allowed = studio ? [...scoped.allowed, 'mcp__Roblox_Studio__*'] : scoped.allowed;
+  const disallowed = [...scoped.disallowed, 'PowerShell'];
   return [
     '-p', brief, '--output-format', 'stream-json', '--verbose',
     '--model', model || 'sonnet',
     '--permission-mode', 'default',
     '--allowedTools', ...allowed,
-    ...(disallowed.length ? ['--disallowedTools', ...disallowed] : []),
+    '--disallowedTools', ...disallowed,
     '--mcp-config', mcpConfigPath, '--strict-mcp-config',
   ];
 }
 
-export function spawnEngine({ engine, exe, brief, model, allowedTools = [], files = [], gameDir = '.', mcpConfigPath, cwd, env }) {
+export function spawnEngine({ engine, exe, brief, model, allowedTools = [], files = [], gameDir = '.', mcpConfigPath, cwd, env, studio = false }) {
   let command, args;
   if (engine === 'echo') {
     command = process.execPath;
     args = ['-e', ECHO_CODE];
   } else if (engine === 'claude-cli') {
-    ({ command, args } = resolveCommand(exe, claudeArgs({ brief, model, allowedTools, files, gameDir, mcpConfigPath })));
+    ({ command, args } = resolveCommand(exe, claudeArgs({ brief, model, allowedTools, files, gameDir, mcpConfigPath, studio })));
   } else if (engine === 'groq' || engine === 'nim') {
     command = process.execPath; // exe is llm-agent.mjs; it reads the brief, key and role from env
     args = [exe];

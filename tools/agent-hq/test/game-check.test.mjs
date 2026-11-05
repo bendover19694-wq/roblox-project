@@ -41,11 +41,13 @@ test('claudeArgs scopes edits to the role files in the game folder', () => {
   assert.ok(builder.includes('Write(games/top-eleven/src/server/**)'));
   assert.ok(builder.includes('Edit(assets/**)'));
   assert.ok(!builder.includes('Edit') && !builder.includes('Write'));
-  assert.ok(!builder.includes('--disallowedTools'));
+  // a writer keeps its edit rules; only PowerShell is off (all rules are written for Bash)
+  assert.deepEqual(builder.slice(builder.indexOf('--disallowedTools'), builder.indexOf('--disallowedTools') + 2), ['--disallowedTools', 'PowerShell']);
+  assert.ok(!builder.includes('mcp__Roblox_Studio__*'));
   for (const tools of [['Read', 'mcp__hq__*'], ['Read', 'Grep']]) {
     const a = claudeArgs({ brief: 'b', allowedTools: tools, files: ['docs/**'], gameDir: 'games/top-eleven', mcpConfigPath: 'm.json' });
     const i = a.indexOf('--disallowedTools');
-    assert.deepEqual(a.slice(i, i + 4), ['--disallowedTools', 'Edit', 'Write', 'NotebookEdit']);
+    assert.deepEqual(a.slice(i, i + 5), ['--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'PowerShell']);
     assert.ok(!a.some((x) => x.startsWith('Edit(')));
   }
 });
@@ -62,4 +64,23 @@ test('game check: a tool planted inside the repo is never run', async () => {
   assert.equal(resolveTool('lune', root, () => path.join(root, 'games', 'x', 'lune.exe')), null);
   assert.equal(resolveTool('lune', root, () => 'C:/tools/lune.exe'), 'C:/tools/lune.exe');
   assert.equal(resolveTool('lune', root, () => null), null);
+});
+
+test('claudeArgs: a Studio task may use the Roblox Studio MCP tools', () => {
+  const a = claudeArgs({ brief: 'b', allowedTools: ['Read'], files: [], mcpConfigPath: 'm.json', studio: true });
+  assert.ok(a.includes('mcp__Roblox_Studio__*'));
+});
+
+test('game check: the type check is reported as skipped without the Roblox definitions file', async () => {
+  const r = await runGameCheck({ root: path.resolve('C:/repo'), slug: 'space-agency', run: async () => ({ code: 0, out: 'ok' }), exists: () => false });
+  const t = r.steps.find((s) => s.cmd.startsWith('luau-lsp'));
+  assert.ok(t.skipped && /globalTypes/.test(t.tail));
+});
+
+test('runner: a Studio task gets the project Roblox_Studio MCP entry', async () => {
+  const { studioServer } = await import('../runner.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-studio-'));
+  assert.equal(studioServer(dir), null);
+  fs.writeFileSync(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { Roblox_Studio: { command: 'cmd.exe', args: ['/c', 'x.bat'] } } }));
+  assert.deepEqual(studioServer(dir), { command: 'cmd.exe', args: ['/c', 'x.bat'] });
 });

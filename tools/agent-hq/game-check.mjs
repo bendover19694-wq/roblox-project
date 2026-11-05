@@ -51,6 +51,10 @@ export async function runGameCheck({ root, slug, run = defaultRun, exists = fs.e
     ['stylua', styluaArgs(root, cwd, exists)],
     ['selene', ['src']],
   ];
+  // type check (rojo sourcemap, then luau-lsp) only when the Roblox definitions file exists
+  const defs = path.join(cwd, '.types', 'globalTypes.d.luau');
+  const typed = exists(defs);
+  if (typed) plan.push(['rojo', ['sourcemap', 'default.project.json', '-o', 'sourcemap.json']], ['luau-lsp', ['analyze', `--definitions=${defs}`, '--sourcemap=sourcemap.json', 'src']]);
   const steps = [];
   for (const [cmd, args] of plan) {
     const label = [cmd, ...args].join(' ');
@@ -58,5 +62,6 @@ export async function runGameCheck({ root, slug, run = defaultRun, exists = fs.e
     if (r.missing) steps.push({ cmd: label, ok: true, skipped: true, code: null, tail: `${cmd} is not installed; skipped` });
     else steps.push({ cmd: label, ok: r.code === 0, code: r.code, tail: tail(r.out) });
   }
+  if (!typed) steps.push({ cmd: 'luau-lsp analyze', ok: true, skipped: true, code: null, tail: 'no .types/globalTypes.d.luau in this game: type check skipped' });
   return { game: slug, folder, steps, ok: steps.every((s) => s.ok) };
 }
