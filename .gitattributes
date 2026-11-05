@@ -1,3 +1,5 @@
-*.bat text eol=crlf
-*.vbs text eol=crlf
-*.cmd text eol=crlf
+# StyLua expects LF; keep Luau and its configs LF on Windows checkouts too.
+*.luau text eol=lf
+*.lua text eol=lf
+stylua.toml text eol=lf
+selene.toml text eol=lf
