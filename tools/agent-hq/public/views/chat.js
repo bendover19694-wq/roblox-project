@@ -288,6 +288,19 @@ export function chatView(role, { back = false } = {}) {
     list.scrollTop = 0;
   }
 
+  // The Lead shows its step count while it works (read from the task log every few seconds), not only when it ends.
+  let stepTimer = null;
+  const stepText = (n) => (n ? `Working: ${n} step${n === 1 ? '' : 's'} so far` : 'Working · a new message waits its turn');
+  function followSteps(task) {
+    clearInterval(stepTimer); stepTimer = null;
+    if (!task || role !== 'lead') return;
+    const poll = () => {
+      if (!node.isConnected || roleStatus(role).task?.id !== task.id) { clearInterval(stepTimer); stepTimer = null; return; }
+      api('GET', `/api/tasks/${encodeURIComponent(task.id)}/log`).then((r) => { const el = typing.querySelector('.typing-text'); if (el) el.textContent = stepText(steps(r.lines).length); }, () => {});
+    };
+    stepTimer = setInterval(poll, 4000); poll();
+  }
+
   function paintTyping() {
     const st = roleStatus(role);
     stopBtn.hidden = !st.task;
@@ -296,7 +309,8 @@ export function chatView(role, { back = false } = {}) {
     typingSig = sig;
     typing.replaceChildren(st.task ? h('div', { class: 'typing', role: 'status' },
       h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
-      h('span', {}, 'Working · a new message waits its turn')) : '');
+      h('span', { class: 'typing-text' }, stepText(0))) : '');
+    followSteps(st.task);
     if (st.task) list.scrollTop = list.scrollHeight;
   }
 

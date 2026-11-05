@@ -175,9 +175,9 @@ Limits worth knowing (details and sources: `research/exemplars/llm-providers.md`
 
 ## Cadence
 
-The outside schedulers fire at a fixed base rate: the Claude app task hourly, the Antigravity automation every 20 minutes. On every fire the worker first calls the lane gate (`hq_lane_gate`). HQ decides from Settings > Lanes whether it works now, so you change cadence in HQ, never in the apps.
+The outside schedulers fire at a fixed base rate: the Claude app task hourly, the Antigravity automation every 5 minutes (`node register-antigravity.mjs --every <minutes>` sets it; keep it equal to Settings > Lanes). On every fire the worker first calls the lane gate (`hq_lane_gate`). HQ decides from Settings > Lanes whether it works now, so you change cadence in HQ, never in the apps.
 
-Per lane you can set: Enabled, Work every (Claude app 1 to 24 hours, Antigravity 20 minutes to 24 hours), Active hours from/to, and Max tasks per run. Overnight windows work (for example 22:00 to 06:00). The gate says no when the lane is disabled, HQ is paused, the queue is empty, it is outside active hours, or the lane ran too recently. A person asking in chat (`manual`) skips the hours and spacing checks but not the disabled, paused and empty checks. Times are this computer's local time.
+Per lane you can set: Enabled, Work every (Claude app 1 to 24 hours, Antigravity 5 minutes to 24 hours), Active hours from/to, and Max tasks per run. Overnight windows work (for example 22:00 to 06:00). The gate says no when the lane is disabled, HQ is paused, the queue is empty, it is outside active hours, or the lane ran too recently. A person asking in chat (`manual`) skips the hours and spacing checks but not the disabled, paused and empty checks. Times are this computer's local time.
 
 Run on schedules or events, not 24/7, or you burn usage. Pause HQ when you step away.
 
@@ -226,3 +226,6 @@ When a world, librarian, builder, designer or ui task looks like 3D model work (
 
 
 Games: the Lead can create one (`hq_game_create`), tag tasks with `game`, and move work with `hq_task_move` or `POST /api/tasks/:id/game` (moves child and gate tasks too). Code is in `games-admin.mjs`.
+
+### Run mode, instant results and learning (r5e)
+Settings > Run control > Run mode: `instant` (default) sends every role whose default engine is `app` to `claude-cli`, which starts on this PC within seconds; `hourly` keeps them for the Claude app worker. An explicit engine and a per-role engine choice always win, and Antigravity roles stay on Antigravity (`run-mode.mjs`, `db.mjs` `createTask`). When a task a Lead plan created finishes, fails or reaches review, a line appears in the Lead's thread at once, and when every task of the plan has settled HQ queues one "Results in: <title>" task for the Lead (at most 3 rounds). A reviewer's FAIL becomes a lesson for the worked role (`memory/<role>.md`), an owner message that criticises ("no", "wrong", "don't", "instead", ...) becomes an owner correction, and a rejected or held stage request saves its reason for the role that asked (`learning-hooks.mjs`). `npm test` runs with `HQ_RUN_MODE=hourly` through `test/hourly-setup.mjs` because the older tests assume the app lane.

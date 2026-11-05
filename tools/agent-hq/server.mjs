@@ -12,7 +12,7 @@ import { mountMarket } from './market-routes.mjs';
 import { mountIdeas, IDEAS_OWNER_ONLY } from './ideas.mjs';
 import { createKnowledge, mountKnowledge } from './knowledge.mjs';
 import { addCorrection, readCorrections } from './corrections.mjs';
-import { mountLearning, LEARNING_OWNER_ONLY } from './preferences.mjs';
+import { mountLearning, LEARNING_OWNER_ONLY } from './preferences.mjs'; import { createLearningHooks } from './learning-hooks.mjs';
 import { fetchCharts as realFetchCharts, fetchGameDetails, fetchIcons, fetchThumbnails, loadBenchmarks, titleAnalysis } from './market.mjs';
 import { liveStatsView } from './livestats.mjs';
 import { PROVIDERS, PROVIDER_IDS, CLAUDE_MODELS, keyLooksOk, createCatalog, testModel } from './providers.mjs';
@@ -217,7 +217,7 @@ export async function startServer({ root, port = 4317, stateDir, dbFile, runner,
   const publicDir = path.join(HERE, 'public');
 
   let boundPort = port;
-  let rebuildKnowledge = () => {};
+  let rebuildKnowledge = () => {}; let lh = null; // learning hooks, built after the memory helpers
   const runnerOwned = typeof runner === 'function';
   let rn = null;
   const stub = { cancel() {}, running: () => [], studioHolder: () => null, engines: () => ({ 'claude-cli': false, echo: true }) };
@@ -258,8 +258,8 @@ Task: ${task.title}
 ${task.body}`;
     }
   };
-  const pubTask = (t) => { emit('task', clean(t)); processTask(clean(t)); link.taskChanged(clean(t)); return clean(t); };
-  const hookedEmit = (type, payload) => { emit(type, type === 'task' ? clean(payload) : payload); if (type === 'task') { processTask(clean(payload)); link.taskChanged(clean(payload)); } };
+  const pubTask = (t) => { emit('task', clean(t)); processTask(clean(t)); link.taskChanged(clean(t)); lh?.taskChanged(clean(t)); return clean(t); };
+  const hookedEmit = (type, payload) => { emit(type, type === 'task' ? clean(payload) : payload); if (type === 'task') { processTask(clean(payload)); link.taskChanged(clean(payload)); lh?.taskChanged(clean(payload)); } };
 
   // ---- review gates: reviewer/tester tasks after a role finishes; FAIL sends work back (max 3 attempts) ----
   const GATE_ENGINES = new Set(['app', 'claude-cli', 'echo', 'groq', 'nim']);
@@ -288,7 +288,7 @@ ${task.body}`;
     if (g.state === 'review') g = pubTask(D.updateTask(db, g.id, { state: 'done' }));
     if (!orig || orig.state !== 'review') return;
     if (isFail(g)) {
-      let note;
+      let note; lh?.gateFail(orig, g); // a FAIL reason is a lesson for the role that did the work
       if (orig.attempt < 3) {
         const fix = queueTask({
           title: `Fix: ${bare(orig.title)}`.slice(0, 200), role: orig.role, game: orig.game, engine: orig.engine,
@@ -669,7 +669,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     if (taskId && !TASK_ID.test(taskId)) throw bad('taskId is not a task id');
     const attachPaths = parseAttach(body.attachPaths);
     const msg = postMessage({ role, from: agent ? 'agent' : 'owner', text, taskId, attachPaths });
-    if (msg.from === 'owner') queueTask({ title: firstLine(text, 100), body: text, role, createdBy: 'owner', threadMessageId: msg.id, attachPaths, selected: body.game });
+    if (msg.from === 'owner') lh?.criticism(role, text, queueTask({ title: firstLine(text, 100), body: text, role, createdBy: 'owner', threadMessageId: msg.id, attachPaths, selected: body.game })?.game);
     return msg;
   });
 
@@ -704,7 +704,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   // owner corrections live in memory/<role>.corrections.md (corrections.mjs); only the owner's own actions write them
   const remember = (role, kind, game, text) => { try { if (addCorrection(memoryDir, role, { kind, game, text }, nowIso().slice(0, 10)).added && kind === 'correction') learning.noted(role); } catch { /* memory is best effort */ } };
   route('GET', /^\/api\/memory\/([^/]+)$/, ({ m }) => { const role = oneOf(m[1], 'role', roleIds, { required: true }); return { lessons: readLessons(role), corrections: readCorrections(memoryDir, role) }; });
-  const learning = mountLearning(route, { db, D, emit, memoryDir, stateDir, roleIds, roleLabel: (id) => roleOf(id)?.label ?? id, queueTask, nowIso, str, bad, isObj, agentTask, HttpError, onNoteSaved: () => kn.reindex?.('notes') });
+  const learning = mountLearning(route, { db, D, emit, memoryDir, stateDir, roleIds, roleLabel: (id) => roleOf(id)?.label ?? id, queueTask, nowIso, str, bad, isObj, agentTask, HttpError, onNoteSaved: () => kn.reindex?.('notes') }); lh = createLearningHooks({ db, D, memoryDir, postMessage, queueTask: (f) => queueTask(f), remember, roleLabel: (id) => roleOf(id)?.label ?? id, nowIso });
   route('POST', /^\/api\/memory\/([^/]+)$/, ({ m, body, who, headers }) => {
     const pathRole = oneOf(m[1], 'role', roleIds, { required: true });
     if (!isObj(body)) throw bad('body must be an object');
@@ -839,7 +839,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
       pubGame(D.bumpGameRework(db, g.slug)); // times sent back for rework
     }
     const done = D.decideStageRequest(db, r.id, state, { reason, criteriaFailed: state === 'approved' ? [] : criteriaFailed });
-    emit('stage', done);
+    emit('stage', done); lh?.stageDecision(r, state, reason, g.slug);
     const crit = done.criteriaFailed.length ? ` Failed: ${done.criteriaFailed.join(', ')}.` : '';
     postMessage({
       role: 'lead', from: 'system',

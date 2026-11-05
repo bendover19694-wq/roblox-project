@@ -115,7 +115,7 @@ const ASSET_INDEX =
 const APP_NOTE = "Running in the Claude desktop app: stay inside this role's files and tools.";
 
 const DELEGATION =
-  'Lead only: hq_create_task (pass game), one task per role, clear title and body; new game: hq_game_create first; wrong game: hq_task_move. Never do specialist work yourself.';
+  'Lead only: hq_create_task (pass game), one task per role, clear title/body; new game: hq_game_create first; wrong game: hq_task_move. "Results in:" task: verify, report plainly. Never do specialist work yourself.';
 
 const isPath = (s) => s.includes('/');
 function attachedImages(task) {
@@ -285,7 +285,7 @@ function prefsSection(r, memoryDir, small) {
 function researchLine(small, lead) {
   const save = small ? 'Keep web finds: hq_research_save {title, url, summary}.' : 'When local knowledge and the notebook do not answer, research the web (official Roblox docs and DevForum first), cite sources, and keep what matters with hq_research_save {title, url (https), summary}; later agents find it with hq_knowledge_search (source "notes").';
   const lines = small && lead ? [] : [save]; // the Lead on a small engine delegates research; its budget is tight
-  if (lead) lines.push('Owner states a lasting preference ("always", "never", "I prefer")? Propose it: hq_preferences_propose {role or "studio", items}.');
+  if (lead) lines.push('Lasting owner preference ("always", "never")? hq_preferences_propose {role or "studio", items}.');
   return `## Research and rules\n${lines.map((l) => `- ${l}`).join('\n')}`;
 }
 

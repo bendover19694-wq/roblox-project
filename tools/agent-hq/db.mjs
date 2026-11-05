@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pickEngine, defaultRunMode } from './run-mode.mjs';
 
 const now = () => new Date().toISOString();
 const newId = (prefix) => `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
@@ -128,11 +129,11 @@ const TASK_COLS = ['title', 'body', 'role', 'game', 'state', 'engine', 'model', 
   'createdBy', 'summary', 'error', 'startedAt', 'endedAt', 'costUsd', 'conversationId', 'gateFor', 'attempt', 'threadMessageId', 'reworkCount'];
 const TERMINAL = new Set(['done', 'failed', 'canceled']);
 
-// engine resolves at creation: explicit > settings.roleEngines[role] > roles.json default > "app"
+// engine resolves at creation: explicit > settings.roleEngines[role] > claude-cli (runMode instant, roles.json app) > roles.json default > "app"
 export function createTask(db, f) {
   const id = newId('t');
   const pref = getSetting(db, 'roleEngines', {})?.[f.role] ?? {};
-  const engine = migrateEngine(f.engine ?? pref.engine ?? roleEngine(f.role));
+  const engine = migrateEngine(pickEngine({ runMode: getSetting(db, 'runMode', defaultRunMode()), explicit: f.engine, pref: pref.engine, roleDefault: roleEngine(f.role) }));
   // the role's chosen model applies only when the task runs on the role's chosen engine
   const model = f.model ?? (!f.engine || f.engine === pref.engine ? pref.model ?? null : null);
   db.prepare(`INSERT INTO tasks (id,title,body,role,game,state,engine,model,needsStudio,parentId,createdBy,createdAt,gateFor,attempt,threadMessageId,attachPaths,reworkCount)

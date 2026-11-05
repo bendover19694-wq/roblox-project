@@ -140,3 +140,4 @@
 .ask-for { align-items: center; flex: none; }
 .live-role .game-chip, .roster-name .game-chip, .worked-head .game-chip { margin-left: var(--s2); font-size: 12px; font-weight: 500; }
 .worked-head .game-chip { flex: none; }
+.ask-hint { margin: 6px 4px 0; }

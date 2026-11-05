@@ -332,9 +332,9 @@ test('laneSchedules: defaults and validation', async () => {
   const { s, api } = await boot();
   const def = (await api('GET', '/api/state')).json.settings.laneSchedules;
   assert.deepEqual(def.app, { enabled: true, everyMinutes: 60, activeFrom: '00:00', activeTo: '24:00', maxTasks: 8 });
-  assert.deepEqual(def.antigravity, { enabled: true, everyMinutes: 20, activeFrom: '00:00', activeTo: '24:00', maxTasks: 6 });
+  assert.deepEqual(def.antigravity, { enabled: true, everyMinutes: 5, activeFrom: '00:00', activeTo: '24:00', maxTasks: 6 });
   const set = (v) => api('POST', '/api/settings', { key: 'laneSchedules', value: v });
-  assert.equal((await set({ app: { ...def.app, everyMinutes: 19 } })).status, 400);
+  assert.equal((await set({ app: { ...def.app, everyMinutes: 4 } })).status, 400);
   assert.equal((await set({ app: { ...def.app, everyMinutes: 1441 } })).status, 400);
   assert.equal((await set({ app: { ...def.app, activeFrom: '25:00' } })).status, 400);
   assert.equal((await set({ app: { ...def.app, activeTo: '24:01' } })).status, 400);

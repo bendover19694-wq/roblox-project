@@ -99,3 +99,9 @@ On a game, press Play. HQ builds the project with rojo into `.agent-hq/builds/` 
 - **A skill is missing**: open Readiness, find the name, install or fix it, then press check again.
 - **The notebook shows Never synced**: the hourly worker has not run, or no Doc link is set. Run `hqctl notebook-mirror` by hand.
 - **Tests**: from `tools/agent-hq` run `npm test`. It should end with zero failures.
+
+## Run mode and learning
+- Settings, Run control, **Run mode**: Instant (default) starts agents on this PC within seconds, so the Lead replies in about a minute. Hourly waits for the Claude app worker and replies within the hour. Home shows which one is on under the Ask bar.
+- When the Lead hands out work, each result lands in the Lead's chat as soon as it finishes, and the Lead gets one "Results in" task to check everything and tell you what is done and what is not.
+- HQ learns from criticism: a reviewer's FAIL, your messages that say something was wrong, and a rejected or held stage request are all saved for the role involved. Open the Lessons drawer in a role's chat to read or delete them.
+- Antigravity checks in every 5 minutes by default. To change it, set Settings > Lanes and run `node tools/agent-hq/register-antigravity.mjs --every <minutes>`.

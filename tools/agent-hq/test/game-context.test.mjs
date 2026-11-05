@@ -44,7 +44,7 @@ test('brief has "Your game" with the right folder for both games and a fallback'
 const running = [];
 async function hq() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-gc-srv-'));
-  const s = await startServer({ root: path.resolve(import.meta.dirname, '../../..'), port: 0, stateDir: dir });
+  const s = await startServer({ root: path.resolve(import.meta.dirname, '../../..'), port: 0, stateDir: dir, memoryDir: path.join(dir, 'memory') });
   running.push(s);
   D.createGame(s.db, { slug: 'top-eleven', name: 'Top Eleven' });
   const call = (token) => async (method, route, body) => {
@@ -58,11 +58,11 @@ after(async () => { for (const s of running) await s.close(); });
 test('an owner message carries the selected game to the Lead task; task text names a game', async () => {
   const { owner, db } = await hq();
   await owner('POST', '/api/messages', { role: 'lead', text: 'plan the next step', game: 'top-eleven' });
-  await owner('POST', '/api/messages', { role: 'lead', text: 'plan the next step again' });
+  await owner('POST', '/api/messages', { role: 'lead', text: 'plan the next step now' });
   const t = (await owner('POST', '/api/tasks', { title: 'Polish Top Eleven lineup', role: 'ui' })).json;
   const tasks = D.listTasks(db, {});
   assert.equal(tasks.find((x) => x.title === 'plan the next step').game, 'top-eleven');
-  assert.equal(tasks.find((x) => x.title === 'plan the next step again').game, null);
+  assert.equal(tasks.find((x) => x.title === 'plan the next step now').game, null);
   assert.equal(t.game, 'top-eleven');
 });
 

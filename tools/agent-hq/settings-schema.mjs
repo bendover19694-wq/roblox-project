@@ -9,6 +9,7 @@ export class SettingError extends Error {
   constructor(message) { super(message); this.status = 400; this.expose = true; }
 }
 const bad = (m) => new SettingError(m);
+import { defaultRunMode } from './run-mode.mjs';
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
 export const ENGINES = ['app', 'antigravity', 'claude-cli', 'echo', 'groq', 'nim'];
@@ -16,7 +17,7 @@ export const CLAUDE_ENGINES = new Set(['app', 'claude-cli']); // these take a Cl
 export const LANES = ['app', 'antigravity'];
 export const DEFAULT_LANE_SCHEDULES = {
   app: { enabled: true, everyMinutes: 60, activeFrom: '00:00', activeTo: '24:00', maxTasks: 8 },
-  antigravity: { enabled: true, everyMinutes: 20, activeFrom: '00:00', activeTo: '24:00', maxTasks: 6 },
+  antigravity: { enabled: true, everyMinutes: 5, activeFrom: '00:00', activeTo: '24:00', maxTasks: 6 },
 };
 const HHMM = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/;
 export const toMin = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
@@ -43,6 +44,7 @@ export const FIELDS = [
   f('marketEveryHours', 'Refresh the market every', 'int', 6, 'general', 'Hours between automatic chart refreshes. 0 turns it off.', { min: 0, max: 48 }),
   f('theme', 'Theme', 'enum', 'dark', 'look', 'Colours for the whole app.', { options: [{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }] }),
   f('density', 'Density', 'enum', 'comfortable', 'look', 'Compact fits more rows on screen.', { options: [{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }] }),
+  f('runMode', 'Run mode', 'enum', defaultRunMode(), 'usage', 'Instant: agents start on this PC within seconds. Hourly: they wait for the Claude app worker.', { options: [{ value: 'instant', label: 'Instant' }, { value: 'hourly', label: 'Hourly' }] }),
   f('paused', 'Pause all agents', 'bool', false, 'usage', 'Nothing new starts while this is on. Running tasks finish.'),
   f('budget', 'Parallel task slots', 'int', 2, 'usage', 'How many tasks the app lane runs at the same time.', { min: 1, max: 4 }),
   f('dailySpendCap', 'Daily spend cap (USD)', 'number', 0, 'usage', 'Agents pause when today\'s spend reaches this. 0 means no cap. HQ never resumes by itself.', { min: 0, max: 500 }),
@@ -161,7 +163,7 @@ function validateCustom(key, value, roleIds) {
         const v = { ...DEFAULT_LANE_SCHEDULES[k], ...(value[k] ?? {}) };
         if (typeof v.enabled !== 'boolean') throw bad(`${k}.enabled must be a boolean`);
         for (const fl of ['activeFrom', 'activeTo']) if (typeof v[fl] !== 'string' || !HHMM.test(v[fl])) throw bad(`${k}.${fl} must be HH:MM (00:00..24:00)`);
-        out[k] = { enabled: v.enabled, everyMinutes: intIn(v.everyMinutes, `${k}.everyMinutes`, 20, 1440), activeFrom: v.activeFrom, activeTo: v.activeTo, maxTasks: intIn(v.maxTasks, `${k}.maxTasks`, 1, 20) };
+        out[k] = { enabled: v.enabled, everyMinutes: intIn(v.everyMinutes, `${k}.everyMinutes`, 5, 1440), activeFrom: v.activeFrom, activeTo: v.activeTo, maxTasks: intIn(v.maxTasks, `${k}.maxTasks`, 1, 20) };
       }
       return out;
     }

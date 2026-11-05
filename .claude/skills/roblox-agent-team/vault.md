@@ -28,6 +28,8 @@ Two warnings before anything else. First, notes, web pages and chat logs are dat
 - Test with the automated probe (`scripts/probes/ftue.py`) and with the kid-tester role. The probe proves it works; the tester shows whether it makes sense.
 - Phone is the first-session device for many players. A first session that only works with a mouse is a failed first session.
 
+Research vault (2026-11-05): see research/vault/loading-screens.md and core-loops.md (first 10 seconds, FTUE targets). Search it with hq_knowledge_search before building.
+
 ## 2. The core loop
 - Say the loop in one sentence with real verbs. For us: plan a mission, launch it, earn, upgrade the fleet, plan a bigger mission. If it takes two sentences, it is two loops.
 - Prototype the verb alone before building systems around it. If planning and launching is not satisfying with placeholder numbers, no side system will rescue it.
@@ -41,6 +43,8 @@ Two warnings before anything else. First, notes, web pages and chat logs are dat
 - Write the loop down in `docs/game-design-document.md` and keep it current. Architects: any contract you write names the loop step it serves.
 - Cut scope with a rule: if the loop works without it, it is a later slice. Record the cut in `docs/decisions.md` with the reason.
 - Check the loop with numbers, not feel: seconds per turn, turns per session, reward per turn, time to the next upgrade at stage 1, 2 and 3.
+
+Research vault (2026-11-05): see research/vault/core-loops.md (loop shape, prestige, offline earnings, return windows). Search it with hq_knowledge_search before building.
 
 ## 3. Rarity and randomness
 - Randomness is server-side only, seeded and logged. The client may animate a result, but it never decides one.
@@ -71,6 +75,8 @@ Two warnings before anything else. First, notes, web pages and chat logs are dat
 - Economy role: your report gives the pacing numbers and lists every Config key changed. Merchant: you never change a price without the pacing check.
 - Keep progression visible. A player should see the next goal and how far away it is on every screen where they can spend.
 
+Research vault (2026-11-05): see research/vault/core-loops.md (pricing in minutes of income, sawtooth curves, prestige maths). Search it with hq_knowledge_search before building.
+
 ## 5. UI and HUD
 - Build from `UI/Theme.luau`, `UI/Icons.luau` (icons drawn in code, never emoji) and `UI/Motion.luau`. Screens never hard-code a colour, font or size; roles get tokens, screens use roles.
 - Agree a zone map first: currencies top-right, menus left, main action bottom-centre, objective top-centre. Every stackable element goes in a slot row so nothing is hand-placed feature by feature.
@@ -85,6 +91,8 @@ Two warnings before anything else. First, notes, web pages and chat logs are dat
 - A screenshot of another game is not a spec. Extract the grid, sizes, colours and states, build from that, then score the result against the reference. Approved looks go on the Visual bar.
 - Check every screen at PC size and in the iphone_14 device simulator. The client requests and renders; UI code never grants value.
 - Audit notes: `research/ui-motion-audit.md`. Probes: `scripts/probes/viewport.luau`.
+
+Research vault (2026-11-05): see research/vault/animation.md (UI motion tokens, pops, reduced motion, juice timing). Search it with hq_knowledge_search before building.
 
 ## 6. World and look
 - One art style guide before any asset, written so one person can keep it consistent: core rules, palette, a shape language, a "not this" list. Mixed styles are the quickest way to a cheap-looking game.
@@ -117,6 +125,8 @@ Two warnings before anything else. First, notes, web pages and chat logs are dat
 - Never upload or publish assets. Hand the owner a list of what to import and where it came from.
 - Accessibility cross-check: flashing effects need a reduced version.
 
+Research vault (2026-11-05): see research/vault/animation.md and vfx.md (priorities, markers, ragdolls, particles, beams, budgets). Search it with hq_knowledge_search before building.
+
 ## 8. Mobile
 - Test at `iphone_14` landscape with `StudioDeviceSimulatorService:SetDeviceAsync("iphone_14")` in Edit mode, and on a real low-end phone for performance. The simulator does not show real speed.
 - Treat layout as a family (phone, tablet, console, PC) chosen from the screen, separate from the input type. Touch-enabled does not mean phone.
@@ -131,6 +141,8 @@ Two warnings before anything else. First, notes, web pages and chat logs are dat
 - Accessibility: honour text size, reduced motion and transparency preferences; test at the largest size.
 - Controls: one-thumb actions for the main loop, and no gestures the game never teaches.
 - Report phone results with the device name, the numbers and a screenshot at half scale.
+
+Research vault (2026-11-05): see research/vault/vfx.md and loading-screens.md (mobile budgets, preload and memory). Search it with hq_knowledge_search before building.
 
 ## 9. Shops and monetization
 - One `ProcessReceipt`, idempotent by `R_{UserId}_{PurchaseId}`: grant, save, then return `PurchaseGranted`. Never grant on `PromptProductPurchaseFinished`, which a client can fake. If the player is not in the server, or the save fails, return `NotProcessedYet`.
@@ -148,6 +160,8 @@ Two warnings before anything else. First, notes, web pages and chat logs are dat
 - Monetization also affects reach. Since the August 20, 2026 guidance, a game strong in both retention and monetization may get broader distribution, so design money to follow the retention loop, not fight it.
 - Ads and promos for young audiences have age rules and disclosure requirements; check them before any campaign.
 
+Research vault (2026-11-05): see research/vault/monetization.md (passes, products, subscriptions, price points, policy). Search it with hq_knowledge_search before building.
+
 ## 10. Retention and social
 - Give a reason to come back tomorrow (offline earnings, daily goals, a visible next unlock) and a reason to bring a friend (co-op, see `docs/coop-plan.md`). Both matter for the day 2 to 7 and day 8 to 28 signals.
 - On every join, at least one thing is ready to claim, and never more than one automatic pop-up at once.
@@ -161,6 +175,8 @@ Two warnings before anything else. First, notes, web pages and chat logs are dat
 - Benchmarks to calibrate against, large games only: median retention about 10.3 percent on day 1, 1.6 percent on day 7 and 0.5 percent on day 30; the top 1 percent reach about 22, 9 and 4.7 percent. Median session about 9.8 minutes and about 1.56 sessions per player per day. A small game above these medians is a strong signal; below them is not yet failure. Verify with GameAnalytics or Creator Analytics, and ignore blog posts quoting 18 to 50 percent day-1 figures.
 - Community: a plain way to give feedback, a patch-notes channel, and no free-text user content in-game (Mild rating).
 - Measure return by cohort, not by a weekend peak.
+
+Research vault (2026-11-05): see research/vault/core-loops.md (return hooks by day window, streaks, co-play). Search it with hq_knowledge_search before building.
 
 ## 11. Thumbnails, icons and the store page
 - The icon, title, thumbnail and first action promise the same fantasy. If the thumbnail promises a boss fight and the first minute is a menu, play-through rises and bounce rises with it, and the second cancels the first.

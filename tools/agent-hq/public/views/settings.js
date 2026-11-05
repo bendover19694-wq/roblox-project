@@ -38,7 +38,7 @@ function schedules() {
 // ---- lanes: cadence controls bound to settings.laneSchedules[engine] ----
 const EVERY = {
   app: [60, 120, 180, 240, 360, 480, 720, 1440],
-  antigravity: [20, 40, 60, 120, 240, 1440],
+  antigravity: [5, 10, 20, 40, 60, 120, 240, 1440],
 };
 const everyLabel = (m) => (m % 60 === 0 && m >= 60 ? `${m / 60} hour${m === 60 ? '' : 's'}` : `${m} minutes`);
 const laneDrafts = {};
@@ -100,7 +100,7 @@ function lanesCard() {
     h('h2', { class: 'section-title' }, 'Lanes'),
     h('p', { class: 'muted' }, 'Work waits in the queue until a worker in one of these apps picks it up.'),
     LANES.map(laneControls),
-    h('p', { class: 'hint' }, 'The Claude app checks in every hour and Antigravity every 20 minutes; HQ decides from these settings whether they work.'));
+    h('p', { class: 'hint' }, 'The Claude app checks in every hour and Antigravity every 5 minutes (re-run register-antigravity.mjs with --every N to match a different cadence); HQ decides from these settings whether they work.'));
 }
 
 // Where the worker lanes were seen last; moved here from Home.
@@ -111,13 +111,18 @@ function lanesStrip() {
 }
 
 // Keys this page draws itself in Run control, so the schema loop skips them.
-const SKIP = new Set(['budget', 'paused']);
+const SKIP = new Set(['budget', 'paused', 'runMode']);
 
 function runControl() {
   const budget = store.settings.budget ?? 2;
   const paused = !!store.settings.paused;
+  const runMode = store.settings.runMode === 'hourly' ? 'hourly' : 'instant';
   return h('section', { class: 'card stack sm' },
     h('h2', { class: 'section-title' }, 'Run control'),
+    h('div', { class: 'row gap between' },
+      h('div', {}, h('strong', {}, 'Run mode'), h('p', { class: 'muted' }, runMode === 'hourly' ? 'Hourly: agents wait for the Claude app worker.' : 'Instant: agents start on this PC within seconds.')),
+      h('div', { class: 'seg', role: 'group', 'aria-label': 'Run mode' }, [['instant', 'Instant'], ['hourly', 'Hourly']].map(([v, l]) => h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(v === runMode),
+        onclick: async () => { store.settings = { ...store.settings, runMode: v }; notify(); await act(() => api('POST', '/api/settings', { key: 'runMode', value: v })); } }, l)))),
     h('div', { class: 'row gap between' },
       h('div', {}, h('strong', {}, 'Parallel agents'), h('p', { class: 'muted' }, 'How many tasks may run at the same time.')),
       h('div', { class: 'seg', role: 'group', 'aria-label': 'Parallel agents' }, [1, 2, 3, 4].map((n) => h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(n === budget),

@@ -28,7 +28,7 @@ test('register-antigravity: dry run writes nothing, install merges, remove clean
   assert.ok(fs.readdirSync(path.dirname(file)).some((f) => f.includes('.bak-')));
   const side = JSON.parse(fs.readFileSync(sc, 'utf8'));
   assert.equal(side.builtin, 'schedule');
-  assert.match(side.args[0], /^CRON_TZ=\S+ \*\/20 \* \* \* \*$/);
+  assert.match(side.args[0], /^CRON_TZ=\S+ \*\/5 \* \* \* \*$/);
   assert.equal(side.display_name, 'Agent HQ design lane');
   assert.equal(side.restart_policy, 'always');
   assert.ok(!('enabled' in side));
@@ -38,6 +38,9 @@ test('register-antigravity: dry run writes nothing, install merges, remove clean
   assert.ok(side.agent_permissions.access_grants.some((g) => /^read_file\(.*\.agents\)$/.test(g)));
   assert.match(side.args.at(-1), /hq_lane_gate/);
   assert.match(side.agent_permissions.workspace_uris[0], /^file:\/\/\//);
+
+  spawnSync(process.execPath, [regFile, '--home', home, '--every', '15']);
+  assert.match(JSON.parse(fs.readFileSync(sc, 'utf8')).args[0], / \*\/15 \* \* \* \*$/);
 
   spawnSync(process.execPath, [regFile, '--remove', '--home', home]);
   const removed = JSON.parse(fs.readFileSync(file, 'utf8'));

@@ -311,6 +311,7 @@ export function render() {
       h('a', { class: 'chip', href: '#/tasks' }, queued.length + ' queued'),
       h('span', { class: 'chip static' }, 'last change ' + agoText(new Date(store.lastChange).toISOString()))),
     ask,
+    h('p', { class: 'hint ask-hint' }, store.settings.runMode === 'hourly' ? 'The Lead replies within the hour' : 'The Lead replies in about a minute'),
     h('div', { class: 'home-grid' },
       h('section', { class: 'stack' }, h('h2', { class: 'sec-h' }, 'Needs you', open.length ? h('span', { class: 'count', 'data-tone': 'amber' }, open.length) : null), needsYou()),
       h('aside', { class: 'stack' }, liveNow(), gamesCard(), studioCard(), freshnessCard())));
