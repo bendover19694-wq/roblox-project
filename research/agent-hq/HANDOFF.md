@@ -40,6 +40,8 @@ This replaces the 2026-11-06 handoff. It is the source of truth for what is done
 - **Research session 2 queued:** Scout tasks for sound, UI motion, FTUE and live ops, with deeper briefs (4+ named live games, numbers checked against GameAnalytics or Creator Analytics, 10 to 16 notes, 1500 to 2500 word brief). Compile them into `research/vault/` when done.
 - **Test-runner crash:** 4 full runs in a row green (318 tests, smoke, 51/51 dry run each); not reproduced this time.
 
+- **Designer uses Claude Design:** the designer role may call the Artifact tool (Claude Design, Design type). HQ-spawned claude-cli sessions do not get that tool (it depends on the desktop app's sign-in, which HQ's clean env does not carry), so Settings > roleEngines sends `designer` to the `app` lane, where the hourly Claude-desktop worker has it. The UI revamp mockup rework is `t_577a6c7602b8` (app lane); the earlier Antigravity pass failed review (invented currencies and items, garbled copy, 5 of 12 mockups).
+
 ## Open items, in priority order
 1. **Deploy** this commit once no claude-cli task is running (scouts and UI tasks were running at commit time), then watch the next hourly worker run: the notebook mirror's `syncedAt` in `Agent-HQ-App/.agent-hq/notebook-doc.json` should move past 2026-11-05.
 2. **Shop and HUD fixes** (`t_362cbd0e369d`) and its gates; re-capture at PC and iphone_14 with the Studio hooks.
