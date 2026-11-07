@@ -65,6 +65,12 @@ function tryCard(ask) {
             notify();
           }
         }, { kind: 'primary sm', icon: 'send' }) : btn('Reply', () => { replyOpen.add(ask.id); notify(); }, { kind: 'sm', icon: 'send' }),
+        // the agent asked the owner to do a laptop chore: send it back to the agent to do itself, and run its task again
+        ask.taskId ? btn('Do it for me', async () => {
+          const said = await act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: 'Do it yourself: Studio is open with its MCP server on. Run checks with hq_game_check, use the Roblox Studio tools, and call hq_open_studio if Studio is not connected.' }), 'Sent back to the agent');
+          const t = store.tasks.find((x) => x.id === ask.taskId);
+          if (said && t && ['failed', 'review', 'done'].includes(t.state)) await act(() => api('POST', `/api/tasks/${t.id}/retry`, {}), 'Task restarted');
+        }, { kind: 'primary sm', icon: 'sparkles' }) : null,
         btn('Done', () => act(() => api('POST', `/api/asks/${ask.id}/answer`, { answer: 'done' }), 'Marked done'), { kind: 'good sm', icon: 'check' }),
         ask.taskId ? btn('Details', () => openTaskDrawer(ask.taskId), { kind: 'ghost sm' }) : null)));
 }

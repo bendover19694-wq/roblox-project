@@ -52,3 +52,22 @@ export function mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, S
     return { game, moved: moved.map((x) => x.id) };
   });
 }
+
+/**
+ * POST /api/games/:slug/open-studio: the owner, or an agent on a working Studio task of a Studio role, opens the game's place in
+ * Studio (rojo build, then the default app; never publishes). At most once per 10 minutes per game, so agents cannot flood the desktop.
+ */
+export function mountOpenStudio(route, { play, needGame, agentTask, roleOf, HttpError, now = Date.now }) {
+  const last = new Map();
+  route('POST', /^\/api\/games\/([^/]+)\/open-studio$/, ({ m, body, who, headers }) => {
+    const g = needGame(m[1]);
+    if (who === 'agent') {
+      const t = agentTask(body, null, headers);
+      if (!t.needsStudio || !(roleOf(t.role)?.mcp ?? []).includes('Roblox_Studio')) throw new HttpError(403, 'only Studio tasks of Studio roles can open Studio');
+      if (t.game && t.game !== g.slug) throw new HttpError(403, `your task is for ${t.game}, not ${g.slug}`);
+    }
+    if (last.has(g.slug) && now() - last.get(g.slug) < 10 * 60000) throw new HttpError(429, 'Studio was opened for this game in the last 10 minutes; use the open window');
+    last.set(g.slug, now());
+    return play(g.slug);
+  });
+}

@@ -62,7 +62,9 @@ export function scopedWriteTools(allowedTools = [], files = [], gameDir = '.') {
 // Windows exposes a PowerShell tool next to Bash; every allow rule is written for Bash, so PowerShell is always off.
 export function claudeArgs({ brief, model, allowedTools = [], files = [], gameDir = '.', mcpConfigPath, studio = false }) {
   const scoped = scopedWriteTools(allowedTools, files, gameDir);
-  const allowed = studio ? [...scoped.allowed, 'mcp__Roblox_Studio__*'] : scoped.allowed;
+  // agents run the probes as `python -u scripts/...` (unbuffered output); allow that form of an allowed python rule too
+  const py = scoped.allowed.filter((t) => t.startsWith('Bash(python scripts/')).map((t) => t.replace('Bash(python ', 'Bash(python -u '));
+  const allowed = [...scoped.allowed, ...py, ...(studio ? ['mcp__Roblox_Studio__*'] : [])];
   const disallowed = [...scoped.disallowed, 'PowerShell'];
   return [
     '-p', brief, '--output-format', 'stream-json', '--verbose',

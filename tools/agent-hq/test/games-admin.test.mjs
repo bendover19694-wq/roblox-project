@@ -94,3 +94,19 @@ test('whoami: the server finds the task from its token; a wrong token, a wrong i
   assert.equal((await agent('POST', '/api/tasks/whoami', { taskId: 't_000000000000', taskToken: b.taskToken })).status, 403);
   assert.equal((await owner('POST', '/api/tasks/whoami', {})).status, 403);
 });
+
+test('open-studio: owner yes; agents only on a Studio task of a Studio role; once per 10 minutes', async () => {
+  const { mountOpenStudio } = await import('../games-admin.mjs');
+  const routes = []; const route = (m, re, fn) => routes.push({ re, fn });
+  let t = 0; const opened = [];
+  class HttpError extends Error { constructor(s, msg) { super(msg); this.status = s; } }
+  const tasks = { ui: { role: 'ui', needsStudio: 1, game: 'g' }, builder: { role: 'builder', needsStudio: 0, game: 'g' } };
+  mountOpenStudio(route, { play: (slug) => { opened.push(slug); return { ok: true }; }, needGame: (s) => ({ slug: s }), agentTask: (b) => tasks[b.as], roleOf: (r) => ({ mcp: r === 'ui' ? ['Roblox_Studio'] : [] }), HttpError, now: () => t });
+  const call = (who, body) => { const r = routes[0]; const m = r.re.exec('/api/games/g/open-studio'); try { return r.fn({ m, body, who }); } catch (e) { return e.status; } };
+  assert.equal(call('agent', { as: 'builder' }), 403);
+  assert.deepEqual(call('agent', { as: 'ui' }), { ok: true });
+  assert.equal(call('owner', {}), 429);
+  t += 11 * 60000;
+  assert.deepEqual(call('owner', {}), { ok: true });
+  assert.deepEqual(opened, ['g', 'g']);
+});

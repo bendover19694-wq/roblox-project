@@ -71,6 +71,8 @@ export function recentConversation(db, roleId, n = 10) {
 }
 
 export const OWNER_TOKEN_RULE = '- Never read, print or use .agent-hq/owner-token; owner approvals are the owner\'s alone.';
+// HQ runs checks and opens Studio itself, so agents must not hand those chores to the owner.
+export const SELF_SERVE_RULE = '- Never ask the owner to run commands, install things or open apps you can do yourself: run checks with hq_game_check, use the Roblox Studio tools on Studio tasks, and if Studio is not connected call hq_open_studio. Ask the owner only for decisions, approvals, money, publishing and their accounts. Run one shell command per call: commands joined with ;, &&, pipes or ( ) are blocked.';
 
 const HQCTL_LINE =
   'If the hq_* tools are not available, run `node tools/agent-hq/hqctl.mjs ...` from the repo root instead (see `node tools/agent-hq/hqctl.mjs --help`).';
@@ -329,7 +331,7 @@ export function buildBrief({ task, role, root, db, taskToken, memoryDir, referen
 
   const sameForRole = [
     `You are the ${r.label} agent (role id: ${r.id}) on the Run a Space Agency Roblox project.`,
-    `## Rules every agent gets\n${readRules(root)}\n${OWNER_TOKEN_RULE}`,
+    `## Rules every agent gets\n${readRules(root)}\n${OWNER_TOKEN_RULE}${small ? '' : `\n${SELF_SERVE_RULE}`}`,
     skillsSection(r, engine),
     r.mcp?.length ? `## Tools to prefer\nPrefer these when present: ${r.mcp.join(', ')}.` : null,
     rolesRulesSection(r),

@@ -1,5 +1,5 @@
 // Agent HQ server: HTTP API, SSE, static files. Zero dependencies.
-import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { mountGamesAdmin } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs';
+import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { mountGamesAdmin, mountOpenStudio } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs';
 import { createAssetCatalog, mountCatalog, CATALOG_OWNER_ONLY } from './catalog.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -1169,7 +1169,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   const readiness = createReadiness({ root, knowledge, getRoles: rolesMerged, now, ...readinessOpts });
   route('GET', /^\/api\/readiness$/, () => readiness());
   const play = createPlay({ root, stateDir, ...playOpts });
-  route('POST', /^\/api\/games\/([^/]+)\/play$/, ({ m }) => play(needGame(m[1]).slug));
+  route('POST', /^\/api\/games\/([^/]+)\/play$/, ({ m }) => play(needGame(m[1]).slug)); mountOpenStudio(route, { play, needGame, agentTask, roleOf, HttpError, now });
   const nb = mountNotebook(route, { db, str, bad, isObj, agentTask, gameSlugs, emit, getDoc: () => settingsAll().notebookDoc, HttpError, stateDir, touchLane, now }); // /api/notebook // GET /api/knowledge/status, /search, /read
 
   // title patterns across everything on the charts right now

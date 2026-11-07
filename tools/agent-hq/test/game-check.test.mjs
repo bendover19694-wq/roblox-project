@@ -86,3 +86,9 @@ test('runner: Studio MCP only for Studio roles, pinned to the Roblox launcher, n
   assert.match(s.command, /System32[\\/]cmd\.exe$/);
   assert.deepEqual(s.args, ['/c', path.join('C:/Users/x/AppData/Local', 'Roblox', 'mcp.bat')]);
 });
+
+test('claudeArgs: an allowed python scripts rule also allows the unbuffered -u form', () => {
+  const a = claudeArgs({ brief: 'b', allowedTools: ['Read', 'Bash(python scripts/*)'], files: [], mcpConfigPath: 'm.json' });
+  assert.ok(a.includes('Bash(python scripts/*)') && a.includes('Bash(python -u scripts/*)'));
+  assert.ok(!claudeArgs({ brief: 'b', allowedTools: ['Read'], files: [], mcpConfigPath: 'm.json' }).some((x) => x.includes('python')));
+});
