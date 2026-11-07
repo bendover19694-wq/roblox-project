@@ -745,10 +745,10 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
       }
       return null;
     };
-    const blocked = decide();
-    if (blocked) { touchLane(engine, {}); return blocked; }
-    touchLane(engine, { lastRunAt: nowIso() });
-    return { ...out(true, 'ok'), ...(headers?.['x-hq-task-token'] || (isObj(body) && body.taskToken) ? {} : { laneToken: nb.issueLaneToken(engine) }) }; // lane token for hq_notebook_mirror, never to a task caller
+    const blocked = decide(); // lane token for hq_notebook_mirror, never to a task caller; an empty queue gets one too so Instant mode still syncs the notebook
+    const lane = () => (headers?.['x-hq-task-token'] || (isObj(body) && body.taskToken) ? {} : { laneToken: nb.issueLaneToken(engine) });
+    if (blocked) { touchLane(engine, {}); return blocked.reason === 'queue empty' ? { ...blocked, ...lane() } : blocked; }
+    touchLane(engine, { lastRunAt: nowIso() }); return { ...out(true, 'ok'), ...lane() };
   });
 
   // ---- the Visual bar: approved images pinned as house references ----

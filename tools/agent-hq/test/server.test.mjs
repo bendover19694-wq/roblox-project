@@ -359,7 +359,7 @@ test('lane gate: every branch', async () => {
 
   // empty queue
   let g = await gate();
-  assert.deepEqual([g.run, g.reason, g.queued, g.maxTasks], [false, 'queue empty', 0, 8]);
+  assert.deepEqual([g.run, g.reason, g.queued, g.maxTasks, typeof g.laneToken], [false, 'queue empty', 0, 8, 'string']); // empty queue still gets a notebook lane token
   assert.ok((await lanes()).app.lastSeenAt); // gate counts as a check-in
   assert.equal((await lanes()).app.lastRunAt, null);
 

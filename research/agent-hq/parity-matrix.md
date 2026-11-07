@@ -80,6 +80,19 @@ Second review, desktop: Home 9.0, Lead 9.0, Tasks 8.9, Pitches 8.9, Help 8.9, Se
 
 Thin margins the reviewer named: phone strips still clip at the right edge on some pages (a fade was added); Games Overview has no stage dots of its own (they live on Home's "Where each game is"); Pro has 4 Soon steps.
 
+## Since 2026-11-03 (updated 2026-11-07)
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Games: Run a Space Agency and Top Eleven, grouped everywhere, Lead creates games and moves work | Done | T; L Top Eleven runs 1 and 2 |
+| Game-aware briefs, role file scopes per game, `hq_game_check` (lune, stylua, selene, luau-lsp) | Done | T; L both games pass all four |
+| Instant run mode (claude-cli on this PC), Lead gets results as tasks finish | Done | T; L Lead reply 36 s |
+| Learning loop: owner corrections, gate FAIL lessons, saved preferences, research notes | Done | T |
+| Research sessions and `research/vault/` | Done (session 1); session 2 queued 2026-11-07 (sound, UI motion, FTUE, live ops) | L session 1: 5 tasks, $3.21, 44 notes |
+| Studio tasks: Roblox StudioMCP for Studio roles, `hq_open_studio`, "Do it for me" | Done | T; L agent synced, played and captured |
+| UI audit live captures (Shop, PC and iphone_14) | PC done by hand; phone blocked: simulated typing and clicks do not reach the GUI under the device simulator. Studio-only test hooks queued as builder and UI tasks | L `captures/shop_pc_1.png` |
+| Notebook hourly sync | Fixed 2026-11-07: the lane gate gave the sync token only when the queue had work, so Instant mode never synced (last sync 2026-11-05). Not yet seen end to end | T server.test lane gate |
+
 ## Known gaps
 
 - The 4 Soon steps on Pro.
