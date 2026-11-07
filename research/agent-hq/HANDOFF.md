@@ -42,6 +42,10 @@ This replaces the 2026-11-06 handoff. It is the source of truth for what is done
 
 - **Designer uses Claude Design:** the designer role may call the Artifact tool (Claude Design, Design type). HQ-spawned claude-cli sessions do not get that tool (it depends on the desktop app's sign-in, which HQ's clean env does not carry), so Settings > roleEngines sends `designer` to the `app` lane, where the hourly Claude-desktop worker has it. The UI revamp mockup rework is `t_577a6c7602b8` (app lane); the earlier Antigravity pass failed review (invented currencies and items, garbled copy, 5 of 12 mockups).
 
+- **Skills (2026-11-07):** 14 skills from `gamedev-skills/awesome-gamedev-agent-skills` (8 Roblox, 6 engine-agnostic) scanned with NVIDIA SkillSpector (installed with `uv tool install`) and read by hand, then installed in `~/.claude/skills` and `.claude/skills`; the ui, builder, economy and librarian roles list the relevant ones. Record: `research/agent-hq/skills-audit.md`.
+- **Football game:** renamed in HQ to "Run a Football Club" (slug stays `top-eleven`). Owner decided parody player names (for example "Jube Bellinghat"). The Lead has the request: rename everywhere player-facing, parody name pool, research and Claude Design concepts now, playable demo after the Space Agency revamp is built.
+- **Vault Google Doc:** [Agent HQ Vault](https://docs.google.com/document/d/1vI0TPjOaVy3ISMW8aLtM-aDh_2qCg5Q7I9ftWRnGg28/edit), sections V0 to V8 (research vault, owner decisions, skills audit). The Drive connector can create docs but not edit an existing doc's text.
+
 ## Open items, in priority order
 1. **Deploy** this commit once no claude-cli task is running (scouts and UI tasks were running at commit time), then watch the next hourly worker run: the notebook mirror's `syncedAt` in `Agent-HQ-App/.agent-hq/notebook-doc.json` should move past 2026-11-05.
 2. **Shop and HUD fixes** (`t_362cbd0e369d`) and its gates; re-capture at PC and iphone_14 with the Studio hooks.
