@@ -63,7 +63,8 @@ test('paths and the notebook link are checked', () => {
 
 test('partnerAccess defaults and validation', () => {
   const ids = ['scout', 'designer', 'builder'];
-  assert.deepEqual(DEFAULT_SETTINGS.partnerAccess, { enabled: true, autoRoles: ['scout', 'designer'], dailyLimit: 5 });
-  assert.deepEqual(validateSetting('partnerAccess', { autoRoles: ['scout', 'scout'] }, ids), { enabled: true, autoRoles: ['scout'], dailyLimit: 5 });
+  assert.deepEqual(DEFAULT_SETTINGS.partnerAccess, { enabled: false, autoRoles: [], dailyLimit: 0 }); // off until the owner opts in
+  assert.deepEqual(validateSetting('partnerAccess', { enabled: true, autoRoles: ['scout', 'scout'], dailyLimit: 5 }, ids), { enabled: true, autoRoles: ['scout'], dailyLimit: 5 });
+  assert.throws(() => validateSetting('partnerAccess', { autoRoles: ['lead'] }, ['lead']), /cannot run/); // the Lead delegates, so never
   assert.throws(() => validateSetting('partnerAccess', { autoRoles: ['builder'] }, ids), /cannot run/);
 });

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 // Settings schema: the one list of every owner setting (key, label, control type, default, section, help).
 // The server validates with it and the Settings page renders from it (GET /api/settings/schema).
 import crypto from 'node:crypto';
@@ -24,8 +25,14 @@ export const toMin = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 export const mergeLaneSchedules = (v) => Object.fromEntries(LANES.map((k) => [k, { ...DEFAULT_LANE_SCHEDULES[k], ...(v?.[k] ?? {}) }]));
 
 // Partner agents (HQ Link / Ditto) may run without a yes only in roles that cannot edit game source.
-export const PARTNER_AUTO_OK = ['scout', 'designer', 'reviewer', 'kid-tester', 'playtester', 'liveops'];
-export const DEFAULT_PARTNER_ACCESS = { enabled: true, autoRoles: ['scout', 'designer'], dailyLimit: 5 };
+// Roles a partner may start without the owner: derived from roles.json, never hand-listed. A role qualifies only
+// when it cannot edit files, run shells, touch Studio or delegate.
+const UNSAFE_TOOL = /^(Edit|Write|NotebookEdit|Bash|PowerShell|mcp__Roblox_Studio)/;
+export const PARTNER_AUTO_OK = JSON.parse(fs.readFileSync(new URL('./roles.json', import.meta.url), 'utf8'))
+  .filter((r) => r.id !== 'lead' && !r.needsStudio && // the Lead can hand work to every role, so it never runs on a partner's say
+     !(r.mcp || []).includes('Roblox_Studio') && !(r.allowedTools || []).some((t) => UNSAFE_TOOL.test(t)))
+  .map((r) => r.id);
+export const DEFAULT_PARTNER_ACCESS = { enabled: false, autoRoles: [], dailyLimit: 0 }; // off until the owner opts in
 
 export const SECTIONS = [
   { id: 'general', label: 'General' },
