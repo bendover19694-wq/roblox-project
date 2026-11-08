@@ -91,15 +91,15 @@ function intIn(v, name, lo, hi) {
 const firstLine = (s, max = 200) => (s.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, max) || 'Untitled';
 const safeRel = (s) => !s.includes('\0') && !s.split(/[\\/]/).includes('..') && !path.isAbsolute(s);
 
-function parseOptions(v) {
+function parseOptions(v, okMedia = () => true) {
   if (v === undefined || v === null) return [];
   if (!Array.isArray(v) || v.length > 12) throw bad('options must be an array of up to 12');
   return v.map((o) => {
-    if (!isObj(o)) throw bad('option must be an object');
-    const out = { id: str(o.id, 'option.id', { max: 64, required: true }), label: str(o.label, 'option.label', { max: 200, required: true }) };
-    if (o.recommended) out.recommended = true;
-    return out;
-  });
+    if (!isObj(o)) throw bad('option must be an object'); const out = { id: str(o.id, 'option.id', { max: 64, required: true }), label: str(o.label, 'option.label', { max: 200, required: true }) };
+    const d = str(o.description, 'option.description', { max: 300 }), m = str(o.mediaPath, 'option.mediaPath', { max: 500 });
+    if (m && (!safeRel(m) || !okMedia(m))) throw bad('option.mediaPath must be an existing image under media or assets');
+    return { ...out, ...(d && { description: d }), ...(m && { mediaPath: m }), ...(o.recommended && { recommended: true }) };
+  }).map((o, i, all) => { if (o.mediaPath && all.slice(0, i).filter((x) => x.mediaPath).length >= 4) throw bad('at most 4 options can have mediaPath'); return o; });
 }
 
 // ---- file helpers ----
@@ -532,7 +532,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
       taskId, role: agent ? agent.role : oneOf(body.role, 'role', roleIds, { required: true }),
       kind: oneOf(body.kind, 'kind', ['decision', 'try', 'approve', 'review', 'reference'], { required: true }),
       title: str(body.title, 'title', { max: 200, required: true }), why: str(body.why, 'why', { max: 20000 }) ?? '',
-      options: parseOptions(body.options), mediaPath,
+      options: parseOptions(body.options, mediaExists), mediaPath,
     });
     emit('ask', ask); if (agent) lh?.supersede(ask, emit); // an agent asking again replaces its older open question
     return ask;

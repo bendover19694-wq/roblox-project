@@ -45,10 +45,10 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { taskId: str(), engine: str({ enum: ['app', 'antigravity'] }) }, required: ['taskId'] } },
   { name: 'hq_note', description: 'Post a progress note to your role thread.',
     inputSchema: { type: 'object', properties: { text: str({ maxLength: 4000 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['text'] } },
-  { name: 'hq_ask_owner', description: 'Ask the owner to decide, try, approve or review something.',
+  { name: 'hq_ask_owner', description: 'Ask the owner to decide, try, approve or review something. title = the question, ending in "?". For a decision give 2 to 4 options, recommended one first; add mediaPath (image under assets/ or media) to each option for visual choices.',
     inputSchema: { type: 'object', properties: {
       kind: str({ enum: ['decision', 'try', 'approve', 'review'] }), title: str({ maxLength: 200 }), why: str({ maxLength: 4000 }),
-      options: { type: 'array', items: { type: 'object', properties: { id: str(), label: str(), recommended: { type: 'boolean' } }, required: ['id', 'label'] } },
+      options: { type: 'array', items: { type: 'object', properties: { id: str(), label: str(), description: str({ maxLength: 300, description: 'One line' }), mediaPath: str({ maxLength: 500, description: 'Preview image' }), recommended: { type: 'boolean' } }, required: ['id', 'label'] } },
       taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['kind', 'title', 'why'] } },
   { name: 'hq_add_media', description: 'Attach a screenshot or image from the repo for owner review.',
     inputSchema: { type: 'object', properties: { path: str({ description: 'File path inside the repo' }), ask: str({ description: 'What the owner should look at' }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['path', 'ask'] } },

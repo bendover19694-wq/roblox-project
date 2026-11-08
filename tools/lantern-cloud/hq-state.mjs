@@ -81,6 +81,16 @@ export function validateCommand(c, snapshot) {
       if (!isStr(c.askId, 80) || !(snapshot.asks || []).some((a) => a?.id === c.askId)) return bad('unknown ask');
       if (!isStr(c.answer, 2000)) return bad('answer must be 1 to 2000 characters');
       return { ok: true, command: { id, type: 'answer', askId: c.askId, answer: c.answer } };
+    case 'link-chat': // owner only (enforced by the callers): says something to Ditto's HQ
+      if (!isStr(c.text, 1800)) return bad('text must be 1 to 1800 characters');
+      return { ok: true, command: { id, type: 'link-chat', text: c.text } };
+    case 'link-task': // owner only: shares a task with Ditto's HQ
+      if (!isStr(c.title, 200)) return bad('title must be 1 to 200 characters');
+      if (!isStr(c.body ?? '', 1600, 0)) return bad('body must be at most 1600 characters');
+      return { ok: true, command: { id, type: 'link-task', title: c.title, body: c.body ?? '' } };
+    case 'relay': // a proposal from Ditto; always attributed to him, whatever the caller sent
+      if (!isStr(c.text, 1800)) return bad('text must be 1 to 1800 characters');
+      return { ok: true, command: { id, type: 'relay', from: 'ditto', text: c.text } };
     default:
       return bad('unknown command type');
   }

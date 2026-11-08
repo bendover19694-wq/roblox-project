@@ -81,14 +81,18 @@ export function sessionCookie(sid, maxAgeSec = SESSION_MS / 1000) {
   return `${COOKIE}=${sid}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAgeSec}`;
 }
 
-export function createAuth({ hash, secret, totpSecret, now = Date.now } = {}) {
+/** users: [{name, role: 'owner'|'collab', hash, totpSecret?}]. The single hash/totpSecret form is the owner alone. */
+export function createAuth({ users, hash, secret, totpSecret, now = Date.now } = {}) {
   const key = secret || randomBytes(32).toString('hex');
-  let totpKey = null;
-  try { if (totpSecret) totpKey = base32Decode(totpSecret); } catch { totpKey = null; }
-  if (totpSecret && (!totpKey || totpKey.length < 10)) throw new Error('TOTP_SECRET is not valid base32 (20 bytes or more)');
-  let lastStep = -1; // a code works once, so a seen code cannot be replayed
-  const sessions = new Map(); // hmac(sid) -> { exp, seen }
-  const pendings = new Map(); // hmac(pending token) -> { exp, tries }: password passed, code still needed
+  const accounts = (users || [{ name: 'Voltage', role: 'owner', hash, totpSecret }]).filter((u) => u.hash).map((u) => {
+    let totpKey = null;
+    try { if (u.totpSecret) totpKey = base32Decode(u.totpSecret); } catch { totpKey = null; }
+    if (u.totpSecret && (!totpKey || totpKey.length < 10)) throw new Error('a TOTP secret is not valid base32 (20 bytes or more)');
+    return { name: u.name, role: u.role, hash: u.hash, totpKey, lastStep: -1 }; // a code works once, so a seen code cannot be replayed
+  });
+  const who = (u) => ({ name: u.name, role: u.role });
+  const sessions = new Map(); // hmac(sid) -> { exp, seen, user }
+  const pendings = new Map(); // hmac(pending token) -> { exp, tries, user }: password passed, code still needed
   const ipFails = new Map(); // ip -> [timestamps]
   let globalFails = [];
   const fp = (sid) => createHmac('sha256', key).update(String(sid)).digest('hex');
@@ -107,11 +111,11 @@ export function createAuth({ hash, secret, totpSecret, now = Date.now } = {}) {
     return mine.length >= IP_LIMIT || globalFails.length >= GLOBAL_LIMIT;
   }
 
-  function codeOk(code) {
+  function codeOk(u, code) {
     if (typeof code !== 'string' || !/^\d{6}$/.test(code)) return false;
     const step = Math.floor(now() / 30_000);
     for (const s of [step - 1, step, step + 1]) {
-      if (s > lastStep && timingSafeEqual(Buffer.from(totpAt(totpKey, s)), Buffer.from(code))) { lastStep = s; return true; }
+      if (s > u.lastStep && timingSafeEqual(Buffer.from(totpAt(u.totpKey, s)), Buffer.from(code))) { u.lastStep = s; return true; }
     }
     return false;
   }
@@ -120,24 +124,26 @@ export function createAuth({ hash, secret, totpSecret, now = Date.now } = {}) {
     ipFails.set(ip, [...recent(ipFails.get(ip) || []), t]);
     globalFails.push(t);
   };
-  function newSession(ip) {
+  function newSession(ip, user) {
     prune();
     const sid = randomBytes(32).toString('hex');
-    sessions.set(fp(sid), { exp: now() + SESSION_MS, seen: now() });
+    sessions.set(fp(sid), { exp: now() + SESSION_MS, seen: now(), user });
     ipFails.delete(ip);
     return { status: 200, sid };
   }
 
   /** Step 1. Returns {status: 200, sid} without TOTP, {status: 202, pending} when a code is needed, or 401|429|503. */
   async function login(password, ip) {
-    if (!hash) return { status: 503 };
+    if (!accounts.length) return { status: 503 };
     if (locked(ip)) return { status: 429 };
-    const pwOk = typeof password === 'string' && password.length > 0 && password.length <= 256 && (await verifyPassword(password, hash));
-    if (!pwOk) { fail(ip); return { status: 401 }; }
-    if (!totpKey) return newSession(ip);
+    const sane = typeof password === 'string' && password.length > 0 && password.length <= 256;
+    const hits = sane ? await Promise.all(accounts.map((u) => verifyPassword(password, u.hash))) : [];
+    const user = accounts[hits.indexOf(true)]; // the hash that matches decides the user
+    if (!user) { fail(ip); return { status: 401 }; }
+    if (!user.totpKey) return newSession(ip, who(user));
     for (const [k, v] of pendings) if (v.exp <= now()) pendings.delete(k);
     const pending = randomBytes(32).toString('hex');
-    pendings.set(fp(pending), { exp: now() + PENDING_MS, tries: 0 });
+    pendings.set(fp(pending), { exp: now() + PENDING_MS, tries: 0, user });
     return { status: 202, pending };
   }
 
@@ -153,27 +159,28 @@ export function createAuth({ hash, secret, totpSecret, now = Date.now } = {}) {
     if (locked(ip)) return { status: 429 };
     const p = pendingOf(cookieHeader);
     if (!p) return { status: 410 };
-    if (!codeOk(String(code || '').replace(/\s/g, ''))) {
+    if (!codeOk(p.v.user, String(code || '').replace(/\s/g, ''))) {
       fail(ip);
       if (++p.v.tries >= 5) pendings.delete(p.key); // five wrong codes: start again from the password
       return { status: p.v.tries >= 5 ? 410 : 401 };
     }
     pendings.delete(p.key);
-    return newSession(ip);
+    return newSession(ip, who(p.v.user));
   }
 
-  function check(cookieHeader) {
+  /** The signed-in {name, role}, or null. Counts as activity. */
+  function session(cookieHeader) {
     const sid = parseCookies(cookieHeader)[COOKIE];
-    if (!sid) return false;
+    if (!sid) return null;
     const k = fp(sid);
     const v = sessions.get(k);
-    if (!v) return false;
+    if (!v) return null;
     if (v.exp <= now() || now() - v.seen > IDLE_MS) {
       sessions.delete(k);
-      return false;
+      return null;
     }
     v.seen = now();
-    return true;
+    return v.user;
   }
 
   function destroy(cookieHeader) {
@@ -181,5 +188,5 @@ export function createAuth({ hash, secret, totpSecret, now = Date.now } = {}) {
     if (sid) sessions.delete(fp(sid));
   }
 
-  return { login, verifyCode, hasPending: (c) => Boolean(pendingOf(c)), check, destroy, hasPassword: Boolean(hash), hasTotp: Boolean(totpKey) };
+  return { login, verifyCode, hasPending: (c) => Boolean(pendingOf(c)), session, check: (c) => Boolean(session(c)), destroy, hasPassword: accounts.length > 0, hasTotp: accounts.some((u) => u.totpKey) };
 }

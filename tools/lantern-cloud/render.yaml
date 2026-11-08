@@ -15,8 +15,14 @@ services:
         sync: false
       - key: TOTP_SECRET
         sync: false
+      - key: DITTO_PASSWORD_HASH
+        sync: false
+      - key: DITTO_TOTP_SECRET
+        sync: false
       - key: SESSION_SECRET
         sync: false
+      - key: COLLAB_IDS
+        value: "1253880514822279219"
       - key: OWNER_IDS
         value: "821903980661178418"
       - key: GUILD_ID

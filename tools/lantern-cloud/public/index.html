@@ -14,6 +14,7 @@
 <header class="bar">
   <img class="mark" src="/img/favicon.png" alt="" width="32" height="32">
   <span class="brand">DV <b>Enterprises</b></span>
+  <span id="who" class="who"></span>
   <span id="status" class="status" role="status"><i aria-hidden="true"></i><span>Connecting</span></span>
   <form method="post" action="/logout" class="out"><button type="submit" class="link">Sign out</button></form>
 </header>
@@ -32,11 +33,33 @@
     </dl>
   </section>
 
+  <section class="studio" aria-label="Studio">
+    <h2 class="sr">Studio</h2>
+    <div class="hq-card"><span class="eyebrow">Voltage's HQ</span><strong id="hqVoltage">·</strong></div>
+    <div class="hq-card"><span class="eyebrow">Ditto's HQ</span><strong id="hqDitto">·</strong></div>
+  </section>
+
   <div class="layout">
     <div class="col-main">
       <section class="panel" aria-labelledby="asksTitle">
         <header class="panel-head"><h2 id="asksTitle">Needs you</h2><span id="asksCount" class="count"></span></header>
         <div id="asks" class="asks"><div class="skeleton"></div><div class="skeleton short"></div></div>
+      </section>
+      <section class="panel" aria-labelledby="collabTitle">
+        <header class="panel-head"><h2 id="collabTitle">Collaboration</h2><span id="collabCount" class="count"></span></header>
+        <ul id="feed" class="feed"><li class="skeleton"></li></ul>
+        <form id="linkForm" class="stack" hidden>
+          <label for="linkKind">Send to Ditto's HQ</label>
+          <select id="linkKind"><option value="chat">Chat message</option><option value="task">Shared task</option></select>
+          <input id="linkTitle" maxlength="200" placeholder="Task title" hidden>
+          <textarea id="linkText" maxlength="1600" rows="3" placeholder="Say something to Ditto's HQ" required></textarea>
+          <button type="submit" class="primary">Send</button>
+        </form>
+        <form id="proposeForm" class="stack" hidden>
+          <label for="proposeText">Propose to Voltage's HQ</label>
+          <textarea id="proposeText" maxlength="1800" rows="3" placeholder="An idea or request. It reaches the Lead only after Voltage approves." required></textarea>
+          <button type="submit" class="primary">Send proposal</button>
+        </form>
       </section>
       <section class="panel" aria-labelledby="tasksTitle">
         <header class="panel-head"><h2 id="tasksTitle">In progress</h2><span id="tasksCount" class="count"></span></header>

@@ -102,6 +102,13 @@ function ownWords(ask) {
 }
 
 // Buttons (plus the inline note box) for one open ask.
+// Options with a description or preview image: a grid of cards the owner clicks to pick (buttons, so keyboard and touch work).
+function optionGrid(ask) {
+  return h('div', { class: 'opt-grid' }, ask.options.map((o) => h('button', { type: 'button', class: 'opt' + (o.recommended ? ' rec' : ''), onclick: () => answer(ask, o.id) },
+    o.mediaPath ? h('img', { src: mediaUrl(o.mediaPath), alt: o.label, loading: 'lazy' }) : null,
+    h('b', {}, o.label, o.recommended ? ' (Recommended)' : ''), o.description ? h('span', { class: 'muted small' }, o.description) : null)));
+}
+
 function actions(ask) {
   const row = h('div', { class: 'row gap wrap' });
   const extra = [];
@@ -117,7 +124,8 @@ function actions(ask) {
       btn('Reject', () => setMode(ask, 'reject'), { kind: 'rv-reject' }));
     extra.push(modeBox(ask));
   } else if (ask.options?.length) {
-    ask.options.forEach((o) => row.append(btn(o.label, () => answer(ask, o.id), { kind: o.recommended ? 'primary' : '' })));
+    if (ask.options.some((o) => o.description || o.mediaPath)) extra.push(optionGrid(ask));
+    else ask.options.forEach((o) => row.append(btn(o.label, () => answer(ask, o.id), { kind: o.recommended ? 'primary' : '' })));
     if (ask.kind === 'decision') extra.push(ownWords(ask));
   } else if (ask.kind === 'try') {
     row.append(btn('Done', () => answer(ask, 'done'), { kind: 'primary', icon: 'check' }));

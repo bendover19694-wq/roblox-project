@@ -129,3 +129,9 @@ img.lb-able, img.ask-media, img.md-img, img.thumb { cursor: zoom-in; }
   .rv-meta { flex: 1 1 100%; }
   .lb-btn span { display: none; } .lb-bar { padding: var(--s2) var(--s3); }
 }
+
+.opt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; margin-top: 8px; }
+.opt { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; text-align: left; padding: 8px; min-height: 44px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg); color: inherit; font: inherit; cursor: pointer; }
+.opt.rec { border-color: var(--accent, currentColor); }
+.opt:hover, .opt:focus-visible { outline: 2px solid var(--accent, currentColor); }
+.opt img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; }

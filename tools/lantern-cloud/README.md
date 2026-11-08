@@ -26,11 +26,29 @@ Environment variables (secrets never go in the repo):
 | `DV_PASSWORD_HASH` | output of `node hash-password.mjs` (the older name `LANTERN_PASSWORD_HASH` still works) |
 | `SESSION_SECRET` | 64 random hex characters |
 | `TOTP_SECRET` | optional but recommended: turns on authenticator codes, see below |
+| `DITTO_PASSWORD_HASH` | optional: turns on the collaborator account for Ditto (same `hash-password.mjs`) |
+| `DITTO_TOTP_SECRET` | optional: Ditto's own authenticator key (`node totp-setup.mjs`); without it he signs in on the password alone |
+| `COLLAB_IDS` | `1253880514822279219` (Ditto's Discord id) |
 | `OWNER_IDS` | `821903980661178418` |
 | `GUILD_ID` | `1551059008826376232` |
 | `ASK_CHANNEL_ID` | `1568819214997790855` |
 | `STATE_CHANNEL_ID` | `1568819216797274183` |
 | `COMMANDS_CHANNEL_ID` | `1568819218630320219` |
+
+## Two accounts
+
+One password box; the password that matches decides who you are, and each person's own authenticator code applies on step 2. Lockouts and rate limits are shared.
+
+| | Voltage (owner) | Ditto (collaborator) |
+|---|---|---|
+| See state, tasks, asks, the link feed | yes | yes (read only) |
+| Answer asks, message agents, queue tasks | yes | no (403) |
+| Send chat or a shared task to Ditto's HQ | yes | no (403) |
+| Propose to Voltage's HQ (`/api/propose`, becomes a `relay` that reaches the Lead only after Voltage replies `send`) | no | yes |
+| Ask the assistant | 20 a minute | 10 a minute, may only propose a relay |
+| Setup details (missing env names) | yes | hidden |
+
+In Discord, `COLLAB_IDS` users get read-only answers in `#ask-hq` and DMs, and the assistant may only propose a `relay` for them.
 
 ## Make the password hash
 

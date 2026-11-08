@@ -113,8 +113,11 @@ function render(s) {
     box.append(top);
     if (a.why) box.append(el('p', 'ask-why', String(a.why).slice(0, 400)));
     const row = el('div', 'options');
+    const canAnswer = s.me?.role === 'owner';
     for (const o of a.options || []) {
-      const b = el('button', 'opt', o.label);
+      const b = el(canAnswer ? 'button' : 'div', canAnswer ? 'opt' : 'opt-ro', o.label + (o.recommended ? ' (Recommended)' : ''));
+      if (o.description) b.append(el('span', 'opt-desc', String(o.description).slice(0, 300)));
+      if (!canAnswer) { row.append(b); continue; }
       b.type = 'button';
       b.addEventListener('click', async () => {
         b.disabled = true;
@@ -125,6 +128,8 @@ function render(s) {
     }
     if (row.childElementCount) box.append(row);
     else box.append(el('p', 'fine', 'Answer this one in the agent\'s Discord thread.'));
+    if ((a.options || []).some((o) => o.mediaPath)) box.append(el('p', 'fine', 'Preview images are in the Discord thread.'));
+    if (!canAnswer) box.append(el('p', 'fine', 'Only Voltage can answer this.'));
     return box;
   }) : [empty('Nothing needs you', 'When an agent asks a question or wants a review, it shows up here and in Discord.')]));
 
@@ -136,14 +141,37 @@ function render(s) {
     return li;
   }) : [emptyRow()]));
 
+  renderStudio(s, snap);
   fillSelect($('msgRole'), roles, (r) => r.id, (r) => r.label, 'Waiting for HQ');
   fillSelect($('taskRole'), roles, (r) => r.id, (r) => r.label, 'Waiting for HQ');
   fillSelect($('taskGame'), [{ slug: '', name: 'Any game' }, ...(snap?.games || [])], (g) => g.slug, (g) => g.name, 'Any game');
 }
 
+function renderStudio(s, snap) {
+  const me = s.me || {};
+  const isOwner = me.role === 'owner';
+  $('who').textContent = me.name || '';
+  $('hqVoltage').textContent = s.hqOnline ? 'Online' : snap ? `Offline · seen ${age(s.snapshotAge)}` : 'Not seen yet';
+  const link = snap?.link;
+  const log = Array.isArray(link?.log) ? link.log : [];
+  const lastIn = log.filter((r) => r.dir === 'in').map((r) => Date.parse(r.at)).filter(Number.isFinite).sort((x, y) => y - x)[0];
+  const paired = (link?.peers || []).length > 0;
+  $('hqDitto').textContent = !link ? 'Not linked' : lastIn ? `Paired · last seen ${age(Date.now() - lastIn)}` : paired ? 'Paired · no messages yet' : 'Not paired';
+  $('collabCount').textContent = log.length ? String(log.length) : '';
+  $('feed').replaceChildren(...(log.length ? log.slice().reverse().map((r) => {
+    const li = el('li', r.dir === 'in' ? 'in' : 'out');
+    const t = r.kind === 'task' ? `Task: ${r.title || r.ref || ''}${r.state ? ` (${r.state})` : ''}` : r.kind === 'status' ? `Status: ${r.text || r.state || ''}` : r.text || '';
+    li.append(el('span', 't-role', `${r.dir === 'in' ? r.from || 'Ditto\'s HQ' : 'You'} · ${age(Date.now() - Date.parse(r.at))}`), el('span', 't-title', String(t).slice(0, 600)));
+    return li;
+  }) : [empty('No shared work yet', 'Chat and shared tasks between the two HQs show up here.')]));
+  $('linkForm').hidden = !isOwner;
+  $('proposeForm').hidden = me.role !== 'collab';
+  for (const id of ['tabMsg', 'tabTask']) $(id).hidden = !isOwner;
+}
+
 async function send(cmd, okMsg) {
   try {
-    await api('/api/command', cmd);
+    await api(cmd.type === 'relay' ? '/api/propose' : '/api/command', cmd);
     toast(okMsg || 'Sent. HQ runs it as soon as it is online.');
     return true;
   } catch (e) {
@@ -200,6 +228,19 @@ $('taskForm').addEventListener('submit', async (e) => {
     $('taskBody').value = '';
   }
   if (b) b.disabled = false;
+});
+
+$('linkKind').addEventListener('change', () => { $('linkTitle').hidden = $('linkKind').value !== 'task'; });
+$('linkForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const task = $('linkKind').value === 'task';
+  const text = $('linkText').value.trim();
+  const cmd = task ? { type: 'link-task', title: $('linkTitle').value.trim(), body: text } : { type: 'link-chat', text };
+  if (await send(cmd, 'Sent to Ditto\'s HQ.')) { $('linkText').value = ''; $('linkTitle').value = ''; }
+});
+$('proposeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (await send({ type: 'relay', text: $('proposeText').value.trim() }, 'Proposal sent. It reaches the Lead after Voltage approves.')) $('proposeText').value = '';
 });
 
 function bubble(who, text) {

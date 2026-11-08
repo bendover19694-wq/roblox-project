@@ -79,6 +79,7 @@ const HQCTL_LINE =
 
 const REPORTING =
   'Report with the hq MCP tools: hq_note for progress, hq_ask_owner for anything the owner must decide or try, ' +
+  'How to ask: only when blocked on a real choice. Title is one question ending in ?. 2 to 4 options with label and one-line description, recommended first (recommended:true). No "other" option. Findings go in why. ' +
   'hq_add_media for screenshots, hq_complete when done (summary of files changed and checks run). ' +
   'Before making or sourcing art, search free assets with hq_catalog_search. ' +
   'Record 0 to 2 reusable lessons with hq_learn before hq_complete. ' +

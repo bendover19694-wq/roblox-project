@@ -15,11 +15,12 @@ export function fmtAge(ms) {
 
 const ACTIVE = new Set(['queued', 'working', 'review']);
 
-export function parseBrainOutput(raw, snapshot) {
+/** collab: the assistant may only propose a relay (a proposal to Voltage's HQ). */
+export function parseBrainOutput(raw, snapshot, collab = false) {
   const j = JSON.parse(raw);
   if (!j || typeof j !== 'object' || typeof j.reply !== 'string' || !j.reply.trim()) throw new Error('brain reply missing');
   let command = null;
-  if (j.command) {
+  if (j.command && ((j.command.type === 'relay') === collab)) {
     const v = validateCommand(j.command, snapshot);
     if (v.ok) command = v.command;
   }
@@ -56,7 +57,7 @@ export function createBrain({ fetch: f = globalThis.fetch, apiKey, model, getSta
     return null;
   }
 
-  async function ask(text) {
+  async function ask(text, collab = false) {
     const st = await getState();
     const roles = (st.snapshot?.roles || []).map((r) => r.id).join(', ');
     const facts = st.snapshot ? clip(JSON.stringify(st.snapshot), 12000) : 'null';
@@ -67,7 +68,9 @@ export function createBrain({ fetch: f = globalThis.fetch, apiKey, model, getSta
       `Facts (latest HQ snapshot JSON): ${facts}`,
       'Reply with a JSON object: {"reply": string, "command": null | command}.',
       'Only propose a command when the owner clearly asks for an action. A command is one of:',
-      `{"type":"message","role":<role id>,"text":string} | {"type":"task","role":<role id>,"title":string,"body":string,"game"?:string} | {"type":"answer","askId":string,"answer":string}. Valid role ids: ${roles || 'none'}.`,
+      collab
+        ? "You are talking to Ditto, a collaborator with read-only access. The only command you may propose is {\"type\":\"relay\",\"text\":string}: a proposal sent to Voltage's HQ for Voltage to approve. Never propose anything else."
+        : `{"type":"message","role":<role id>,"text":string} | {"type":"task","role":<role id>,"title":string,"body":string,"game"?:string} | {"type":"answer","askId":string,"answer":string} | {"type":"link-chat","text":string} | {"type":"link-task","title":string,"body":string}. Valid role ids: ${roles || 'none'}.`,
     ].join('\n');
     const res = await f(GROQ_URL, {
       method: 'POST',
@@ -85,16 +88,16 @@ export function createBrain({ fetch: f = globalThis.fetch, apiKey, model, getSta
     const j = await res.json();
     stats.requests += 1;
     stats.tokens += Number(j?.usage?.total_tokens) || 0;
-    return parseBrainOutput(j?.choices?.[0]?.message?.content ?? '', st.snapshot);
+    return parseBrainOutput(j?.choices?.[0]?.message?.content ?? '', st.snapshot, collab);
   }
 
   /** Always resolves to {reply, command}. */
-  async function respond(text) {
+  async function respond(text, { collab = false } = {}) {
     const q = await quick(text);
     if (q) return { reply: q, command: null };
     if (!apiKey) return { reply: `${await statusText()} (Groq is not configured, so I can only answer: status, usage, asks, help.)`, command: null };
     try {
-      return await ask(text);
+      return await ask(text, collab);
     } catch (e) {
       console.error('brain:', e?.message);
       return { reply: `I could not reach my language model just now. ${await statusText()}`, command: null };
@@ -104,11 +107,12 @@ export function createBrain({ fetch: f = globalThis.fetch, apiKey, model, getSta
   return { respond, quick, ask, stats };
 }
 
-export const describeCommand = (c) => (c.type === 'answer' ? `answer ask ${c.askId}` : `${c.type} for ${c.role}`);
+export const describeCommand = (c) => (c.type === 'answer' ? `answer ask ${c.askId}` : c.role ? `${c.type} for ${c.role}` : c.type);
 
 /** Discord handler: answers only the owner in the ask channel, DMs, or when mentioned. */
-export function createBot({ discord, brain, ownerIds, askChannelId, sendCommand, now = Date.now }) {
+export function createBot({ discord, brain, ownerIds, collabIds = [], askChannelId, sendCommand, now = Date.now }) {
   const owners = new Set(ownerIds);
+  const collabs = new Set(collabIds);
   const politeAt = new Map(); // user id -> last polite refusal
   const pending = new Map(); // owner id -> {command, at}
 
@@ -124,7 +128,8 @@ export function createBot({ discord, brain, ownerIds, askChannelId, sendCommand,
     const mentioned = Boolean(me) && (msg.mentions || []).some((u) => u.id === me);
     const addressed = !msg.guild_id || (askChannelId && msg.channel_id === askChannelId) || mentioned;
     if (!addressed) return;
-    if (!owners.has(msg.author.id)) {
+    const collab = !owners.has(msg.author.id) && collabs.has(msg.author.id);
+    if (!owners.has(msg.author.id) && !collab) {
       const last = politeAt.get(msg.author.id);
       if (last === undefined || now() - last >= 3600_000) {
         politeAt.set(msg.author.id, now());
@@ -137,6 +142,7 @@ export function createBot({ discord, brain, ownerIds, askChannelId, sendCommand,
       const p = pending.get(msg.author.id);
       pending.delete(msg.author.id);
       if (p && now() - p.at < 5 * 60_000) {
+        if (collab && p.command.type !== 'relay') return void (await reply(msg, 'You can only send proposals.'));
         try {
           await sendCommand(p.command);
           return void (await reply(msg, 'Sent. HQ will run it as soon as it is online.'));
@@ -145,7 +151,7 @@ export function createBot({ discord, brain, ownerIds, askChannelId, sendCommand,
         }
       }
     }
-    const out = await brain.respond(text || 'help');
+    const out = await brain.respond(text || 'help', { collab });
     let content = out.reply;
     if (out.command) {
       pending.set(msg.author.id, { command: out.command, at: now() });

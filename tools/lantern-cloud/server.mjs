@@ -29,10 +29,18 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
   // the password hash: DV_PASSWORD_HASH, or the older LANTERN_PASSWORD_HASH already set on Render
   const passwordHash = env.DV_PASSWORD_HASH || env.LANTERN_PASSWORD_HASH;
   const missing = ENV_NAMES.filter((k) => (k === 'PASSWORD_HASH' ? !passwordHash : !env[k]));
-  const owners = String(env.OWNER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const ids = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const owners = ids(env.OWNER_IDS);
   const discord = env.DISCORD_BOT_TOKEN ? createDiscord({ token: env.DISCORD_BOT_TOKEN, fetch: f, ...(WebSocketImpl && { WebSocketImpl }) }) : null;
   const hq = discord && env.STATE_CHANNEL_ID ? createHqState({ discord, channelId: env.STATE_CHANNEL_ID, fetch: f, now }) : noHqState;
-  const auth = createAuth({ hash: passwordHash, secret: env.SESSION_SECRET, totpSecret: env.TOTP_SECRET, now });
+  const auth = createAuth({
+    users: [
+      { name: 'Voltage', role: 'owner', hash: passwordHash, totpSecret: env.TOTP_SECRET },
+      { name: 'Ditto', role: 'collab', hash: env.DITTO_PASSWORD_HASH, totpSecret: env.DITTO_TOTP_SECRET },
+    ],
+    secret: env.SESSION_SECRET,
+    now,
+  });
   // per-key sliding windows: Groq costs money, so chat is the tightest
   const hits = new Map();
   const limited = (key, max, windowMs = 60_000) => {
@@ -48,7 +56,7 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     if (!discord || !env.COMMANDS_CHANNEL_ID) throw new Error('Discord commands channel is not configured');
     return postCommand(discord, env.COMMANDS_CHANNEL_ID, command);
   };
-  if (discord) discord.onMessage(createBot({ discord, brain, ownerIds: owners, askChannelId: env.ASK_CHANNEL_ID, sendCommand, now }));
+  if (discord) discord.onMessage(createBot({ discord, brain, ownerIds: owners, collabIds: ids(env.COLLAB_IDS), askChannelId: env.ASK_CHANNEL_ID, sendCommand, now }));
 
   const send = (res, status, body, type = 'text/plain; charset=utf-8', headers = {}) => {
     res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...headers });
@@ -159,10 +167,14 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
       return redirect(res, '/login', { 'Set-Cookie': sessionCookie('', 0) });
     }
 
-    const authed = auth.check(req.headers.cookie);
+    const me = auth.session(req.headers.cookie);
+    const authed = Boolean(me);
+    const owner = me?.role === 'owner';
     if (p.startsWith('/api/')) {
       if (!authed) return json(res, 401, { error: 'login required' });
-      if (post && p === '/api/chat' && limited('chat', 20)) return json(res, 429, { error: 'Slow down: 20 questions a minute.' });
+      const chatMax = owner ? 20 : 10; // collaborators get a tighter assistant limit
+      if (post && p === '/api/chat' && limited(`chat:${me.role}`, chatMax)) return json(res, 429, { error: `Slow down: ${chatMax} questions a minute.` });
+      if (post && p === '/api/propose' && limited('propose', 10)) return json(res, 429, { error: 'Slow down: 10 proposals a minute.' });
       if (post && p === '/api/command' && limited('command', 30)) return json(res, 429, { error: 'Slow down: 30 actions a minute.' });
       if (get && p === '/api/state') {
         const st = await hq.get();
@@ -172,11 +184,26 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
           snapshotAge: st.ageMs,
           bot: { connected: Boolean(discord?.connected) },
           groq: { ...brain.stats, configured: Boolean(env.GROQ_API_KEY) },
-          missing,
+          me,
+          missing: owner ? missing : [], // setup details are for the owner
         });
       }
       if (post && p === '/api/command') {
-        const v = validateCommand(await readJson(req), (await hq.get()).snapshot);
+        if (!owner) return json(res, 403, { error: 'Only the owner can do that.' });
+        const body = await readJson(req);
+        if (body.type === 'relay') return json(res, 400, { error: 'unknown command type' }); // relays are made only from Ditto's own sign-in
+        const v = validateCommand(body, (await hq.get()).snapshot);
+        if (!v.ok) return json(res, 400, { error: v.error });
+        try {
+          await sendCommand(v.command);
+        } catch (e) {
+          return json(res, e.tooLong ? 413 : 502, { error: e.message });
+        }
+        return json(res, 200, { ok: true, id: v.command.id });
+      }
+      if (post && p === '/api/propose') {
+        if (me.role !== 'collab') return json(res, 403, { error: 'Proposals are for collaborators.' });
+        const v = validateCommand({ type: 'relay', text: (await readJson(req)).text }, { roles: [] });
         if (!v.ok) return json(res, 400, { error: v.error });
         try {
           await sendCommand(v.command);
@@ -188,7 +215,7 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
       if (post && p === '/api/chat') {
         const { text } = await readJson(req);
         if (typeof text !== 'string' || !text.trim() || text.length > 2000) return json(res, 400, { error: 'text must be 1 to 2000 characters' });
-        return json(res, 200, await brain.respond(text));
+        return json(res, 200, await brain.respond(text, { collab: !owner }));
       }
       return json(res, 404, { error: 'not found' });
     }
