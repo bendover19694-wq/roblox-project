@@ -2,11 +2,8 @@
 import readline from 'node:readline';
 import { hashPassword } from './auth.mjs';
 
-const rl = readline.createInterface({ input: process.stdin });
-const password = await new Promise((resolve) => {
-  rl.once('line', (l) => { rl.close(); resolve(l); });
-  rl.once('close', () => resolve(''));
-});
+let password = '';
+for await (const line of readline.createInterface({ input: process.stdin })) { password = line; break; } // first line only, so Enter finishes it
 if (password.length < 8) {
   console.error('Password must be at least 8 characters.');
   process.exit(1);
