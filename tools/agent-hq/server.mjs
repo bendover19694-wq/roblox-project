@@ -1,5 +1,5 @@
 // Agent HQ server: HTTP API, SSE, static files. Zero dependencies.
-import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { mountGamesAdmin, mountOpenStudio } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs';
+import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { createBridge, mountBridge, BRIDGE_OWNER_ONLY } from './discord-bridge.mjs'; import { mountGamesAdmin, mountOpenStudio } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs';
 import { createAssetCatalog, mountCatalog, CATALOG_OWNER_ONLY } from './catalog.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -53,10 +53,10 @@ const MEDIA_INLINE = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp3', 
 const CSP = "default-src 'self'; img-src 'self' data: https://cdn.polyhaven.com https://*.rbxcdn.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 // ---- event bus (SSE) ----
-const clients = new Set();
+const clients = new Set(); export const listeners = new Set();
 export function emit(type, payload) {
   const msg = `event: ${type}\ndata: ${JSON.stringify(payload ?? null)}\n\n`;
-  for (const res of clients) res.write(msg);
+  for (const res of clients) res.write(msg); for (const l of listeners) { try { l(type, payload); } catch {} }
 }
 
 // ---- validation ----
@@ -326,7 +326,7 @@ ${task.body}`;
   const queueTask = ({ selected, ...f }) => { if (!f.game) f.game = inferGame({ parentGame: f.parentId && D.getTask(db, f.parentId)?.game, selected, text: `${f.title}
 ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued(f); }; // 3D model work waits for a reference sheet (model-refs.mjs)
   const assetCatalog = createAssetCatalog({ root, stateDir, addAsset, fetchImpl: catalogFetch ?? globalThis.fetch, lihfolkPath: catalogLihfolk ?? process.env.HQ_LIHFOLK_ASSETS, polyhavenLocal: catalogMirror });
-  const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), fetchImpl: linkFetch ?? globalThis.fetch });
+  const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), fetchImpl: linkFetch ?? globalThis.fetch }); const bridge = createBridge({ db, D, stateDir, root, roles: rolesMerged, port: () => boundPort, fetchImpl: linkFetch ?? globalThis.fetch, now }); listeners.add(bridge.onEvent);
   const postMessage = (f) => { const m = D.addMessage(db, f); emit('message', m); return m; };
 
   const spendGuard = createSpendGuard({ db, emit, now, postMessage });
@@ -353,7 +353,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     ['GET', /^\/api\/games\/[^/]+\/gate$/], ['POST', /^\/api\/games\/[^/]+\/(?:gate\/(?:start|confirm|checklist)|ad-note)$/],
     ['POST', /^\/api\/pitches\/ideas$/], ['POST', /^\/api\/pitches\/[^/]+\/decide$/], ['POST', /^\/api\/stage-requests\/[^/]+\/decide$/],
     ['POST', /^\/api\/games$/], ['PATCH', /^\/api\/games\/[^/]+$/], ['POST', /^\/api\/games\/[^/]+\/mark-live$/],
-    ...LINK_OWNER_ONLY, ...GAME_CONTEXT_OWNER_ONLY, ...LEARNING_OWNER_ONLY, ...CATALOG_OWNER_ONLY, ...NOTEBOOK_OWNER_ONLY, ['POST', /^\/api\/games\/[^/]+\/play$/], ...IDEAS_OWNER_ONLY, ['POST', /^\/api\/settings$/], ['POST', /^\/api\/roles\/[^/]+$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
+    ...LINK_OWNER_ONLY, ...BRIDGE_OWNER_ONLY, ...GAME_CONTEXT_OWNER_ONLY, ...LEARNING_OWNER_ONLY, ...CATALOG_OWNER_ONLY, ...NOTEBOOK_OWNER_ONLY, ['POST', /^\/api\/games\/[^/]+\/play$/], ...IDEAS_OWNER_ONLY, ['POST', /^\/api\/settings$/], ['POST', /^\/api\/roles\/[^/]+$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
     ['POST', /^\/api\/messages\/[^/]+\/reset$/], ['POST', /^\/api\/memory\/[^/]+\/corrections$/], ['DELETE', /^\/api\/memory\/[^/]+\/corrections\/[^/]+$/], ['POST', /^\/api\/threads\/[^/]+\/read$/],
     ['POST', /^\/api\/market\/corpus$/], ['DELETE', /^\/api\/market\/corpus\/\d+$/], ['POST', /^\/api\/uploads$/],
   ];
@@ -378,7 +378,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   const route = (method, re, fn, opts = {}) => routes.push([method, re, fn, opts]);
 
   route('GET', /^\/api\/health$/, () => ({ ok: true }));
-  mountLink(route, link, { str, bad, isObj, agentTask, HttpError }); mountGameContext(route, { db }); mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError });
+  mountLink(route, link, { str, bad, isObj, agentTask, HttpError }); mountBridge(route, bridge, { str, bad, isObj, HttpError }); mountGameContext(route, { db }); mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError });
 
   route('GET', /^\/api\/state$/, () => {
     const asks = D.listAsks(db);
@@ -1384,7 +1384,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     // scrape the providers' model lists at boot and then daily, so the pickers are filled
     catalog.refreshAll().catch(() => {});
     setInterval(() => catalog.refreshAll().catch(() => {}), 86400000).unref();
-    setInterval(() => link.poll(), 20000).unref();
+    setInterval(() => link.poll(), 20000).unref(); setInterval(() => bridge.poll(), 15000).unref();
     assetCatalog.refreshIfOld();
     setInterval(() => assetCatalog.refreshIfOld(), 86400000).unref();
   }
@@ -1400,7 +1400,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
       clients.clear();
       server.closeAllConnections?.();
       await new Promise((r) => server.close(r));
-      db.close();
+      listeners.delete(bridge.onEvent); db.close();
     },
   };
 }
