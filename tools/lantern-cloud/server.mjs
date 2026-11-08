@@ -16,7 +16,7 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
+  'Referrer-Policy': 'same-origin', // no-referrer makes browsers send Origin: null on form posts
 };
 const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', png: 'image/png' };
 
@@ -50,7 +50,9 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
   const clientIp = (req) => String(req.headers['x-forwarded-for'] || '').split(',').at(-1).trim() || req.socket.remoteAddress || 'unknown';
   const originOk = (req) => {
     try {
-      return Boolean(req.headers.origin) && new URL(req.headers.origin).host === req.headers.host;
+      const o = req.headers.origin;
+      if (!o || o === 'null') return req.headers['sec-fetch-site'] === 'same-origin'; // browsers set this header and pages cannot forge it
+      return new URL(o).host === req.headers.host;
     } catch {
       return false;
     }

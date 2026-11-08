@@ -89,6 +89,11 @@ test('POST with a foreign or missing Origin is rejected', async () => {
   assert.equal(foreign.status, 403);
   const none = await s.req('/login', { method: 'POST', headers: h, body });
   assert.equal(none.status, 403);
+  // a real browser form post can carry Origin: null; it passes only when the browser says the request is same-origin
+  const nullCross = await s.req('/login', { method: 'POST', headers: { ...h, origin: 'null', 'sec-fetch-site': 'cross-site' }, body });
+  assert.equal(nullCross.status, 403);
+  const nullSame = await s.req('/login', { method: 'POST', headers: { ...h, origin: 'null', 'sec-fetch-site': 'same-origin' }, body });
+  assert.notEqual(nullSame.status, 403);
   const cookie = await s.sessionCookie();
   const cmd = await s.req('/api/command', { method: 'POST', headers: { cookie, origin: 'https://evil.example', 'content-type': 'application/json' }, body: '{}' });
   assert.equal(cmd.status, 403);
