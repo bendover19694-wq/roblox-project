@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SETTINGS_SCHEMA, DEFAULT_SETTINGS, validateSetting } from '../settings-schema.mjs';
 
-const ROLES = ['lead', 'builder', 'ui'];
+const ROLES = ['lead', 'builder', 'ui', 'scout', 'designer'];
 
 test('every field is fully described and in a known section', () => {
   const sections = new Set(SETTINGS_SCHEMA.sections.map((s) => s.id));
@@ -59,4 +59,11 @@ test('paths and the notebook link are checked', () => {
   assert.equal(validateSetting('notebookDoc', ' https://docs.google.com/document/d/abc_123-x/edit '), 'https://docs.google.com/document/d/abc_123-x/edit');
   assert.throws(() => validateSetting('notebookDoc', 'https://evil.example/document/d/abc'), /docs.google.com/);
   assert.throws(() => validateSetting('notebookDoc', 'http://docs.google.com/document/d/abc'), /docs.google.com/);
+});
+
+test('partnerAccess defaults and validation', () => {
+  const ids = ['scout', 'designer', 'builder'];
+  assert.deepEqual(DEFAULT_SETTINGS.partnerAccess, { enabled: true, autoRoles: ['scout', 'designer'], dailyLimit: 5 });
+  assert.deepEqual(validateSetting('partnerAccess', { autoRoles: ['scout', 'scout'] }, ids), { enabled: true, autoRoles: ['scout'], dailyLimit: 5 });
+  assert.throws(() => validateSetting('partnerAccess', { autoRoles: ['builder'] }, ids), /cannot run/);
 });

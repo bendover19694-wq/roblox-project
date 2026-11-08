@@ -159,14 +159,57 @@ function renderStudio(s, snap) {
   $('hqDitto').textContent = !link ? 'Not linked' : lastIn ? `Paired · last seen ${age(Date.now() - lastIn)}` : paired ? 'Paired · no messages yet' : 'Not paired';
   $('collabCount').textContent = log.length ? String(log.length) : '';
   $('feed').replaceChildren(...(log.length ? log.slice().reverse().map((r) => {
-    const li = el('li', r.dir === 'in' ? 'in' : 'out');
-    const t = r.kind === 'task' ? `Task: ${r.title || r.ref || ''}${r.state ? ` (${r.state})` : ''}` : r.kind === 'status' ? `Status: ${r.text || r.state || ''}` : r.text || '';
-    li.append(el('span', 't-role', `${r.dir === 'in' ? r.from || 'Ditto\'s HQ' : 'You'} · ${age(Date.now() - Date.parse(r.at))}`), el('span', 't-title', String(t).slice(0, 600)));
-    return li;
+    return feedItem(r);
   }) : [empty('No shared work yet', 'Chat and shared tasks between the two HQs show up here.')]));
-  $('linkForm').hidden = !isOwner;
-  $('proposeForm').hidden = me.role !== 'collab';
+  $('linkPanel').hidden = !isOwner;
+  $('proposePanel').hidden = me.role !== 'collab';
   for (const id of ['tabMsg', 'tabTask']) $(id).hidden = !isOwner;
+  renderStudioBrief(snap, log);
+  renderCollab(snap, log);
+}
+
+function feedItem(r) {
+  const li = el('li', r.dir === 'in' ? 'in' : 'out');
+  const t = r.kind === 'task' ? `Task: ${r.title || r.ref || ''}${r.state ? ` (${r.state})` : ''}` : r.kind === 'status' ? `Status: ${r.text || r.state || ''}` : r.text || '';
+  li.append(el('span', 't-role', `${r.dir === 'in' ? r.from || "Ditto's HQ" : 'You'} · ${age(Date.now() - Date.parse(r.at))}`), el('span', 't-title', String(t).slice(0, 600)));
+  return li;
+}
+
+function renderStudioBrief(snap, log) {
+  const asks = snap?.asks || [];
+  $('briefAsks').replaceChildren(...(asks.length ? asks.slice(0, 5).map((a) => {
+    const li = el('li');
+    li.append(el('span', 't-title', a.title), el('span', 't-role', String(a.role || '')));
+    return li;
+  }) : [empty('Nothing needs you', 'Questions and reviews from agents appear here.')]));
+  $('briefFeed').replaceChildren(...(log.length ? log.slice(-5).reverse().map(feedItem) : [empty('No shared work yet', 'Chat and shared tasks show up here.')]));
+}
+
+function renderCollab(snap, log) {
+  const pa = snap?.partnerAccess;
+  const auto = Array.isArray(pa?.autoRoles) ? pa.autoRoles.filter((r) => typeof r === 'string') : [];
+  const used = Number.isFinite(pa?.usedToday) ? pa.usedToday : 0;
+  const limit = Number.isFinite(pa?.dailyLimit) ? pa.dailyLimit : 0;
+  const left = Math.max(0, limit - used);
+  const open = Boolean(pa?.enabled) && left > 0;
+  $('accessLine').textContent = !pa ? 'Waiting for HQ to share how partner access is set.' : !pa.enabled ? "Partner access is off: every request waits for Voltage's OK." : `Runs right away: ${auto.join(', ') || 'none'}. Used today: ${used} of ${limit}. Voltage changes this in HQ Settings, partnerAccess.`;
+  $('quota').textContent = pa ? `${used}/${limit} today` : '';
+  const tasks = log.filter((r) => r.kind === 'task');
+  $('ptCount').textContent = tasks.length ? String(tasks.length) : '';
+  $('partnerTasks').replaceChildren(...(tasks.length ? tasks.slice().reverse().map(feedItem) : [empty('No partner tasks yet', 'Tasks sent either way show their status here.')]));
+  const roles = (snap?.roles || []).map((r) => r?.id).filter((id) => typeof id === 'string' && id);
+  const ids = [...new Set([...auto, ...roles])];
+  const sel = $('proposeRole');
+  const keep = sel.value;
+  const opts = [{ id: '', note: 'Let Voltage choose' }, ...ids.map((id) => ({ id, note: open && auto.includes(id) ? `runs right away (${left} of ${limit} left today)` : "needs Voltage's OK" }))];
+  sel.replaceChildren(...opts.map((r) => {
+    const o = el('option', null, r.id ? `${r.id} · ${r.note}` : r.note);
+    o.value = r.id;
+    o.dataset.note = r.note;
+    return o;
+  }));
+  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  $('roleNote').textContent = sel.selectedOptions[0]?.dataset.note || '';
 }
 
 async function send(cmd, okMsg) {
@@ -230,18 +273,39 @@ $('taskForm').addEventListener('submit', async (e) => {
   if (b) b.disabled = false;
 });
 
-$('linkKind').addEventListener('change', () => { $('linkTitle').hidden = $('linkKind').value !== 'task'; });
+const ROLE_ID = /^[a-z][a-z0-9-]{0,29}$/;
 $('linkForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const task = $('linkKind').value === 'task';
-  const text = $('linkText').value.trim();
-  const cmd = task ? { type: 'link-task', title: $('linkTitle').value.trim(), body: text } : { type: 'link-chat', text };
-  if (await send(cmd, 'Sent to Ditto\'s HQ.')) { $('linkText').value = ''; $('linkTitle').value = ''; }
+  if (await send({ type: 'link-chat', text: $('linkText').value.trim() }, "Sent to Ditto's HQ.")) $('linkText').value = '';
 });
+$('askForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const role = $('askRole').value.trim().toLowerCase();
+  if (role && !ROLE_ID.test(role)) return toast('Agent must be a role id like scout or designer.', true);
+  const cmd = { type: 'link-task', title: $('askTitle').value.trim(), body: $('askBody').value.trim(), ...(role && { role }) };
+  if (await send(cmd, "Asked Ditto's agents.")) { $('askTitle').value = ''; $('askBody').value = ''; }
+});
+$('proposeRole').addEventListener('change', () => { $('roleNote').textContent = $('proposeRole').selectedOptions[0]?.dataset.note || ''; });
 $('proposeForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (await send({ type: 'relay', text: $('proposeText').value.trim() }, 'Proposal sent. It reaches the Lead after Voltage approves.')) $('proposeText').value = '';
+  const role = $('proposeRole').value;
+  const note = $('roleNote').textContent;
+  if (await send({ type: 'relay', text: $('proposeText').value.trim(), ...(role && { role }) }, `Sent. ${role ? `${role}: ${note}.` : 'Voltage decides who takes it.'}`)) $('proposeText').value = '';
 });
+
+// sections: hash routes, no reload
+const SECTIONS = ['studio', 'hq', 'collab'];
+function route() {
+  const name = SECTIONS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'studio';
+  for (const n of SECTIONS) {
+    document.querySelector(`.sec[data-sec="${n}"]`).hidden = n !== name;
+    const a = document.querySelector(`.nav a[data-sec="${n}"]`);
+    if (n === name) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', route);
+route();
 
 function bubble(who, text) {
   const b = el('div', `bubble ${who}`, text);

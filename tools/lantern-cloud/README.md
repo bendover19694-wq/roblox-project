@@ -50,6 +50,14 @@ One password box; the password that matches decides who you are, and each person
 
 In Discord, `COLLAB_IDS` users get read-only answers in `#ask-hq` and DMs, and the assistant may only propose a `relay` for them.
 
+## Sections and who can use which agents
+
+The top bar has three sections (links like `#studio`, `#hq`, `#collab`): **Studio** (overview), **Agent HQ** (asks, tasks, composer) and **Collaboration** (link feed, partner tasks, forms).
+
+- Voltage: "Ask Ditto's agents" sends a `link-task` with an optional role (`^[a-z][a-z0-9-]{0,29}$`).
+- Ditto: "Use Voltage's agents" sends `/api/propose {text, role}`, which becomes a `relay` with that role. Roles in `partnerAccess.autoRoles` show "runs right away (N of M left today)" and start without asking; any other role shows "needs Voltage's OK" and waits for his `send`.
+- Voltage changes who runs right away, the daily limit and the on/off switch in HQ Settings > partnerAccess. Only roles that cannot edit game source may be automatic.
+
 ## Make the password hash
 
 From this folder, run `node hash-password.mjs`, type the password, press Enter, and paste the `scrypt$...` line into `DV_PASSWORD_HASH`. Use 12 or more characters you have never typed into a chat.

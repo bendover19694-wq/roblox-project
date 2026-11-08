@@ -23,6 +23,10 @@ const HHMM = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/;
 export const toMin = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 export const mergeLaneSchedules = (v) => Object.fromEntries(LANES.map((k) => [k, { ...DEFAULT_LANE_SCHEDULES[k], ...(v?.[k] ?? {}) }]));
 
+// Partner agents (HQ Link / Ditto) may run without a yes only in roles that cannot edit game source.
+export const PARTNER_AUTO_OK = ['scout', 'designer', 'reviewer', 'kid-tester', 'playtester', 'liveops'];
+export const DEFAULT_PARTNER_ACCESS = { enabled: true, autoRoles: ['scout', 'designer'], dailyLimit: 5 };
+
 export const SECTIONS = [
   { id: 'general', label: 'General' },
   { id: 'look', label: 'Look' },
@@ -64,6 +68,7 @@ export const FIELDS = [
   f('knowledgeLihfolk', 'LihFolk vault folder', 'string', '', 'knowledge', 'Absolute path. Empty uses the default location.', { max: 300 }),
   f('knowledgeReferences', 'References folder', 'string', '', 'knowledge', 'Absolute path. Empty uses the default location.', { max: 300 }),
   f('notebookDoc', 'Notebook Google Doc', 'string', '', 'notebook', 'Link to a Google Doc to mirror notebook entries. Empty means not linked.', { max: 300 }),
+  f('partnerAccess', 'Partner agents', 'custom', DEFAULT_PARTNER_ACCESS, 'integrations', 'Which of your agents Ditto may use without asking each time, and how many tasks a day.'),
   f('providers', 'API keys', 'custom', {}, 'integrations', 'Groq and NVIDIA NIM keys. Write-only.'),
   f('openCloud', 'Open Cloud', 'custom', {}, 'integrations', 'Reads live game numbers. Write-only.'),
 ];
@@ -166,6 +171,17 @@ function validateCustom(key, value, roleIds) {
         out[k] = { enabled: v.enabled, everyMinutes: intIn(v.everyMinutes, `${k}.everyMinutes`, 5, 1440), activeFrom: v.activeFrom, activeTo: v.activeTo, maxTasks: intIn(v.maxTasks, `${k}.maxTasks`, 1, 20) };
       }
       return out;
+    }
+    case 'partnerAccess': {
+      if (!isObj(value)) throw bad('partnerAccess must be an object');
+      const v = { ...DEFAULT_PARTNER_ACCESS, ...value };
+      if (typeof v.enabled !== 'boolean') throw bad('partnerAccess.enabled must be a boolean');
+      if (!Array.isArray(v.autoRoles) || v.autoRoles.length > 20) throw bad('partnerAccess.autoRoles must be a list of role ids');
+      for (const r of v.autoRoles) {
+        if (!roleIds.includes(r)) throw bad(`unknown role ${r}`);
+        if (!PARTNER_AUTO_OK.includes(r)) throw bad(`${r} can change game files, so it cannot run on a partner's request without your OK`);
+      }
+      return { enabled: v.enabled, autoRoles: [...new Set(v.autoRoles)], dailyLimit: intIn(v.dailyLimit, 'partnerAccess.dailyLimit', 0, 50) };
     }
     default:
       throw bad(`unknown setting ${key}`);

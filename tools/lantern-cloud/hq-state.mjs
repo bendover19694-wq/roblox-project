@@ -53,6 +53,8 @@ export const noHqState = { get: async () => ({ snapshot: null, online: false, ag
 
 const bad = (error) => ({ ok: false, error });
 const isStr = (v, max, min = 1) => typeof v === 'string' && v.trim().length >= min && v.length <= max;
+const ROLE_ID = /^[a-z][a-z0-9-]{0,29}$/;
+const roleOk = (v) => v == null || v === '' || (typeof v === 'string' && ROLE_ID.test(v)); // optional "which agent of the partner's HQ"
 
 /** Validate a proposed command against the contract and the snapshot. Returns {ok, command} or {ok:false, error}. */
 export function validateCommand(c, snapshot) {
@@ -87,10 +89,12 @@ export function validateCommand(c, snapshot) {
     case 'link-task': // owner only: shares a task with Ditto's HQ
       if (!isStr(c.title, 200)) return bad('title must be 1 to 200 characters');
       if (!isStr(c.body ?? '', 1600, 0)) return bad('body must be at most 1600 characters');
-      return { ok: true, command: { id, type: 'link-task', title: c.title, body: c.body ?? '' } };
+      if (!roleOk(c.role)) return bad('role must be a lowercase id like scout or designer');
+      return { ok: true, command: { id, type: 'link-task', title: c.title, body: c.body ?? '', ...(c.role && { role: c.role }) } };
     case 'relay': // a proposal from Ditto; always attributed to him, whatever the caller sent
       if (!isStr(c.text, 1800)) return bad('text must be 1 to 1800 characters');
-      return { ok: true, command: { id, type: 'relay', from: 'ditto', text: c.text } };
+      if (!roleOk(c.role)) return bad('role must be a lowercase id like scout or designer');
+      return { ok: true, command: { id, type: 'relay', from: 'ditto', text: c.text, ...(c.role && { role: c.role }) } };
     default:
       return bad('unknown command type');
   }

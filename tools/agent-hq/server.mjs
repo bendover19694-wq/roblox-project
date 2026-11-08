@@ -326,7 +326,7 @@ ${task.body}`;
   const queueTask = ({ selected, ...f }) => { if (!f.game) f.game = inferGame({ parentGame: f.parentId && D.getTask(db, f.parentId)?.game, selected, text: `${f.title}
 ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued(f); }; // 3D model work waits for a reference sheet (model-refs.mjs)
   const assetCatalog = createAssetCatalog({ root, stateDir, addAsset, fetchImpl: catalogFetch ?? globalThis.fetch, lihfolkPath: catalogLihfolk ?? process.env.HQ_LIHFOLK_ASSETS, polyhavenLocal: catalogMirror });
-  const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), fetchImpl: linkFetch ?? globalThis.fetch }); const bridge = createBridge({ db, D, stateDir, root, roles: rolesMerged, port: () => boundPort, fetchImpl: linkFetch ?? globalThis.fetch, now }); listeners.add(bridge.onEvent);
+  const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), roleIds: () => rolesMerged().map((x) => x.id), fetchImpl: linkFetch ?? globalThis.fetch }); const bridge = createBridge({ db, D, stateDir, root, roles: rolesMerged, port: () => boundPort, fetchImpl: linkFetch ?? globalThis.fetch, now }); listeners.add(bridge.onEvent);
   const postMessage = (f) => { const m = D.addMessage(db, f); emit('message', m); return m; };
 
   const spendGuard = createSpendGuard({ db, emit, now, postMessage });

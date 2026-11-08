@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta name="color-scheme" content="dark">
-<title>DV Enterprises · Agent HQ</title>
+<title>DV Enterprises</title>
 <link rel="icon" href="/img/favicon.png">
 <link rel="stylesheet" href="/style.css">
 </head>
@@ -14,6 +14,11 @@
 <header class="bar">
   <img class="mark" src="/img/favicon.png" alt="" width="32" height="32">
   <span class="brand">DV <b>Enterprises</b></span>
+  <nav class="nav" aria-label="Sections">
+    <a href="#studio" id="navStudio" data-sec="studio">Studio</a>
+    <a href="#hq" id="navHq" data-sec="hq">Agent HQ</a>
+    <a href="#collab" id="navCollab" data-sec="collab">Collaboration</a>
+  </nav>
   <span id="who" class="who"></span>
   <span id="status" class="status" role="status"><i aria-hidden="true"></i><span>Connecting</span></span>
   <form method="post" action="/logout" class="out"><button type="submit" class="link">Sign out</button></form>
@@ -22,8 +27,9 @@
 <main id="main" class="shell">
   <p id="notice" class="notice" role="status" hidden></p>
 
+<div id="sec-studio" class="sec" data-sec="studio">
   <section class="hero" aria-labelledby="headline">
-    <p class="eyebrow">Agent HQ</p>
+    <p class="eyebrow">DV Enterprises</p>
     <h1 id="headline">Checking on your studio</h1>
     <dl class="stats">
       <div><dt>Working now</dt><dd id="statWorking" class="num">·</dd></div>
@@ -39,27 +45,23 @@
     <div class="hq-card"><span class="eyebrow">Ditto's HQ</span><strong id="hqDitto">·</strong></div>
   </section>
 
+  <div class="layout even">
+    <section class="panel" aria-labelledby="briefAsksTitle">
+      <header class="panel-head"><h2 id="briefAsksTitle">What needs you</h2><a class="count more" href="#hq">Open Agent HQ</a></header>
+      <ul id="briefAsks" class="feed tall"><li class="skeleton"></li></ul>
+    </section>
+    <section class="panel" aria-labelledby="briefFeedTitle">
+      <header class="panel-head"><h2 id="briefFeedTitle">Latest shared activity</h2><a class="count more" href="#collab">Open Collaboration</a></header>
+      <ul id="briefFeed" class="feed tall"><li class="skeleton"></li></ul>
+    </section>
+  </div>
+</div>
+<div id="sec-hq" class="sec" data-sec="hq" hidden>
   <div class="layout">
     <div class="col-main">
       <section class="panel" aria-labelledby="asksTitle">
         <header class="panel-head"><h2 id="asksTitle">Needs you</h2><span id="asksCount" class="count"></span></header>
         <div id="asks" class="asks"><div class="skeleton"></div><div class="skeleton short"></div></div>
-      </section>
-      <section class="panel" aria-labelledby="collabTitle">
-        <header class="panel-head"><h2 id="collabTitle">Collaboration</h2><span id="collabCount" class="count"></span></header>
-        <ul id="feed" class="feed"><li class="skeleton"></li></ul>
-        <form id="linkForm" class="stack" hidden>
-          <label for="linkKind">Send to Ditto's HQ</label>
-          <select id="linkKind"><option value="chat">Chat message</option><option value="task">Shared task</option></select>
-          <input id="linkTitle" maxlength="200" placeholder="Task title" hidden>
-          <textarea id="linkText" maxlength="1600" rows="3" placeholder="Say something to Ditto's HQ" required></textarea>
-          <button type="submit" class="primary">Send</button>
-        </form>
-        <form id="proposeForm" class="stack" hidden>
-          <label for="proposeText">Propose to Voltage's HQ</label>
-          <textarea id="proposeText" maxlength="1800" rows="3" placeholder="An idea or request. It reaches the Lead only after Voltage approves." required></textarea>
-          <button type="submit" class="primary">Send proposal</button>
-        </form>
       </section>
       <section class="panel" aria-labelledby="tasksTitle">
         <header class="panel-head"><h2 id="tasksTitle">In progress</h2><span id="tasksCount" class="count"></span></header>
@@ -111,6 +113,57 @@
       </div>
     </aside>
   </div>
+</div>
+<div id="sec-collab" class="sec" data-sec="collab" hidden>
+  <p class="eyebrow">Collaboration</p>
+  <h1 class="h1">Two HQs, one table</h1>
+  <p id="accessLine" class="fine"></p>
+  <div class="layout even">
+    <div class="col-main">
+      <section class="panel" aria-labelledby="collabTitle">
+        <header class="panel-head"><h2 id="collabTitle">Link feed</h2><span id="collabCount" class="count"></span></header>
+        <ul id="feed" class="feed"><li class="skeleton"></li></ul>
+      </section>
+      <section class="panel" aria-labelledby="ptTitle">
+        <header class="panel-head"><h2 id="ptTitle">Partner tasks</h2><span id="ptCount" class="count"></span></header>
+        <ul id="partnerTasks" class="feed"><li class="skeleton"></li></ul>
+      </section>
+    </div>
+    <div class="col-main">
+      <section class="panel" aria-labelledby="linkTitle" id="linkPanel" hidden>
+        <header class="panel-head"><h2 id="linkTitle">Talk to Ditto's HQ</h2></header>
+        <form id="askForm" class="stack">
+          <h3 class="sub-h">Ask Ditto's agents</h3>
+          <label for="askRole">Agent (role id)</label>
+          <input id="askRole" list="roleHints" maxlength="30" placeholder="scout" autocomplete="off">
+          <datalist id="roleHints"><option value="scout"><option value="designer"><option value="lead"><option value="builder"><option value="ui"></datalist>
+          <label for="askTitle">Title</label>
+          <input id="askTitle" maxlength="200" placeholder="Check the new trailer" required>
+          <label for="askBody">Details</label>
+          <textarea id="askBody" maxlength="1500" rows="4" placeholder="What done looks like"></textarea>
+          <button type="submit" class="primary">Ask Ditto's agents</button>
+        </form>
+        <form id="linkForm" class="stack">
+          <h3 class="sub-h">Chat with Ditto's HQ</h3>
+          <label class="sr" for="linkText">Message</label>
+          <textarea id="linkText" maxlength="1600" rows="3" placeholder="Say something to Ditto's HQ" required></textarea>
+          <button type="submit" class="primary">Send</button>
+        </form>
+      </section>
+      <section class="panel" aria-labelledby="useTitle" id="proposePanel" hidden>
+        <header class="panel-head"><h2 id="useTitle">Use Voltage's agents</h2><span id="quota" class="count"></span></header>
+        <form id="proposeForm" class="stack">
+          <label for="proposeRole">Agent</label>
+          <select id="proposeRole"></select>
+          <p id="roleNote" class="fine"></p>
+          <label for="proposeText">Request</label>
+          <textarea id="proposeText" maxlength="1800" rows="4" placeholder="What should they do? Agents that run right away start at once; the rest wait for Voltage's OK." required></textarea>
+          <button type="submit" class="primary">Send request</button>
+        </form>
+      </section>
+    </div>
+  </div>
+</div>
 </main>
 <p id="toast" class="toast" role="status" hidden></p>
 <script src="/app.js"></script>

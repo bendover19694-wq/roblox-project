@@ -143,10 +143,28 @@ function youCard() {
       } })));
 }
 
+// Roles that cannot change game files; only these can run on a partner's request without your OK (the server enforces it too).
+const PARTNER_OK = ['scout', 'designer', 'reviewer', 'kid-tester', 'playtester', 'liveops'];
+function partnerCard() {
+  const cur = { enabled: true, autoRoles: ['scout', 'designer'], dailyLimit: 5, ...(store.settings.partnerAccess || {}) };
+  const save = async (patch) => {
+    const value = { ...cur, ...patch };
+    if (await act(() => api('POST', '/api/settings', { key: 'partnerAccess', value }), 'Saved')) { store.settings = { ...store.settings, partnerAccess: value }; notify(); }
+  };
+  return h('section', { class: 'card stack sm' },
+    h('h2', { class: 'section-title' }, 'Partner agents'),
+    h('p', { class: 'muted' }, "Let Ditto use these agents without asking you each time. Other roles, and anything over the daily limit, still wait for your OK."),
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: cur.enabled, onchange: (e) => save({ enabled: e.target.checked }) }), h('span', {}, 'Allow partner requests to run right away')),
+    h('div', { class: 'row gap wrap', role: 'group', 'aria-label': 'Roles that run right away' }, store.roles.filter((r) => PARTNER_OK.includes(r.id)).map((r) =>
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: cur.autoRoles.includes(r.id),
+        onchange: (e) => save({ autoRoles: e.target.checked ? [...cur.autoRoles, r.id] : cur.autoRoles.filter((x) => x !== r.id) }) }), h('span', {}, r.label)))),
+    field('Tasks per day', h('input', { class: 'input num-in', type: 'number', min: 0, max: 50, value: cur.dailyLimit, 'aria-label': 'Partner tasks per day', onchange: (e) => save({ dailyLimit: Math.max(0, Math.min(50, Math.round(Number(e.target.value) || 0))) }) })));
+}
+
 export function render() {
   loadSchema();
   const { schema, error } = schemaState();
-  const widgets = { providers: providersCard, roleEngines: agentModelsCard, laneSchedules: lanesCard, schedules };
+  const widgets = { providers: providersCard, roleEngines: agentModelsCard, laneSchedules: lanesCard, schedules, partnerAccess: partnerCard };
   let body;
   if (schema) {
     const { nodes, shown } = schemaSections(widgets, SKIP);

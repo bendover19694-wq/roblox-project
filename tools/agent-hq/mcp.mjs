@@ -78,8 +78,8 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: {} } },
   { name: 'hq_link_say', description: 'Send a short message to the linked HQ. Never include secrets or anything the owner keeps private.',
     inputSchema: { type: 'object', properties: { text: str({ maxLength: 1800 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['text'] } },
-  { name: 'hq_link_share', description: "Lead only: offer a task to the linked HQ. It runs only if the other owner accepts it.",
-    inputSchema: { type: 'object', properties: { title: str({ maxLength: 200 }), body: str({ maxLength: 1600 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['title'] } },
+  { name: 'hq_link_share', description: "Lead only: offer a task to the linked HQ. Say which of their agents should do it in role (for example scout or designer). Low-risk roles may run at once within their daily limit; the rest wait for the other owner.",
+    inputSchema: { type: 'object', properties: { title: str({ maxLength: 200 }), body: str({ maxLength: 1600 }), role: str({ maxLength: 30, description: 'Which of their agents should do it, e.g. scout or designer' }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['title'] } },
   { name: 'hq_catalog_search', description: 'Search free art in one place: Poly Haven models, textures and HDRIs, the LihFolk Asset Pack, and downloaded packs such as Kenney. Returns names, descriptions, tags, triangle counts and licences. Use it before making or sourcing art.',
     inputSchema: { type: 'object', properties: { q: str({ maxLength: 100 }), type: str({ enum: ['model', 'texture', 'hdri', 'material', 'sky', 'animation', 'vfx', 'pack'] }), source: str({ enum: ['polyhaven', 'lihfolk', 'pack'] }), limit: { type: 'number' } } } },
   { name: 'hq_catalog_fetch', description: 'Librarian only: download one Poly Haven asset into assets/library and add it to the asset index. Default size 1k.',
@@ -267,7 +267,7 @@ export const handlers = {
     return api('POST', '/api/link/say', { text: need(a.text, 'text'), taskId: taskIdOf(a) }, tokenOf(a));
   },
   async hq_link_share(a) {
-    return api('POST', '/api/link/share', { title: need(a.title, 'title'), body: a.body, taskId: taskIdOf(a) }, tokenOf(a));
+    return api('POST', '/api/link/share', { title: need(a.title, 'title'), body: a.body, role: a.role, taskId: taskIdOf(a) }, tokenOf(a));
   },
   async hq_catalog_search(a) {
     const qs = new URLSearchParams();

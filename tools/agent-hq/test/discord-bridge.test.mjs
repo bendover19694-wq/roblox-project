@@ -24,6 +24,8 @@ function fake() {
   let slow = false;
   let hqState = { tasks: [], asks: [], games: [] };
   let hqLink = {};
+  let auto = false;
+  let hqSettings = {};
   const res = (status, body) => ({ ok: status < 400, status, json: async () => body });
   const next = () => String((id += 1n));
   const fetchImpl = async (url, init = {}) => {
@@ -31,7 +33,7 @@ function fake() {
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
     calls.push({ method: init.method, path: u.pathname, search: u.search, body, headers: init.headers });
     const p = u.pathname;
-    if (u.hostname === '127.0.0.1') return res(200, init.method !== 'GET' ? {} : p === '/api/state' ? hqState : p === '/api/link' ? hqLink : {});
+    if (u.hostname === '127.0.0.1') return res(200, p === '/api/link/partner-task' ? { auto, taskId: 't_1' } : init.method !== 'GET' ? {} : p === '/api/state' ? hqState : p === '/api/link' ? hqLink : p === '/api/settings' ? hqSettings : {});
     if (p.endsWith('/users/@me')) return res(200, { id: BOT });
     if (init.method === 'DELETE' || init.method === 'PUT') return res(204, null);
     if (init.method === 'POST' && /\/channels\/\d+\/messages$/.test(p)) return res(200, { id: next() });
@@ -50,7 +52,7 @@ function fake() {
     return res(404, {});
   };
   const say = (thread, author, content, extra = {}) => { (inbox[thread] ??= []).push({ id: next(), author, content, ...extra }); return inbox[thread].at(-1); };
-  return { calls, fetchImpl, say, setSlow: (v) => { slow = v; }, setState: (v) => { hqState = v; }, setLink: (v) => { hqLink = v; } };
+  return { calls, fetchImpl, say, setSlow: (v) => { slow = v; }, setState: (v) => { hqState = v; }, setLink: (v) => { hqLink = v; }, setAuto: (v) => { auto = v; }, setSettings: (v) => { hqSettings = v; } };
 }
 
 function rig() {
@@ -469,4 +471,37 @@ test('snapshot carries option descriptions, recommended flag and the link feed (
   assert.equal(state.link.log.length, 30);
   assert.equal(state.link.log.at(-1).text, 'm39');
   assert.ok(!JSON.stringify(state).includes('leak') && !JSON.stringify(state).includes('drop'));
+});
+
+test('relay with a role: an auto role goes to the queue with a note, any other waits for send; bad roles are refused', async () => {
+  const r = rig();
+  const view = await cloud(r);
+  r.f.setAuto(true);
+  r.f.say(CMDS, { id: BOT }, cmd({ id: 'c_000000000001', type: 'relay', from: 'ditto', text: 'scout this', role: 'scout' }));
+  r.f.say(CMDS, { id: BOT }, cmd({ id: 'c_000000000002', type: 'relay', from: 'ditto', text: 'bad', role: 'Not A Role' }));
+  await r.bridge.poll();
+  await flush(r);
+  assert.deepEqual(r.hq().map((c) => [c.path, c.body]), [['/api/link/partner-task', { name: 'Ditto', role: 'scout', text: 'scout this' }]]);
+  assert.ok(r.hooks().some((h) => h.search.includes(`thread_id=${view.threads.lead}`) && /straight to the scout role/.test(h.body.content)));
+  assert.ok(!r.hooks().some((h) => h.body.content.includes('Reply "send"')));
+  r.f.setAuto(false);
+  r.f.say(CMDS, { id: BOT }, cmd({ id: 'c_000000000003', type: 'relay', from: 'ditto', text: 'build this', role: 'builder' }));
+  await r.bridge.poll();
+  await flush(r);
+  const wait = r.hooks().find((h) => h.body.content.includes('Reply "send"'));
+  assert.ok(wait.body.content.includes('asked for the builder role'));
+  assert.equal(reacted(r, '❌').length, 1);
+});
+
+test('link-task passes a valid role; the snapshot carries partnerAccess', async () => {
+  const r = rig();
+  await cloud(r);
+  r.f.setSettings({ partnerAccess: { enabled: true, autoRoles: ['scout'], dailyLimit: 5, junk: 1 } });
+  r.f.setLink({ name: 'DV', peers: [], log: [], partnerUsedToday: 2 });
+  r.f.say(CMDS, { id: BOT }, cmd({ id: 'c_000000000001', type: 'link-task', title: 'Look', body: 'x', role: 'designer' }));
+  r.f.say(CMDS, { id: BOT }, cmd({ id: 'c_000000000002', type: 'link-task', title: 'Look', role: '../x' }));
+  await r.bridge.poll();
+  assert.deepEqual(r.hq().map((c) => c.body), [{ title: 'Look', body: 'x', role: 'designer' }]);
+  const state = JSON.parse(await msgPosts(r, STATE)[0].body.get('files[0]').text());
+  assert.deepEqual(state.partnerAccess, { enabled: true, autoRoles: ['scout'], dailyLimit: 5, usedToday: 2 });
 });

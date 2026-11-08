@@ -142,7 +142,7 @@ test('Ditto proposes: /api/propose posts a relay attributed to ditto, whatever h
   const s = await boot();
   try {
     const ditto = await s.cookieOf(DITTO_PASSWORD, '1.1.1.2');
-    const r = await s.post(ditto, '/api/propose', { text: 'Can we add a shop?', from: 'voltage', type: 'message', role: 'designer' });
+    const r = await s.post(ditto, '/api/propose', { text: 'Can we add a shop?', from: 'voltage', type: 'message' });
     assert.equal(r.status, 200);
     const c = JSON.parse(JSON.parse(cmdPosts(s.f)[0].init.body).content.slice(7));
     assert.deepEqual({ ...c, id: 'x' }, { id: 'x', type: 'relay', from: 'ditto', text: 'Can we add a shop?' });
@@ -236,4 +236,18 @@ test('bot: without COLLAB_IDS Ditto is a stranger', async () => {
   const b = bot({ reply: 'secret', command: null }, []);
   await b.say(DITTO_ID, 'status');
   assert.equal(b.replies()[0], 'I only answer the owner here.');
+});
+
+test('role on propose and link-task: optional, must match ^[a-z][a-z0-9-]{0,29}$, ends up in the command', async () => {
+  const s = await boot();
+  try {
+    const ditto = await s.cookieOf(DITTO_PASSWORD, '1.1.1.2');
+    const owner = await s.cookieOf(FAKE_PASSWORD, '1.1.1.1');
+    assert.equal((await s.post(ditto, '/api/propose', { text: 'look at this', role: 'scout' })).status, 200);
+    assert.equal(JSON.parse(JSON.parse(cmdPosts(s.f).at(-1).init.body).content.slice(7)).role, 'scout');
+    for (const role of ['Scout', '1a', 'a b', 'a'.repeat(31), '../x', 5]) assert.equal((await s.post(ditto, '/api/propose', { text: 'x', role })).status, 400, String(role));
+    assert.equal((await s.post(owner, '/api/command', { type: 'link-task', title: 'T', body: '', role: 'designer' })).status, 200);
+    assert.equal((await s.post(owner, '/api/command', { type: 'link-task', title: 'T', body: '', role: 'Bad Role' })).status, 400);
+    assert.equal(validateCommand({ type: 'relay', text: 'x', role: '' }, { roles: [] }).command.role, undefined);
+  } finally { s.close(); }
 });

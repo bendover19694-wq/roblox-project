@@ -203,7 +203,8 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
       }
       if (post && p === '/api/propose') {
         if (me.role !== 'collab') return json(res, 403, { error: 'Proposals are for collaborators.' });
-        const v = validateCommand({ type: 'relay', text: (await readJson(req)).text }, { roles: [] });
+        const b = await readJson(req);
+        const v = validateCommand({ type: 'relay', text: b.text, role: b.role }, { roles: [] });
         if (!v.ok) return json(res, 400, { error: v.error });
         try {
           await sendCommand(v.command);
