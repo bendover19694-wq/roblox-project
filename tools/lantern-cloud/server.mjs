@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createAuth, sessionCookie } from './auth.mjs';
+import { createAuth, sessionCookie, pendingCookie } from './auth.mjs';
 import { createDiscord } from './discord.mjs';
 import { createBrain, createBot } from './brain.mjs';
 import { createHqState, noHqState, validateCommand, postCommand } from './hq-state.mjs';
@@ -100,12 +100,21 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     throw Object.assign(new Error('bad JSON body'), { status: 400 });
   };
 
-  async function loginPage(res, status, note) {
-    let html = await readFile(path.join(publicDir, 'login.html'), 'utf8');
-    html = html.replace('<!--NOTE-->', note ? `<p class="note" role="alert">${note}</p>` : '');
-    html = html.replace('<!--CODE-->', auth.hasTotp ? '<label for="code">Authenticator code</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required>' : '');
-    send(res, status, html, TYPES.html);
+  async function page(res, status, name, note, headers) {
+    let html = await readFile(path.join(publicDir, name), 'utf8');
+    html = html.replace('<!--NOTE-->', note ? `<p class="note" role="alert">${note}</p>` : ''); // notes are fixed strings from this file
+    html = html.replace('<!--STEPS-->', auth.hasTotp ? '<ol class="steps" aria-label="Sign-in steps"><li data-step="password">Password</li><li data-step="code">Authenticator</li></ol>' : '');
+    send(res, status, html, TYPES.html, headers);
   }
+  const loginPage = (res, status, note, headers) => page(res, status, 'login.html', note, headers);
+  const codePage = (res, status, note, headers) => page(res, status, 'login-code.html', note, headers);
+  const NOTES = {
+    401: 'That password is not right.',
+    401.1: 'That code is not right. Check the newest code in your app.',
+    410: 'That sign-in step expired. Enter your password again.',
+    429: 'Too many attempts. Try again in 15 minutes.',
+    503: 'Sign-in is not set up yet: the password hash is missing.',
+  };
 
   async function handle(req, res) {
     const { pathname: p } = new URL(req.url, 'http://dv.local');
@@ -121,21 +130,29 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     }
     if (get && p === '/style.css') return file(res, publicDir, 'style.css', TYPES.css);
     if (get && (p === '/img/logo.png' || p === '/img/favicon.png' || p === '/favicon.ico')) return file(res, path.join(publicDir, 'img'), p === '/img/logo.png' ? 'logo.png' : 'favicon.png', TYPES.png);
-    if (get && p === '/login') return loginPage(res, 200, auth.hasPassword ? '' : 'Sign-in is not set up yet: the password hash is missing.');
+    if (get && (p === '/fonts/space-grotesk.woff2' || p === '/fonts/geist-mono.woff2')) return file(res, path.join(publicDir, 'fonts'), p.slice(7), 'font/woff2');
+    if (get && p === '/login') return loginPage(res, 200, auth.hasPassword ? '' : NOTES[503], { 'Set-Cookie': pendingCookie('', 0) });
+    if (get && p === '/login/code') return auth.hasPending(req.headers.cookie) ? codePage(res, 200, '') : redirect(res, '/login');
     if (limited(`ip:${clientIp(req)}`, 240)) return json(res, 429, { error: 'too many requests' });
     if (post && !originOk(req)) return json(res, 403, { error: 'bad origin' });
 
-    if (post && p === '/login') {
+    if (post && (p === '/login' || p === '/login/code')) {
       let form;
       try {
         form = new URLSearchParams(await readBody(req));
       } catch {
         return send(res, 413, 'too large');
       }
-      const r = await auth.login(form.get('password') || '', clientIp(req), (form.get('code') || '').replace(/\s/g, ''));
-      if (r.status === 200) return redirect(res, '/', { 'Set-Cookie': sessionCookie(r.sid) });
-      const note = { 401: auth.hasTotp ? 'Wrong password or code.' : 'Wrong password.', 429: 'Too many attempts. Try again in 15 minutes.', 503: 'Sign-in is not set up yet: the password hash is missing.' }[r.status];
-      return loginPage(res, r.status, note);
+      if (p === '/login') {
+        const r = await auth.login(form.get('password') || '', clientIp(req));
+        if (r.status === 200) return redirect(res, '/', { 'Set-Cookie': sessionCookie(r.sid) });
+        if (r.status === 202) return redirect(res, '/login/code', { 'Set-Cookie': pendingCookie(r.pending) });
+        return loginPage(res, r.status, NOTES[r.status]);
+      }
+      const r = auth.verifyCode(req.headers.cookie, form.get('code') || '', clientIp(req));
+      if (r.status === 200) return redirect(res, '/', { 'Set-Cookie': [sessionCookie(r.sid), pendingCookie('', 0)] });
+      if (r.status === 401) return codePage(res, 401, NOTES[401.1]);
+      return loginPage(res, r.status, NOTES[r.status], { 'Set-Cookie': pendingCookie('', 0) });
     }
     if (post && p === '/logout') {
       auth.destroy(req.headers.cookie);

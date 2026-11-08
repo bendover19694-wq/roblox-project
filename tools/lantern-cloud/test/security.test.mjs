@@ -20,19 +20,42 @@ test('TOTP matches the RFC 6238 vector', () => {
   assert.equal(totpAt(base32Decode(SECRET), 1), '287082');
 });
 
-test('with TOTP on, sign-in needs the code, a code works once, and the page shows the code box', async () => {
+test('with TOTP on, sign-in is two steps: password, then a one-time code', async () => {
   const t = 1_700_000_000_000;
   const s = await boot({ TOTP_SECRET: SECRET }, {}, () => t);
+  const code = totpAt(base32Decode(SECRET), Math.floor(t / 30_000));
+  const form = (path, fields, cookie = '', ip = '2.2.2.2') => s.req(path, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': ip, ...(cookie && { cookie }) }, body: new URLSearchParams(fields) });
   try {
-    const page = await (await s.req('/login')).text();
+    assert.equal((await form('/login', { password: 'wrong' })).status, 401);
+    assert.equal((await s.req('/login/code')).status, 303); // no step 1, no code page
+    assert.equal((await form('/login/code', { code })).status, 410);
+    const step1 = await form('/login', { password: FAKE_PASSWORD });
+    assert.equal(step1.status, 303);
+    assert.equal(step1.headers.get('location'), '/login/code');
+    const pending = step1.headers.get('set-cookie').split(';')[0];
+    assert.match(pending, /^__Host-dv_step=[0-9a-f]{64}$/);
+    assert.ok(!step1.headers.get('set-cookie').includes('__Host-dv_sid=')); // the password alone gives no session
+    const page = await (await s.req('/login/code', { headers: { cookie: pending } })).text();
     assert.match(page, /autocomplete="one-time-code"/);
-    assert.equal((await s.login({ password: FAKE_PASSWORD })).status, 401);
-    const code = totpAt(base32Decode(SECRET), Math.floor(t / 30_000));
-    assert.equal((await s.login({ password: 'wrong', code })).status, 401);
-    const ok = await s.login({ password: FAKE_PASSWORD, code }, '3.3.3.3');
+    assert.equal((await form('/login/code', { code: '000000' }, pending)).status, 401);
+    const ok = await form('/login/code', { code }, pending, '3.3.3.3');
     assert.equal(ok.status, 303);
-    assert.match(ok.headers.get('set-cookie'), /^__Host-dv_sid=[0-9a-f]{64}; HttpOnly; Secure; SameSite=Strict; Path=\//);
-    assert.equal((await s.login({ password: FAKE_PASSWORD, code }, '4.4.4.4')).status, 401); // replay refused
+    assert.match(ok.headers.get('set-cookie'), /__Host-dv_sid=[0-9a-f]{64}; HttpOnly; Secure; SameSite=Strict; Path=\//);
+    // the step token is spent, and the same code cannot be replayed with a fresh password step
+    assert.equal((await form('/login/code', { code }, pending)).status, 410);
+    const again = (await form('/login', { password: FAKE_PASSWORD }, '', '4.4.4.4')).headers.get('set-cookie').split(';')[0];
+    assert.equal((await form('/login/code', { code }, again, '4.4.4.4')).status, 401);
+  } finally { s.close(); }
+});
+
+test('five wrong codes end the step and send you back to the password', async () => {
+  const s = await boot({ TOTP_SECRET: SECRET });
+  const form = (path, fields, cookie = '', ip) => s.req(path, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': ip, ...(cookie && { cookie }) }, body: new URLSearchParams(fields) });
+  try {
+    const pending = (await form('/login', { password: FAKE_PASSWORD }, '', '5.5.5.1')).headers.get('set-cookie').split(';')[0];
+    const statuses = [];
+    for (let i = 0; i < 5; i++) statuses.push((await form('/login/code', { code: '111111' }, pending, `5.5.6.${i}`)).status);
+    assert.deepEqual(statuses, [401, 401, 401, 401, 410]);
   } finally { s.close(); }
 });
 

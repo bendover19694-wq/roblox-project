@@ -5,22 +5,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta name="color-scheme" content="dark">
-<title>DV Enterprises · sign in</title>
+<title>Sign in · DV Enterprises × Agent HQ</title>
 <link rel="icon" href="/img/favicon.png">
 <link rel="stylesheet" href="/style.css">
 </head>
-<body class="login">
-<main class="signin">
-  <img class="logo" src="/img/logo.png" alt="DV Enterprises" width="340" height="165">
-  <p class="lede">Agent HQ command center. Sign in to check on your agents.</p>
-  <!--NOTE-->
-  <form method="post" action="/login" class="stack">
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required autofocus>
-    <!--CODE-->
-    <button type="submit" class="primary">Sign in</button>
-  </form>
-  <p class="fine">Five wrong tries lock sign-in for 15 minutes. Sessions end after 30 idle minutes.</p>
-</main>
+<body class="auth at-password">
+<div class="auth-shell">
+  <section class="auth-brand" aria-label="DV Enterprises and Agent HQ">
+    <div class="lockup">
+      <img class="lockup-dv" src="/img/logo.png" alt="DV Enterprises" width="236" height="115">
+      <span class="lockup-x" aria-hidden="true">×</span>
+      <span class="lockup-hq">
+        <svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true"><defs><linearGradient id="hqg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8A69FF"/><stop offset="1" stop-color="#FF828E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="#0A0B10"/><path d="M16 5c4 3 6 7 6 12l-3 4h-6l-3-4c0-5 2-9 6-12z" fill="url(#hqg)"/><circle cx="16" cy="14" r="2.4" fill="#F4F7FF"/><path d="M13 22l3 5 3-5z" fill="#FF828E"/></svg>
+        <span>Agent HQ</span>
+      </span>
+    </div>
+    <p class="brand-line">The command center for your AI game studio.</p>
+    <ul class="brand-points">
+      <li>See what every agent is building, live</li>
+      <li>Answer reviews and approvals in one click</li>
+      <li>Reachable from anywhere, even when your PC is off</li>
+    </ul>
+  </section>
+
+  <main class="auth-card">
+    <!--STEPS-->
+    <h1>Sign in</h1>
+    <p class="sub">Enter your owner password to continue.</p>
+    <!--NOTE-->
+    <form method="post" action="/login" class="stack">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required autofocus>
+      <button type="submit" class="primary">Continue</button>
+    </form>
+    <p class="fine">Protected by rate limits and lockout. Sessions end after 30 idle minutes.</p>
+  </main>
+</div>
 </body>
 </html>

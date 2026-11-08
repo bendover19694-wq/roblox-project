@@ -8,7 +8,8 @@ const R = 8;
 const P = 1;
 const KEYLEN = 32;
 const SESSION_MS = 12 * 3600_000; // absolute limit
-const IDLE_MS = 30 * 60_000; // signed out after 30 minutes without activity
+const IDLE_MS = 30 * 60_000;
+const PENDING_MS = 5 * 60_000; // time allowed between the password and the code // signed out after 30 minutes without activity
 const WINDOW_MS = 15 * 60_000;
 const IP_LIMIT = 5;
 const GLOBAL_LIMIT = 30;
@@ -73,6 +74,9 @@ export function parseCookies(header) {
   return out;
 }
 
+export const PENDING_COOKIE = '__Host-dv_step';
+export const pendingCookie = (tok, maxAgeSec = PENDING_MS / 1000) => `${PENDING_COOKIE}=${tok}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAgeSec}`;
+
 export function sessionCookie(sid, maxAgeSec = SESSION_MS / 1000) {
   return `${COOKIE}=${sid}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAgeSec}`;
 }
@@ -84,6 +88,7 @@ export function createAuth({ hash, secret, totpSecret, now = Date.now } = {}) {
   if (totpSecret && (!totpKey || totpKey.length < 10)) throw new Error('TOTP_SECRET is not valid base32 (20 bytes or more)');
   let lastStep = -1; // a code works once, so a seen code cannot be replayed
   const sessions = new Map(); // hmac(sid) -> { exp, seen }
+  const pendings = new Map(); // hmac(pending token) -> { exp, tries }: password passed, code still needed
   const ipFails = new Map(); // ip -> [timestamps]
   let globalFails = [];
   const fp = (sid) => createHmac('sha256', key).update(String(sid)).digest('hex');
@@ -102,9 +107,7 @@ export function createAuth({ hash, secret, totpSecret, now = Date.now } = {}) {
     return mine.length >= IP_LIMIT || globalFails.length >= GLOBAL_LIMIT;
   }
 
-  /** Returns {status: 200|401|429|503, sid?}. */
   function codeOk(code) {
-    if (!totpKey) return true;
     if (typeof code !== 'string' || !/^\d{6}$/.test(code)) return false;
     const step = Math.floor(now() / 30_000);
     for (const s of [step - 1, step, step + 1]) {
@@ -112,23 +115,51 @@ export function createAuth({ hash, secret, totpSecret, now = Date.now } = {}) {
     }
     return false;
   }
-
-  async function login(password, ip, code) {
-    if (!hash) return { status: 503 };
-    if (locked(ip)) return { status: 429 };
-    const pwOk = typeof password === 'string' && password.length > 0 && password.length <= 256 && (await verifyPassword(password, hash));
-    const ok = pwOk && codeOk(code); // one answer for either mistake, so neither can be guessed alone
-    if (!ok) {
-      const t = now();
-      ipFails.set(ip, [...recent(ipFails.get(ip) || []), t]);
-      globalFails.push(t);
-      return { status: 401 };
-    }
+  const fail = (ip) => {
+    const t = now();
+    ipFails.set(ip, [...recent(ipFails.get(ip) || []), t]);
+    globalFails.push(t);
+  };
+  function newSession(ip) {
     prune();
     const sid = randomBytes(32).toString('hex');
     sessions.set(fp(sid), { exp: now() + SESSION_MS, seen: now() });
     ipFails.delete(ip);
     return { status: 200, sid };
+  }
+
+  /** Step 1. Returns {status: 200, sid} without TOTP, {status: 202, pending} when a code is needed, or 401|429|503. */
+  async function login(password, ip) {
+    if (!hash) return { status: 503 };
+    if (locked(ip)) return { status: 429 };
+    const pwOk = typeof password === 'string' && password.length > 0 && password.length <= 256 && (await verifyPassword(password, hash));
+    if (!pwOk) { fail(ip); return { status: 401 }; }
+    if (!totpKey) return newSession(ip);
+    for (const [k, v] of pendings) if (v.exp <= now()) pendings.delete(k);
+    const pending = randomBytes(32).toString('hex');
+    pendings.set(fp(pending), { exp: now() + PENDING_MS, tries: 0 });
+    return { status: 202, pending };
+  }
+
+  const pendingOf = (cookieHeader) => {
+    const tok = parseCookies(cookieHeader)[PENDING_COOKIE];
+    const v = tok && pendings.get(fp(tok));
+    if (!v || v.exp <= now()) return null;
+    return { key: fp(tok), v };
+  };
+
+  /** Step 2. Returns 200 {sid}, 401 wrong code, 410 no or expired step 1, 429 locked. */
+  function verifyCode(cookieHeader, code, ip) {
+    if (locked(ip)) return { status: 429 };
+    const p = pendingOf(cookieHeader);
+    if (!p) return { status: 410 };
+    if (!codeOk(String(code || '').replace(/\s/g, ''))) {
+      fail(ip);
+      if (++p.v.tries >= 5) pendings.delete(p.key); // five wrong codes: start again from the password
+      return { status: p.v.tries >= 5 ? 410 : 401 };
+    }
+    pendings.delete(p.key);
+    return newSession(ip);
   }
 
   function check(cookieHeader) {
@@ -150,5 +181,5 @@ export function createAuth({ hash, secret, totpSecret, now = Date.now } = {}) {
     if (sid) sessions.delete(fp(sid));
   }
 
-  return { login, check, destroy, hasPassword: Boolean(hash), hasTotp: Boolean(totpKey) };
+  return { login, verifyCode, hasPending: (c) => Boolean(pendingOf(c)), check, destroy, hasPassword: Boolean(hash), hasTotp: Boolean(totpKey) };
 }

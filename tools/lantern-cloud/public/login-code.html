@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark">
+<title>Verify · DV Enterprises × Agent HQ</title>
+<link rel="icon" href="/img/favicon.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth at-code">
+<div class="auth-shell">
+  <section class="auth-brand" aria-label="DV Enterprises and Agent HQ">
+    <div class="lockup">
+      <img class="lockup-dv" src="/img/logo.png" alt="DV Enterprises" width="236" height="115">
+      <span class="lockup-x" aria-hidden="true">×</span>
+      <span class="lockup-hq">
+        <svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true"><defs><linearGradient id="hqg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8A69FF"/><stop offset="1" stop-color="#FF828E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="#0A0B10"/><path d="M16 5c4 3 6 7 6 12l-3 4h-6l-3-4c0-5 2-9 6-12z" fill="url(#hqg)"/><circle cx="16" cy="14" r="2.4" fill="#F4F7FF"/><path d="M13 22l3 5 3-5z" fill="#FF828E"/></svg>
+        <span>Agent HQ</span>
+      </span>
+    </div>
+    <p class="brand-line">The command center for your AI game studio.</p>
+  </section>
+
+  <main class="auth-card">
+    <!--STEPS-->
+    <h1>Two-step verification</h1>
+    <p class="sub">Open your authenticator app and enter the 6-digit code for DV Enterprises.</p>
+    <!--NOTE-->
+    <form method="post" action="/login/code" class="stack">
+      <label for="code">Authenticator code</label>
+      <input id="code" name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" placeholder="000 000" required autofocus>
+      <button type="submit" class="primary">Verify and sign in</button>
+    </form>
+    <p class="fine">The code changes every 30 seconds, and each one works only once. You have 5 minutes. <a href="/login">Start over</a></p>
+  </main>
+</div>
+</body>
+</html>
