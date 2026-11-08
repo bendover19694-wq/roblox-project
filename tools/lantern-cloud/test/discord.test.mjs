@@ -59,6 +59,6 @@ test('rest: honours 429 retry_after, sets User-Agent, error text has no token', 
   const d = createDiscord({ token, fetch: f });
   assert.deepEqual(await d.rest('GET', '/users/@me'), { id: 'ok' });
   assert.equal(n, 2);
-  assert.equal(seen[0]['User-Agent'], 'DiscordBot (lantern, 1)');
+  assert.equal(seen[0]['User-Agent'], 'DiscordBot (dv-enterprises, 1)');
   await assert.rejects(d.rest('GET', '/channels/123456789/messages'), (e) => e.status === 403 && !e.message.includes(token));
 });

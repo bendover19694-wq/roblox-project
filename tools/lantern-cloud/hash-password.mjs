@@ -1,4 +1,4 @@
-// Usage: node hash-password.mjs, type the password and press Enter (or pipe it in). Prints a LANTERN_PASSWORD_HASH value.
+// Usage: node hash-password.mjs, type the password and press Enter (or pipe it in). Prints a DV_PASSWORD_HASH value.
 import readline from 'node:readline';
 import { hashPassword } from './auth.mjs';
 

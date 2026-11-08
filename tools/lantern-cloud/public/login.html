@@ -3,19 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lantern</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark">
+<title>DV Enterprises · sign in</title>
+<link rel="icon" href="/img/favicon.png">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body class="login">
-<main class="card">
-  <h1>Lantern</h1>
-  <p class="muted">Agent HQ, always on.</p>
+<main class="signin">
+  <img class="logo" src="/img/logo.png" alt="DV Enterprises" width="340" height="165">
+  <p class="lede">Agent HQ command center. Sign in to check on your agents.</p>
   <!--NOTE-->
-  <form method="post" action="/login">
+  <form method="post" action="/login" class="stack">
     <label for="password">Password</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
-    <button type="submit">Sign in</button>
+    <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required autofocus>
+    <!--CODE-->
+    <button type="submit" class="primary">Sign in</button>
   </form>
+  <p class="fine">Five wrong tries lock sign-in for 15 minutes. Sessions end after 30 idle minutes.</p>
 </main>
 </body>
 </html>

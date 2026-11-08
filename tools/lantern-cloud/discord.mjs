@@ -25,7 +25,7 @@ export function createDiscord({ token, fetch: f = globalThis.fetch, WebSocketImp
   /** REST call. Returns parsed JSON (null on 204). Throws Error with .status on failure. */
   async function rest(method, path, body, { form } = {}) {
     for (let attempt = 0; attempt < 4; attempt++) {
-      const headers = { Authorization: `Bot ${token}`, 'User-Agent': 'DiscordBot (lantern, 1)' };
+      const headers = { Authorization: `Bot ${token}`, 'User-Agent': 'DiscordBot (dv-enterprises, 1)' };
       let payload;
       if (form) payload = form;
       else if (body !== undefined) {
@@ -78,7 +78,7 @@ export function createDiscord({ token, fetch: f = globalThis.fetch, WebSocketImp
         d: {
           token,
           intents: INTENTS,
-          properties: { os: 'linux', browser: 'lantern', device: 'lantern' },
+          properties: { os: 'linux', browser: 'dv-enterprises', device: 'dv-enterprises' },
           presence: { since: null, activities: [{ name: 'Agent HQ', type: 3 }], status: 'online', afk: false },
         },
       });

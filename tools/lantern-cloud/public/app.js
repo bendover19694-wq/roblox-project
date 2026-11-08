@@ -1,4 +1,4 @@
-// Dashboard client. All server and snapshot text is rendered with textContent, never innerHTML.
+// DV Enterprises dashboard. Everything from the server or HQ is rendered with textContent, never innerHTML.
 const $ = (id) => document.getElementById(id);
 
 function el(tag, cls, text) {
@@ -9,104 +9,145 @@ function el(tag, cls, text) {
 }
 
 async function api(path, body) {
-  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined);
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' });
   if (r.status === 401) {
     location.href = '/login';
-    throw new Error('login required');
+    throw new Error('Signed out. Sign in again.');
   }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `request failed (${r.status})`);
+  if (!r.ok) throw new Error(j.error || `Request failed (${r.status}).`);
   return j;
 }
 
 let toastTimer;
-function toast(msg) {
+function toast(msg, isErr = false) {
   const t = $('toast');
   t.textContent = msg;
+  t.className = `toast${isErr ? ' err' : ''}`;
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), 4000);
+  toastTimer = setTimeout(() => (t.hidden = true), 4500);
 }
 
 function age(ms) {
   if (ms == null) return 'never';
   const s = Math.round(ms / 1000);
   if (s < 90) return `${s}s ago`;
-  if (s < 5400) return `${Math.round(s / 60)}m ago`;
-  return `${Math.round(s / 3600)}h ago`;
+  if (s < 5400) return `${Math.round(s / 60)} min ago`;
+  if (s < 172800) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} days ago`;
 }
 
 function avatar(id) {
   const img = el('img', 'avatar');
   img.alt = '';
-  if (/^[a-z0-9-]{1,40}$/.test(String(id))) img.src = `/avatars/${id}.png`;
-  img.addEventListener('error', () => (img.hidden = true));
+  img.width = 32;
+  img.height = 32;
+  img.src = /^[a-z0-9-]{1,40}$/.test(String(id)) ? `/avatars/${id}.png` : '/avatars/hq.png';
+  img.addEventListener('error', () => { img.src = '/img/favicon.png'; }, { once: true });
   return img;
 }
 
-function fillSelect(sel, items, valueOf, labelOf, empty) {
+function empty(title, line) {
+  const box = el('div', 'empty');
+  box.append(el('strong', null, title), el('span', null, line));
+  return box;
+}
+
+function emptyRow() {
+  const li = el('li', 'empty-row');
+  li.append(empty('No work in progress', 'Queue a task from the panel, or message the Lead.'));
+  return li;
+}
+
+function fillSelect(sel, items, valueOf, labelOf, none) {
   const keep = sel.value;
   sel.replaceChildren(...(items.length ? items : [null]).map((it) => {
-    const o = el('option', null, it ? labelOf(it) : empty);
+    const o = el('option', null, it ? labelOf(it) : none);
     o.value = it ? valueOf(it) : '';
     return o;
   }));
   if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
 }
 
+const money = (n) => (typeof n === 'number' && Number.isFinite(n) ? `$${n.toFixed(2)}` : '·');
+const compact = (n) => (typeof n === 'number' ? (n >= 10000 ? `${(n / 1000).toFixed(1)}k` : String(n)) : '·');
+
 function render(s) {
   const snap = s.snapshot;
-  const pill = $('status');
-  pill.textContent = s.hqOnline ? `HQ online, updated ${age(s.snapshotAge)}` : snap ? `HQ offline, last seen ${age(s.snapshotAge)}` : 'HQ offline, no snapshot yet';
-  pill.className = `pill ${s.hqOnline ? 'on' : 'off'}`;
+  const status = $('status');
+  status.className = `status ${s.hqOnline ? 'on' : 'off'}`;
+  status.lastElementChild.textContent = s.hqOnline ? `HQ online · ${age(s.snapshotAge)}` : snap ? `HQ offline · seen ${age(s.snapshotAge)}` : 'HQ not seen yet';
 
   const notes = [];
   if (s.missing?.length) notes.push(`Not configured yet: ${s.missing.join(', ')}.`);
-  if (!s.bot?.connected) notes.push('Discord bot is not connected.');
+  if (s.bot && !s.bot.connected) notes.push('The Discord bot is reconnecting.');
   $('notice').textContent = notes.join(' ');
   $('notice').hidden = !notes.length;
 
   const roles = snap?.roles || [];
   const roleName = (id) => roles.find((r) => r.id === id)?.label || id;
-  const tasks = (snap?.tasks || []).filter((t) => t.state === 'working' || t.state === 'queued' || t.state === 'review');
-  $('tasks').replaceChildren(...(tasks.length ? tasks : [null]).map((t) => {
-    const li = el('li');
-    if (!t) return Object.assign(li, { textContent: 'Nothing running.', className: 'muted' });
-    li.append(avatar(t.role), el('span', 'grow', t.title), el('span', 'tag', `${roleName(t.role)} · ${t.state}`));
-    return li;
-  }));
-
+  const active = (snap?.tasks || []).filter((t) => ['working', 'queued', 'review'].includes(t.state));
+  const working = active.filter((t) => t.state === 'working').length;
   const asks = snap?.asks || [];
-  $('asks').replaceChildren(...(asks.length ? asks : [null]).map((a) => {
-    if (!a) return el('p', 'muted', 'No open asks.');
-    const box = el('div', 'ask');
-    box.append(el('strong', null, a.title), el('span', 'tag', roleName(a.role)));
-    const row = el('div', 'row wrap');
+
+  const h = $('headline');
+  if (!snap) h.textContent = 'Waiting for HQ to check in';
+  else if (asks.length) h.textContent = `${asks.length} ${asks.length === 1 ? 'thing needs' : 'things need'} you, ${working} ${working === 1 ? 'agent is' : 'agents are'} working`;
+  else if (working) h.textContent = `${working} ${working === 1 ? 'agent is' : 'agents are'} working. Nothing needs you.`;
+  else h.textContent = 'All quiet. Nothing needs you.';
+
+  $('statWorking').textContent = snap ? String(working) : '·';
+  $('statAsks').textContent = snap ? String(asks.length) : '·';
+  $('statSpend').textContent = money(snap?.spend?.totalUsd);
+  $('statTokens').textContent = compact(s.groq?.tokens ?? 0);
+  $('asksCount').textContent = asks.length ? String(asks.length) : '';
+  $('tasksCount').textContent = active.length ? String(active.length) : '';
+
+  $('asks').replaceChildren(...(asks.length ? asks.map((a) => {
+    const box = el('article', 'ask reveal');
+    const top = el('div', 'ask-top');
+    const who = el('div');
+    who.append(el('div', 'ask-title', a.title), el('span', 't-role', roleName(a.role)));
+    top.append(avatar(a.role), who);
+    box.append(top);
+    if (a.why) box.append(el('p', 'ask-why', String(a.why).slice(0, 400)));
+    const row = el('div', 'options');
     for (const o of a.options || []) {
-      const b = el('button', null, o.label);
+      const b = el('button', 'opt', o.label);
       b.type = 'button';
-      b.addEventListener('click', () => send({ type: 'answer', askId: a.id, answer: o.id }, `Answered "${o.label}"`));
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        if (await send({ type: 'answer', askId: a.id, answer: o.id }, `Answered "${o.label}". HQ applies it when online.`)) row.querySelectorAll('button').forEach((x) => (x.disabled = true));
+        else b.disabled = false;
+      });
       row.append(b);
     }
-    box.append(row);
+    if (row.childElementCount) box.append(row);
+    else box.append(el('p', 'fine', 'Answer this one in the agent\'s Discord thread.'));
     return box;
-  }));
+  }) : [empty('Nothing needs you', 'When an agent asks a question or wants a review, it shows up here and in Discord.')]));
 
-  fillSelect($('msgRole'), roles, (r) => r.id, (r) => r.label, 'No roles yet');
-  fillSelect($('taskRole'), roles, (r) => r.id, (r) => r.label, 'No roles yet');
-  fillSelect($('taskGame'), [{ slug: '', name: 'No game' }, ...(snap?.games || [])], (g) => g.slug, (g) => g.name, 'No game');
+  $('tasks').replaceChildren(...(active.length ? active.map((t) => {
+    const li = el('li', 'reveal');
+    const mid = el('div');
+    mid.append(el('span', 't-title', t.title), el('span', 't-role', roleName(t.role) + (t.game ? ` · ${t.game}` : '')));
+    li.append(avatar(t.role), mid, el('span', `flag ${t.state}`, t.state));
+    return li;
+  }) : [emptyRow()]));
 
-  const spend = snap?.spend ? JSON.stringify(snap.spend) : 'no HQ spend data';
-  $('usage').textContent = `HQ spend: ${spend}. Groq: ${s.groq?.requests ?? 0} requests, ${s.groq?.tokens ?? 0} tokens${s.groq?.configured ? '' : ' (Groq not configured)'}.`;
+  fillSelect($('msgRole'), roles, (r) => r.id, (r) => r.label, 'Waiting for HQ');
+  fillSelect($('taskRole'), roles, (r) => r.id, (r) => r.label, 'Waiting for HQ');
+  fillSelect($('taskGame'), [{ slug: '', name: 'Any game' }, ...(snap?.games || [])], (g) => g.slug, (g) => g.name, 'Any game');
 }
 
 async function send(cmd, okMsg) {
   try {
     await api('/api/command', cmd);
-    toast(okMsg || 'Command sent. HQ runs it when it is online.');
+    toast(okMsg || 'Sent. HQ runs it as soon as it is online.');
     return true;
   } catch (e) {
-    toast(e.message);
+    toast(e.message, true);
     return false;
   }
 }
@@ -115,29 +156,58 @@ async function refresh() {
   try {
     render(await api('/api/state'));
   } catch (e) {
-    $('status').textContent = e.message;
+    $('status').lastElementChild.textContent = 'Connection problem';
   }
 }
 
+// tabs, with arrow-key movement
+const tabs = ['tabChat', 'tabMsg', 'tabTask'].map($);
+function select(tab) {
+  for (const t of tabs) {
+    const on = t === tab;
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+    $(t.getAttribute('aria-controls')).hidden = !on;
+  }
+}
+tabs.forEach((t, i) => {
+  t.addEventListener('click', () => select(t));
+  t.addEventListener('keydown', (e) => {
+    const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!d) return;
+    const next = tabs[(i + d + tabs.length) % tabs.length];
+    select(next);
+    next.focus();
+  });
+});
+
 $('msgForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (await send({ type: 'message', role: $('msgRole').value, text: $('msgText').value })) $('msgText').value = '';
+  const b = e.submitter;
+  if (b) b.disabled = true;
+  if (await send({ type: 'message', role: $('msgRole').value, text: $('msgText').value.trim() }, 'Message sent to the agent.')) $('msgText').value = '';
+  if (b) b.disabled = false;
 });
 
 $('taskForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const cmd = { type: 'task', role: $('taskRole').value, title: $('taskTitle').value, body: $('taskBody').value };
+  const b = e.submitter;
+  if (b) b.disabled = true;
+  const cmd = { type: 'task', role: $('taskRole').value, title: $('taskTitle').value.trim(), body: $('taskBody').value.trim() };
   if ($('taskGame').value) cmd.game = $('taskGame').value;
-  if (await send(cmd)) {
+  if (await send(cmd, 'Task queued.')) {
     $('taskTitle').value = '';
     $('taskBody').value = '';
   }
+  if (b) b.disabled = false;
 });
 
 function bubble(who, text) {
   const b = el('div', `bubble ${who}`, text);
-  $('chat').append(b);
-  $('chat').scrollTop = $('chat').scrollHeight;
+  const chat = $('chat');
+  chat.querySelector('.hint')?.remove();
+  chat.append(b);
+  chat.scrollTop = chat.scrollHeight;
   return b;
 }
 
@@ -147,22 +217,27 @@ $('chatForm').addEventListener('submit', async (e) => {
   if (!text) return;
   $('chatText').value = '';
   bubble('me', text);
+  const wait = bubble('bot thinking', 'Thinking…');
   try {
     const r = await api('/api/chat', { text });
-    const b = bubble('bot', r.reply);
+    wait.classList.remove('thinking');
+    wait.textContent = r.reply;
     if (r.command) {
-      const btn = el('button', null, `Send: ${r.command.type}`);
+      const btn = el('button', 'primary act', `Do it: ${r.command.type}${r.command.role ? ` for ${r.command.role}` : ''}`);
       btn.type = 'button';
       btn.addEventListener('click', async () => {
         btn.disabled = true;
-        await send(r.command);
+        if (await send(r.command)) btn.textContent = 'Sent';
+        else btn.disabled = false;
       });
-      b.append(el('br'), btn);
+      wait.append(el('br'), btn);
     }
   } catch (err) {
-    bubble('bot', err.message);
+    wait.classList.remove('thinking');
+    wait.textContent = err.message;
   }
 });
 
 refresh();
 setInterval(refresh, 10000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

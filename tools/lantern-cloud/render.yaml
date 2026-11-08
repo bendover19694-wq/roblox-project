@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: lantern-cloud
+    name: dv-enterprises
     runtime: node
     plan: free
     buildCommand: npm install
@@ -11,7 +11,9 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: LANTERN_PASSWORD_HASH
+      - key: DV_PASSWORD_HASH
+        sync: false
+      - key: TOTP_SECRET
         sync: false
       - key: SESSION_SECRET
         sync: false

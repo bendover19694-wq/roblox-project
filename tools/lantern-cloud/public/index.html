@@ -3,46 +3,91 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lantern</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark">
+<title>DV Enterprises · Agent HQ</title>
+<link rel="icon" href="/img/favicon.png">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<header class="top">
-  <h1>Lantern</h1>
-  <span id="status" class="pill">connecting</span>
-  <form method="post" action="/logout"><button type="submit" class="ghost">Log out</button></form>
+<a class="skip" href="#main">Skip to content</a>
+<header class="bar">
+  <img class="mark" src="/img/favicon.png" alt="" width="32" height="32">
+  <span class="brand">DV <b>Enterprises</b></span>
+  <span id="status" class="status" role="status"><i aria-hidden="true"></i><span>Connecting</span></span>
+  <form method="post" action="/logout" class="out"><button type="submit" class="link">Sign out</button></form>
 </header>
-<p id="notice" class="notice" hidden></p>
-<main class="grid">
-  <section class="card"><h2>Running tasks</h2><ul id="tasks" class="list"></ul></section>
-  <section class="card"><h2>Open asks</h2><div id="asks"></div></section>
-  <section class="card">
-    <h2>Message a role</h2>
-    <form id="msgForm">
-      <select id="msgRole" aria-label="Role"></select>
-      <textarea id="msgText" maxlength="1800" rows="3" placeholder="What should they know?" required></textarea>
-      <button type="submit">Send</button>
-    </form>
+
+<main id="main" class="shell">
+  <p id="notice" class="notice" role="status" hidden></p>
+
+  <section class="hero" aria-labelledby="headline">
+    <p class="eyebrow">Agent HQ</p>
+    <h1 id="headline">Checking on your studio</h1>
+    <dl class="stats">
+      <div><dt>Working now</dt><dd id="statWorking" class="num">·</dd></div>
+      <div><dt>Need you</dt><dd id="statAsks" class="num">·</dd></div>
+      <div><dt>HQ spend</dt><dd id="statSpend" class="num">·</dd></div>
+      <div><dt>Assistant tokens</dt><dd id="statTokens" class="num">·</dd></div>
+    </dl>
   </section>
-  <section class="card">
-    <h2>New task</h2>
-    <form id="taskForm">
-      <select id="taskRole" aria-label="Role"></select>
-      <select id="taskGame" aria-label="Game"></select>
-      <input id="taskTitle" maxlength="200" placeholder="Title" required>
-      <textarea id="taskBody" maxlength="1500" rows="3" placeholder="Details"></textarea>
-      <button type="submit">Queue task</button>
-    </form>
-  </section>
-  <section class="card wide">
-    <h2>Chat with Lantern</h2>
-    <div id="chat" class="chat" aria-live="polite"></div>
-    <form id="chatForm" class="row">
-      <input id="chatText" maxlength="1500" placeholder="Ask about HQ, or ask for an action" required>
-      <button type="submit">Ask</button>
-    </form>
-  </section>
-  <section class="card wide"><h2>Usage</h2><p id="usage" class="muted"></p></section>
+
+  <div class="layout">
+    <div class="col-main">
+      <section class="panel" aria-labelledby="asksTitle">
+        <header class="panel-head"><h2 id="asksTitle">Needs you</h2><span id="asksCount" class="count"></span></header>
+        <div id="asks" class="asks"><div class="skeleton"></div><div class="skeleton short"></div></div>
+      </section>
+      <section class="panel" aria-labelledby="tasksTitle">
+        <header class="panel-head"><h2 id="tasksTitle">In progress</h2><span id="tasksCount" class="count"></span></header>
+        <ul id="tasks" class="tasks"><li class="skeleton"></li><li class="skeleton"></li><li class="skeleton short"></li></ul>
+      </section>
+    </div>
+
+    <aside class="col-side panel composer" aria-label="Talk to HQ">
+      <div class="tabs" role="tablist" aria-label="Composer">
+        <button type="button" role="tab" id="tabChat" aria-controls="paneChat" aria-selected="true">Ask</button>
+        <button type="button" role="tab" id="tabMsg" aria-controls="paneMsg" aria-selected="false" tabindex="-1">Message agent</button>
+        <button type="button" role="tab" id="tabTask" aria-controls="paneTask" aria-selected="false" tabindex="-1">New task</button>
+      </div>
+
+      <div id="paneChat" role="tabpanel" aria-labelledby="tabChat" class="pane">
+        <div id="chat" class="chat" aria-live="polite">
+          <p class="hint">Ask what an agent is doing, what needs you, or what HQ has spent. Answers come from HQ's latest state, even while your PC is off.</p>
+        </div>
+        <form id="chatForm" class="ask-line">
+          <label class="sr" for="chatText">Question</label>
+          <input id="chatText" maxlength="1500" placeholder="What is the UI agent working on?" autocomplete="off" required>
+          <button type="submit" class="primary">Ask</button>
+        </form>
+      </div>
+
+      <div id="paneMsg" role="tabpanel" aria-labelledby="tabMsg" class="pane" hidden>
+        <form id="msgForm" class="stack">
+          <label for="msgRole">Agent</label>
+          <select id="msgRole"></select>
+          <label for="msgText">Message</label>
+          <textarea id="msgText" maxlength="1800" rows="6" placeholder="Tell them what you need" required></textarea>
+          <button type="submit" class="primary">Send to agent</button>
+          <p class="fine">Lands in the agent's Discord thread. Runs as soon as HQ is online.</p>
+        </form>
+      </div>
+
+      <div id="paneTask" role="tabpanel" aria-labelledby="tabTask" class="pane" hidden>
+        <form id="taskForm" class="stack">
+          <div class="two">
+            <div class="stack"><label for="taskRole">Agent</label><select id="taskRole"></select></div>
+            <div class="stack"><label for="taskGame">Game</label><select id="taskGame"></select></div>
+          </div>
+          <label for="taskTitle">Title</label>
+          <input id="taskTitle" maxlength="200" placeholder="Fix the Shop text size on phones" required>
+          <label for="taskBody">Details</label>
+          <textarea id="taskBody" maxlength="1500" rows="6" placeholder="What done looks like"></textarea>
+          <button type="submit" class="primary">Queue task</button>
+        </form>
+      </div>
+    </aside>
+  </div>
 </main>
 <p id="toast" class="toast" role="status" hidden></p>
 <script src="/app.js"></script>

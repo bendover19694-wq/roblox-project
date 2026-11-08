@@ -44,7 +44,7 @@ test('brain counts Groq requests and tokens, and sends JSON mode', async () => {
   assert.deepEqual(brain.stats, { requests: 1, tokens: 77 });
   assert.deepEqual(seen[0].response_format, { type: 'json_object' });
   assert.equal(seen[0].model, 'llama-3.3-70b-versatile');
-  assert.match(seen[0].messages[0].content, /Lantern/);
+  assert.match(seen[0].messages[0].content, /DV Enterprises/);
   assert.ok(seen[0].messages[0].content.length < 14_000);
 });
 

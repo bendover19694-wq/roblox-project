@@ -48,8 +48,8 @@ test('login sets a hardened cookie; wrong password gets 401', async () => {
   const ok = await s.login(FAKE_PASSWORD);
   assert.equal(ok.status, 303);
   const c = ok.headers.get('set-cookie');
-  for (const part of ['lantern_sid=', 'HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/']) assert.ok(c.includes(part), part);
-  assert.match(c, /lantern_sid=[0-9a-f]{64};/);
+  for (const part of ['__Host-dv_sid=', 'HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/']) assert.ok(c.includes(part), part);
+  assert.match(c, /__Host-dv_sid=[0-9a-f]{64};/);
   const dash = await s.req('/', { headers: { cookie: c.split(';')[0] } });
   assert.equal(dash.status, 200);
   s.close();
@@ -76,9 +76,9 @@ test('sessions expire after 12 hours', async () => {
   let t = 5_000;
   const auth = createAuth({ hash, now: () => t });
   const { sid } = await auth.login(FAKE_PASSWORD, 'ip');
-  assert.equal(auth.check(`lantern_sid=${sid}`), true);
+  assert.equal(auth.check(`__Host-dv_sid=${sid}`), true);
   t += 12 * 3600_000 + 1;
-  assert.equal(auth.check(`lantern_sid=${sid}`), false);
+  assert.equal(auth.check(`__Host-dv_sid=${sid}`), false);
 });
 
 test('POST with a foreign or missing Origin is rejected', async () => {
