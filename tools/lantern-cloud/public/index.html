@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Lantern</h1>
+  <span id="status" class="pill">connecting</span>
+  <form method="post" action="/logout"><button type="submit" class="ghost">Log out</button></form>
+</header>
+<p id="notice" class="notice" hidden></p>
+<main class="grid">
+  <section class="card"><h2>Running tasks</h2><ul id="tasks" class="list"></ul></section>
+  <section class="card"><h2>Open asks</h2><div id="asks"></div></section>
+  <section class="card">
+    <h2>Message a role</h2>
+    <form id="msgForm">
+      <select id="msgRole" aria-label="Role"></select>
+      <textarea id="msgText" maxlength="1800" rows="3" placeholder="What should they know?" required></textarea>
+      <button type="submit">Send</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>New task</h2>
+    <form id="taskForm">
+      <select id="taskRole" aria-label="Role"></select>
+      <select id="taskGame" aria-label="Game"></select>
+      <input id="taskTitle" maxlength="200" placeholder="Title" required>
+      <textarea id="taskBody" maxlength="1500" rows="3" placeholder="Details"></textarea>
+      <button type="submit">Queue task</button>
+    </form>
+  </section>
+  <section class="card wide">
+    <h2>Chat with Lantern</h2>
+    <div id="chat" class="chat" aria-live="polite"></div>
+    <form id="chatForm" class="row">
+      <input id="chatText" maxlength="1500" placeholder="Ask about HQ, or ask for an action" required>
+      <button type="submit">Ask</button>
+    </form>
+  </section>
+  <section class="card wide"><h2>Usage</h2><p id="usage" class="muted"></p></section>
+</main>
+<p id="toast" class="toast" role="status" hidden></p>
+<script src="/app.js"></script>
+</body>
+</html>

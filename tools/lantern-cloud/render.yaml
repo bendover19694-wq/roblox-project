@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: lantern-cloud
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.mjs
+    healthCheckPath: /healthz
+    envVars:
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: LANTERN_PASSWORD_HASH
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: OWNER_IDS
+        value: "821903980661178418"
+      - key: GUILD_ID
+        value: "1551059008826376232"
+      - key: ASK_CHANNEL_ID
+        value: "1568819214997790855"
+      - key: STATE_CHANNEL_ID
+        value: "1568819216797274183"
+      - key: COMMANDS_CHANNEL_ID
+        value: "1568819218630320219"
+      - key: GROQ_MODEL
+        value: "llama-3.3-70b-versatile"
