@@ -8,3 +8,14 @@ FogbellHarbor.rbxlx
 .types/
 captures/
 SpaceAgency.rbxlx
+
+# AI agent internals — not project code
+.claude/
+.ruv-swarm/
+.tmp_r1/
+
+# Local env / secrets — never commit
+.env
+.env.*
+*.key
+*.pem
