@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { migrateEngine } from './db.mjs';
 import { CLAUDE_MODELS } from './providers.mjs';
+import { safeFolder } from './obsidian-mirror.mjs';
 
 export class SettingError extends Error {
   constructor(message) { super(message); this.status = 400; this.expose = true; }
@@ -62,6 +63,8 @@ export const FIELDS = [
   f('replyStyle', 'Agent replies', 'enum', 'terse', 'usage', 'Terse asks agents for short notes: facts, paths, numbers.', { options: [{ value: 'terse', label: 'Terse' }, { value: 'normal', label: 'Normal' }] }),
   f('ponytailMode', 'Code style (ponytail)', 'enum', 'full', 'usage', 'Lazy-senior coding rules. Claude engines load the ponytail plugin; other engines get the rules in their brief.', { options: [{ value: 'off', label: 'Off' }, { value: 'lite', label: 'Lite' }, { value: 'full', label: 'Full' }, { value: 'ultra', label: 'Ultra' }] }),
   f('screenshotCap', 'Screenshots per task', 'int', 4, 'usage', 'The most screenshots one agent should take. 0 means none.', { min: 0, max: 12 }),
+  f('leanSessions', 'Lean agent sessions', 'bool', true, 'usage', 'Agents started on this PC load only the plugins and tools their role needs. Cuts about 40,000 tokens from every turn. Turn off if an agent says a skill is missing.'),
+  f('smartModels', 'Smart model choice', 'bool', true, 'usage', 'Short Lead replies run on Sonnet instead of Opus, and a task that failed its checks twice moves one model up. A model you set per role or per task always wins.'),
   f('cheapLookups', 'Cheap vault lookups', 'bool', true, 'usage', 'Claude agents look things up in the vault through a small model.'),
   f('batchByRole', 'Batch by role', 'bool', true, 'usage', 'A worker takes the next task of the role it just ran, so its context is reused.'),
   f('laneSchedules', 'Lane schedules', 'custom', DEFAULT_LANE_SCHEDULES, 'lanes', 'When each lane may run, how often, and how many tasks per run.'),
@@ -74,6 +77,8 @@ export const FIELDS = [
   f('modelRefLane', 'References lane', 'enum', 'antigravity', 'art', 'Antigravity makes the sheet there. ChatGPT runs it on the app lane and uses a ChatGPT image tool when one is connected.', { options: [{ value: 'antigravity', label: 'Antigravity' }, { value: 'chatgpt', label: 'ChatGPT' }] }),
   f('knowledgeLihfolk', 'LihFolk vault folder', 'string', '', 'knowledge', 'Absolute path. Empty uses the default location.', { max: 300 }),
   f('knowledgeReferences', 'References folder', 'string', '', 'knowledge', 'Absolute path. Empty uses the default location.', { max: 300 }),
+  f('obsidianVault', 'Obsidian vault folder', 'string', '', 'knowledge', 'Absolute path to your Obsidian vault. Agent HQ writes corrections, preferences, lessons, mistakes and research notes into one folder inside it. Empty turns this off.', { max: 300 }),
+  f('obsidianFolder', 'Folder inside the vault', 'string', 'Agent HQ Memory', 'knowledge', 'The folder Agent HQ writes into, inside your vault.', { max: 80 }),
   f('notebookDoc', 'Notebook Google Doc', 'string', '', 'notebook', 'Link to a Google Doc to mirror notebook entries. Empty means not linked.', { max: 300 }),
   f('partnerAccess', 'Partner agents', 'custom', DEFAULT_PARTNER_ACCESS, 'integrations', 'Which of your agents Ditto may use without asking each time, and how many tasks a day.'),
   f('providers', 'API keys', 'custom', {}, 'integrations', 'Groq and NVIDIA NIM keys. Write-only.'),
@@ -89,11 +94,15 @@ const noControl = (s) => !/[\u0000-\u001f\u007f]/.test(s);
 const STRING_CHECKS = {
   knowledgeLihfolk: (s) => noControl(s) && path.isAbsolute(s),
   knowledgeReferences: (s) => noControl(s) && path.isAbsolute(s),
+  obsidianVault: (s) => noControl(s) && path.isAbsolute(s),
+  obsidianFolder: (s) => safeFolder(s) !== null,
   notebookDoc: (s) => /^https:\/\/docs\.google\.com\/document\/d\/[\w-]+(?:[/?#][^\s]*)?$/.test(s),
 };
 const STRING_ERRORS = {
   knowledgeLihfolk: 'must be an absolute folder path',
   knowledgeReferences: 'must be an absolute folder path',
+  obsidianVault: 'must be an absolute folder path',
+  obsidianFolder: 'must be a plain folder name inside the vault (no "..", drive letter or leading slash)',
   notebookDoc: 'must be a https://docs.google.com/document/d/... link',
 };
 

@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { quarantine } from './knowledge.mjs';
+import { recordMistake, setFix } from './mistakes.mjs';
 
 export const LESSON_CAP = 40;
 export const MAX_ROUNDS = 3;
@@ -12,7 +13,9 @@ const CRITICISM = /\b(no|wrong|don't|dont|stop|not what i|ugly|bad|should have|i
 const oneLine = (s, n) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n).trim();
 const LESSON = /^- (\d{4}-\d{2}-\d{2}): (.+)$/;
 
-export const isCriticism = (text) => CRITICISM.test(String(text ?? ''));
+// A correction is short feedback about work done. A long message that happens to say "no gore" or "fix" is a new request, and saving it would put it in every later brief.
+export const CRITICISM_MAX = 500;
+export const isCriticism = (text) => String(text ?? '').length <= CRITICISM_MAX && CRITICISM.test(String(text ?? ''));
 
 /** Same file and format hq_learn writes: memory/<role>.md, "- date: text". Exact repeats are ignored; the newest LESSON_CAP stay. */
 export function saveLesson(memoryDir, role, text, date) {
@@ -64,6 +67,8 @@ export function createLearningHooks({ db, D, memoryDir, postMessage, queueTask, 
     /** Call on every task update. */
     taskChanged(t) {
       if (!t || t.gateFor) return;
+      if (t.state === 'failed' && t.error !== 'Failed a review gate' && !seen.has(`m:${t.id}`) && !quarantine(String(t.error ?? ''))) { seen.add(`m:${t.id}`); recordMistake(memoryDir, { role: t.role, game: t.game, title: t.title, reason: t.error || t.summary, taskId: t.id }, nowIso); }
+      if (['review', 'done'].includes(t.state) && t.parentId && /^(Fix|Rework): /.test(t.title ?? '') && t.summary && !seen.has(`f:${t.id}`) && !quarantine(String(t.summary))) { seen.add(`f:${t.id}`); setFix(memoryDir, t.parentId, String(t.summary).split('\n')[0], t.role); }
       if (t.role === 'lead') { if (t.state === 'review' || FINISHED.has(t.state)) followUp(t); return; }
       if (!['done', 'review', 'failed'].includes(t.state)) return;
       const lead = t.parentId ? D.getTask(db, t.parentId) : null;
@@ -80,8 +85,11 @@ export function createLearningHooks({ db, D, memoryDir, postMessage, queueTask, 
       const reason = oneLine(String(g.summary ?? '').replace(/^\s*fail\w*[:\s.,-]*/i, ''), 300);
       const head = `${roleLabel(g.role)} FAIL on ${oneLine(orig.title.replace(/^(?:Fix|Rework|Check): /, ''), 60)}: `;
       if (quarantine(reason)) return false; // agent text: never keep a line that tries to steer later agents
+      recordMistake(memoryDir, { role: orig.role, game: orig.game, title: orig.title.replace(/^(?:Fix|Rework|Check): /, ''), reason, taskId: orig.id }, nowIso);
       return saveLesson(memoryDir, orig.role, head + (reason || 'no reason given'), nowIso().slice(0, 10));
     },
+    /** An owner verdict (changes or reject) on a role's work: the same ledger. Call with the owner's own words only. */
+    mistake(role, game, text, title = '') { return recordMistake(memoryDir, { role, game, title, reason: text }, nowIso); },
     /** The owner said something critical in a role's thread. Agent text never reaches this. */
     criticism(role, text, game) {
       if (!isCriticism(text)) return false;

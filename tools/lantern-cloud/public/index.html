@@ -18,7 +18,9 @@
     <a href="#studio" id="navStudio" data-sec="studio">Studio</a>
     <a href="#hq" id="navHq" data-sec="hq">Agent HQ</a>
     <a href="#collab" id="navCollab" data-sec="collab">Collaboration</a>
+    <a href="#tools" id="navTools" data-sec="tools">Tools</a>
   </nav>
+  <a id="hqLink" class="hqlink" href="/hq/" hidden><i aria-hidden="true"></i><span>Open Agent HQ</span></a>
   <span id="who" class="who"></span>
   <span id="status" class="status" role="status"><i aria-hidden="true"></i><span>Connecting</span></span>
   <form method="post" action="/logout" class="out"><button type="submit" class="link">Sign out</button></form>
@@ -160,6 +162,38 @@
           <textarea id="proposeText" maxlength="1800" rows="4" placeholder="What should they do? Agents that run right away start at once; the rest wait for Voltage's OK." required></textarea>
           <button type="submit" class="primary">Send request</button>
         </form>
+      </section>
+    </div>
+  </div>
+</div>
+<div id="sec-tools" class="sec" data-sec="tools" hidden>
+  <p class="eyebrow">Tools</p>
+  <h1 class="h1">Work that does not need your PC</h1>
+  <div class="layout even">
+    <div class="col-main">
+      <section class="panel" aria-labelledby="gamesTitle">
+        <header class="panel-head"><h2 id="gamesTitle">Roblox game lookup</h2><span id="gamesCount" class="count"></span></header>
+        <form id="gamesForm" class="ask-line">
+          <label class="sr" for="gamesQ">Game name or keyword</label>
+          <input id="gamesQ" minlength="2" maxlength="80" placeholder="roll a character" autocomplete="off" required>
+          <button type="submit" class="primary">Search</button>
+        </form>
+        <p class="fine">Live players, like ratio, visits and last update, straight from Roblox. Use "Send to Scout" to have your agents study a game.</p>
+        <ul id="games" class="feed tall"></ul>
+      </section>
+    </div>
+    <div class="col-main">
+      <section class="panel" aria-labelledby="usageTitle">
+        <header class="panel-head"><h2 id="usageTitle">Agent spend</h2><span id="usageDay" class="count"></span></header>
+        <ul id="usage" class="bars"><li class="skeleton"></li></ul>
+      </section>
+      <section class="panel" aria-labelledby="switchTitle" id="switchPanel" hidden>
+        <header class="panel-head"><h2 id="switchTitle">Agents</h2><span id="pauseState" class="count"></span></header>
+        <p class="fine">Pause stops new work from starting on your PC. Running tasks finish. It applies the next time HQ checks in.</p>
+        <div class="row-actions">
+          <button type="button" id="pauseBtn" class="opt">Pause all agents</button>
+          <button type="button" id="resumeBtn" class="opt">Resume agents</button>
+        </div>
       </section>
     </div>
   </div>

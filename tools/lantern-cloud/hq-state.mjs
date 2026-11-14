@@ -83,6 +83,9 @@ export function validateCommand(c, snapshot) {
       if (!isStr(c.askId, 80) || !(snapshot.asks || []).some((a) => a?.id === c.askId)) return bad('unknown ask');
       if (!isStr(c.answer, 2000)) return bad('answer must be 1 to 2000 characters');
       return { ok: true, command: { id, type: 'answer', askId: c.askId, answer: c.answer } };
+    case 'pause': // owner only: stop or restart new agent work on the PC
+      if (typeof c.on !== 'boolean') return bad('on must be true or false');
+      return { ok: true, command: { id, type: 'pause', on: c.on } };
     case 'link-chat': // owner only (enforced by the callers): says something to Ditto's HQ
       if (!isStr(c.text, 1800)) return bad('text must be 1 to 1800 characters');
       return { ok: true, command: { id, type: 'link-chat', text: c.text } };

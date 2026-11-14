@@ -5,6 +5,13 @@ import { getTask, updateTask, listTasks, createTask, nextRunnable, getSetting, s
 import { buildBrief, loadRoles } from './briefs.mjs';
 import { detectEngines, spawnEngine } from './engines.mjs';
 import { gameFolder } from './game-context.mjs';
+import { pickModel } from './smart-model.mjs';
+import os from 'node:os';
+
+/** enabledPlugins from the owner's own Claude settings (read-only), so lean sessions can switch on just the ones a role needs. */
+function userPlugins() {
+  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf8')).enabledPlugins ?? {}; } catch { return {}; }
+}
 
 const mcpPath = path.join(import.meta.dirname, 'mcp.mjs');
 const llmAgentPath = path.join(import.meta.dirname, 'llm-agent.mjs');
@@ -54,7 +61,9 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     const llmKey = LLM_ENGINES.has(engine) ? providers()?.[engine]?.apiKey ?? null : null;
     const exe = LLM_ENGINES.has(engine) ? (llmKey ? llmAgentPath : null) : exes[engine] ?? null;
     if (engine !== 'echo' && !exe) return fail(task.id, LLM_ENGINES.has(engine) ? `no ${engine} API key: add one in Settings, Model providers` : 'engine not installed');
-    const model = task.model || pref.model || (engine === 'claude-cli' ? role?.model : null) || null;
+    const smart = engine === 'claude-cli' && !task.model && !pref.model ? pickModel({ task, roleModel: role?.model, smart: getSetting(db, 'smartModels', true) !== false }) : null;
+    const model = task.model || pref.model || smart?.model || null;
+    const lean = engine === 'claude-cli' && getSetting(db, 'leanSessions', true) !== false ? { skills: role?.skills ?? [], userPlugins: userPlugins() } : null;
 
     let child, mcpConfigPath, briefPath = null;
     const taskToken = issueTaskToken(db, task.id); // per-task secret: proves to the server which task is calling
@@ -66,7 +75,8 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
           HQ_URL: `http://127.0.0.1:${port}`, HQ_TOKEN: token, HQ_TASK: task.id, HQ_ROLE: task.role, HQ_TASK_TOKEN: taskToken,
         } }, ...(studio ? { Roblox_Studio: studio } : {}) },
       }), { mode: 0o600 }); // holds the HQ token; owner-only, deleted when the task ends
-      const brief = briefFor ? briefFor(task, taskToken) : buildBrief({ task, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) });
+      const briefTask = { ...task, engine }; // the brief must describe the engine that really runs, not the role's default lane
+      const brief = briefFor ? briefFor(briefTask, taskToken) : buildBrief({ task: briefTask, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) });
       let env = { ...process.env, HQ_ECHO_MS: String(echoMs) };
       if (llmKey) {
         // the brief can exceed the Windows command-line limit, so it goes in a file; the key only in this child's env
@@ -76,7 +86,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
           HQ_ROOT: root, HQ_LLM_PROVIDER: engine, HQ_LLM_KEY: llmKey, HQ_LLM_MODEL: model ?? '', HQ_BRIEF_FILE: briefPath,
           HQ_ROLE_JSON: JSON.stringify({ id: role?.id, mode: role?.mode, files: role?.files ?? [], allowedTools: role?.allowedTools ?? [] }) };
       }
-      child = spawnEngine({ engine, exe, brief, model, mcpConfigPath, cwd: root, allowedTools: role?.allowedTools ?? [], files: role?.files ?? [], gameDir: task.game ? gameFolder(root, task.game) : '.', env, studio: !!studio });
+      child = spawnEngine({ engine, exe, brief, model, mcpConfigPath, cwd: root, allowedTools: role?.allowedTools ?? [], files: role?.files ?? [], gameDir: task.game ? gameFolder(root, task.game) : '.', env, studio: !!studio, lean });
     } catch (e) {
       return fail(task.id, `spawn failed: ${e.message}`);
     }
@@ -87,6 +97,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     publish(task.id);
 
     const logFile = path.join(logDir, `${task.id}.ndjson`);
+    if (smart && smart.model !== role?.model) fs.appendFileSync(logFile, JSON.stringify({ type: 'hq', text: `model ${smart.model}: ${smart.why}` }) + '\n');
     let lastText = '', resultText = '', stderrTail = '', buf = '', resultError = false;
     const onLine = (line) => {
       if (!line.trim()) return;

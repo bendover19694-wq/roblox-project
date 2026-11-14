@@ -12,7 +12,10 @@ function readOwnerToken() {
   }
   try { return localStorage.getItem('hq-owner') || ''; } catch { return ''; }
 }
-export const token = readOwnerToken();
+// Served through the DV Enterprises site under /hq: every absolute URL gets this prefix. The tunnel on the PC adds the real
+// owner token, so the browser only holds a placeholder there. Locally BASE is '' and nothing changes.
+export const BASE = location.pathname.startsWith('/hq') ? '/hq' : '';
+export const token = BASE ? 'via-site' : readOwnerToken();
 // A signed-in link opened in an existing tab only changes the fragment (no reload), so catch it here too.
 window.addEventListener('hashchange', () => {
   const m = location.hash.match(/(?:^#|&)owner=([0-9a-f]{64})/);
@@ -44,7 +47,7 @@ export function onLog(fn) { logSubs.add(fn); return () => logSubs.delete(fn); }
 
 // ---------- API ----------
 export async function api(method, path, body) {
-  const res = await fetch(path, {
+  const res = await fetch(BASE + path, {
     method,
     headers: { 'x-hq-token': token, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -152,7 +155,7 @@ function dispatch(type, p) {
 }
 
 export function startEvents() {
-  const es = new EventSource('/api/events?token=' + encodeURIComponent(token));
+  const es = new EventSource(BASE + '/api/events?token=' + encodeURIComponent(token));
   es.onopen = () => { const was = store.connected; store.connected = true; if (!was && store.loaded) refreshSoon(); notify(); };
   es.onerror = () => { store.connected = false; notify(); };
   for (const t of ['task', 'ask', 'pitch', 'settings', 'log', 'game', 'stage']) {
@@ -229,9 +232,9 @@ export const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString([], { month:
 export function mediaUrl(p) {
   if (!p) return '';
   const clean = String(p).replace(/\\/g, '/').replace(/^\.agent-hq\/media\//, '').replace(/^\/+/, '');
-  return '/media/' + clean.split('/').map(encodeURIComponent).join('/');
+  return BASE + '/media/' + clean.split('/').map(encodeURIComponent).join('/');
 }
-export const assetUrl = (rel) => '/media/assets/' + String(rel).replace(/^assets\//, '').split('/').map(encodeURIComponent).join('/');
+export const assetUrl = (rel) => BASE + '/media/assets/' + String(rel).replace(/^assets\//, '').split('/').map(encodeURIComponent).join('/');
 export const go = (hash) => { location.hash = hash; };
 export const ENGINES = [
   { value: 'app', label: 'Claude app' },

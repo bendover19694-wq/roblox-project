@@ -252,7 +252,7 @@ test('ponytail: LLM and antigravity code roles get the rules, Claude engines one
   assert.match(groq, /## Code style \(ponytail full\)\n- Ask first whether the code needs to exist/);
   assert.ok(groq.match(/## Code style[^\n]*\n((?:- [^\n]*\n?)+)/)[1].trim().split('\n').length <= 6);
   assert.match(brief('antigravity', 'builder', {}), /## Code style \(ponytail full\)/);
-  const cli = brief('claude-cli', 'builder', {});
+  const cli = brief('claude-cli', 'builder', { leanSessions: false }); // a lean session (the default) does not load the plugin and gets the rules: test/lean.test.mjs
   assert.match(cli, /Ponytail plugin is active at full; follow it\./);
   assert.doesNotMatch(cli, /## Code style/);
   assert.equal(brief('app', 'builder', {}).match(/ponytail/gi).length, 1);

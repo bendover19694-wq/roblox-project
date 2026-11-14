@@ -37,14 +37,14 @@ test('no raster images are shipped in public/', () => {
 
 test('every stylesheet index.html links exists', () => {
   const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
-  const hrefs = [...html.matchAll(/<link rel="stylesheet" href="\/static\/([^"]+)"/g)].map((m) => m[1]);
+  const hrefs = [...html.matchAll(/<link rel="stylesheet" href="static\/([^"]+)"/g)].map((m) => m[1]);
   assert.ok(hrefs.length >= 10, 'expected the split stylesheets');
   for (const h of hrefs) assert.ok(fs.existsSync(path.join(pub, h)), h);
 });
 
 test('every font theme.css loads exists, and the licence note is beside them', () => {
   const css = fs.readFileSync(path.join(pub, 'theme.css'), 'utf8');
-  const srcs = [...css.matchAll(/url\("\/static\/([^"]+)"\)/g)].map((m) => m[1]);
+  const srcs = [...css.matchAll(/url\("(fonts\/[^"]+)"\)/g)].map((m) => m[1]);
   assert.ok(srcs.length > 0);
   for (const s of srcs) assert.ok(fs.existsSync(path.join(pub, s)), s);
   assert.ok(fs.existsSync(path.join(pub, 'fonts', 'OFL.txt')));

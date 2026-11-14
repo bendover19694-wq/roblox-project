@@ -56,6 +56,13 @@ test('paths and the notebook link are checked', () => {
   assert.throws(() => validateSetting('knowledgeLihfolk', 'relative/dir'), /absolute/);
   assert.throws(() => validateSetting('knowledgeReferences', `${abs}${String.fromCharCode(7)}x`), /control/);
   assert.throws(() => validateSetting('knowledgeLihfolk', abs + 'a'.repeat(300)), /too long/);
+  assert.equal(validateSetting('obsidianVault', ''), '');
+  assert.equal(validateSetting('obsidianVault', abs), abs);
+  assert.throws(() => validateSetting('obsidianVault', 'vault'), /absolute/);
+  assert.equal(validateSetting('obsidianFolder', 'Agent HQ Memory'), 'Agent HQ Memory');
+  assert.throws(() => validateSetting('obsidianFolder', '../x'), /plain folder/);
+  assert.throws(() => validateSetting('obsidianFolder', 'C:/x'), /plain folder/);
+  assert.throws(() => validateSetting('obsidianFolder', 'a'.repeat(81)), /too long/);
   assert.equal(validateSetting('notebookDoc', ' https://docs.google.com/document/d/abc_123-x/edit '), 'https://docs.google.com/document/d/abc_123-x/edit');
   assert.throws(() => validateSetting('notebookDoc', 'https://evil.example/document/d/abc'), /docs.google.com/);
   assert.throws(() => validateSetting('notebookDoc', 'http://docs.google.com/document/d/abc'), /docs.google.com/);

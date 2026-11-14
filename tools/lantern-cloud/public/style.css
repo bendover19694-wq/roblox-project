@@ -230,3 +230,20 @@ a.more:hover { color: var(--text); }
   .bar { flex-wrap: wrap; }
   .nav { order: 5; width: 100%; margin-left: 0; overflow-x: auto; }
 }
+
+.hqlink { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--text); text-decoration: none; font-size: 13px; }
+.hqlink[hidden] { display: none; }
+.hqlink i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.hqlink.on i { background: var(--ok); }
+.hqlink.off i { background: var(--bad); }
+
+/* Tools section */
+.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.bars li { display: grid; grid-template-columns: minmax(84px, 30%) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 14px; }
+.bars .bar { height: 8px; border-radius: 999px; background: var(--brand); min-width: 4px; justify-self: start; }
+.bars .bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.row-actions .opt { min-height: 44px; }
+.g-name { color: var(--text); font-weight: 600; text-decoration: none; }
+a.g-name:hover { text-decoration: underline; }
+.opt.small { justify-self: start; min-height: 44px; padding: 8px 14px; margin-top: 4px; font-size: 13px; }

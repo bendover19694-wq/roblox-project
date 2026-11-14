@@ -71,7 +71,7 @@ function fillSelect(sel, items, valueOf, labelOf, none) {
 }
 
 const money = (n) => (typeof n === 'number' && Number.isFinite(n) ? `$${n.toFixed(2)}` : '·');
-const compact = (n) => (typeof n === 'number' ? (n >= 10000 ? `${(n / 1000).toFixed(1)}k` : String(n)) : '·');
+const compact = (n) => (typeof n !== 'number' ? '·' : n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 10000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 function render(s) {
   const snap = s.snapshot;
@@ -142,6 +142,7 @@ function render(s) {
   }) : [emptyRow()]));
 
   renderStudio(s, snap);
+  renderTools(s, snap, roleName);
   fillSelect($('msgRole'), roles, (r) => r.id, (r) => r.label, 'Waiting for HQ');
   fillSelect($('taskRole'), roles, (r) => r.id, (r) => r.label, 'Waiting for HQ');
   fillSelect($('taskGame'), [{ slug: '', name: 'Any game' }, ...(snap?.games || [])], (g) => g.slug, (g) => g.name, 'Any game');
@@ -151,6 +152,9 @@ function renderStudio(s, snap) {
   const me = s.me || {};
   const isOwner = me.role === 'owner';
   $('who').textContent = me.name || '';
+  $('hqLink').hidden = !s.tunnel; // only the owner's state carries tunnel
+  $('hqLink').className = `hqlink ${s.tunnel?.connected ? 'on' : 'off'}`;
+  $('hqLink').title = s.tunnel?.connected ? 'Agent HQ on your PC is online' : 'Agent HQ on your PC is offline';
   $('hqVoltage').textContent = s.hqOnline ? 'Online' : snap ? `Offline · seen ${age(s.snapshotAge)}` : 'Not seen yet';
   const link = snap?.link;
   const log = Array.isArray(link?.log) ? link.log : [];
@@ -211,6 +215,58 @@ function renderCollab(snap, log) {
   if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
   $('roleNote').textContent = sel.selectedOptions[0]?.dataset.note || '';
 }
+
+// Tools: spend bars from the snapshot, the pause switch (owner), and the Roblox lookup.
+let isOwner = false;
+function renderTools(s, snap, roleName) {
+  isOwner = s.me?.role === 'owner';
+  const sp = snap?.spend;
+  const rows = Object.entries(sp?.byRole || {});
+  const top = Math.max(...rows.map((r) => r[1]), 0.0001);
+  $('usageDay').textContent = sp?.dayUsd == null ? '' : `${money(sp.dayUsd)} in 24 h · ${money(sp.totalUsd)} in all`;
+  $('usage').replaceChildren(...(rows.length ? rows.map(([role, usd]) => {
+    const li = el('li');
+    const bar = el('span', 'bar');
+    bar.style.width = `${Math.max(2, Math.round((usd / top) * 100))}%`;
+    li.append(el('span', 'bar-name', roleName(role)), bar, el('span', 'num', money(usd)));
+    return li;
+  }) : [el('li', 'fine', snap ? 'No spend recorded yet.' : 'Waiting for HQ to check in.')]));
+  $('switchPanel').hidden = !isOwner;
+  $('pauseState').textContent = snap ? (snap.paused ? 'Paused' : 'Running') : '';
+}
+for (const [id, on] of [['pauseBtn', true], ['resumeBtn', false]]) {
+  $(id).addEventListener('click', () => send({ type: 'pause', on }, on ? 'Pause sent. HQ applies it when it checks in.' : 'Resume sent. HQ applies it when it checks in.'));
+}
+$('gamesForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const q = $('gamesQ').value.trim();
+  const list = $('games');
+  list.replaceChildren(el('li', 'skeleton'));
+  try {
+    const { games } = await api(`/api/tools/games?q=${encodeURIComponent(q)}`);
+    $('gamesCount').textContent = games.length ? String(games.length) : '';
+    list.replaceChildren(...(games.length ? games.map((g) => {
+      const li = el('li');
+      const name = el(g.url ? 'a' : 'strong', 'g-name', g.name);
+      if (g.url) { name.href = g.url; name.target = '_blank'; name.rel = 'noopener noreferrer'; }
+      const facts = [`${g.playing.toLocaleString()} playing`, g.likeRatio == null ? 'no votes' : `${g.likeRatio}% likes`, g.visits == null ? null : `${compact(g.visits)} visits`, g.updated ? `updated ${g.updated}` : null, g.creator].filter(Boolean).join(' · ');
+      li.append(name, el('span', 't-role', facts));
+      if (g.about) li.append(el('span', 'fine', g.about));
+      if (isOwner) {
+        const b = el('button', 'opt small', 'Send to Scout');
+        b.type = 'button';
+        b.addEventListener('click', async () => {
+          b.disabled = true;
+          if (!(await send({ type: 'task', role: 'scout', title: `Study the Roblox game: ${g.name}`.slice(0, 200), body: `Universe ${g.universeId}${g.url ? `, ${g.url}` : ''}. Report the core loop, first session, monetization and what we could do better. Save findings with hq_research_save.` }, 'Queued for the Scout.'))) b.disabled = false;
+        });
+        li.append(b);
+      }
+      return li;
+    }) : [el('li', 'fine', 'No games found for that search.')]));
+  } catch (err) {
+    list.replaceChildren(el('li', 'fine', err.message));
+  }
+});
 
 async function send(cmd, okMsg) {
   try {
@@ -294,7 +350,7 @@ $('proposeForm').addEventListener('submit', async (e) => {
 });
 
 // sections: hash routes, no reload
-const SECTIONS = ['studio', 'hq', 'collab'];
+const SECTIONS = ['studio', 'hq', 'collab', 'tools'];
 function route() {
   const name = SECTIONS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'studio';
   for (const n of SECTIONS) {

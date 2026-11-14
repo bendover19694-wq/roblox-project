@@ -58,6 +58,33 @@ The top bar has three sections (links like `#studio`, `#hq`, `#collab`): **Studi
 - Ditto: "Use Voltage's agents" sends `/api/propose {text, role}`, which becomes a `relay` with that role. Roles in `partnerAccess.autoRoles` show "runs right away (N of M left today)" and start without asking; any other role shows "needs Voltage's OK" and waits for his `send`.
 - Voltage changes who runs right away, the daily limit and the on/off switch in HQ Settings > partnerAccess. Only roles that cannot edit game source may be automatic.
 
+## Tools section
+
+`#tools` holds work that does not need the PC:
+
+- **Roblox game lookup** (both accounts): `GET /api/tools/games?q=` searches Roblox's public game search from this server and returns up to 12 games with players now, like ratio, visits and last update. 20 searches a minute per account. The owner gets "Send to Scout" on each result, which queues a study task. In Discord: `game <name>`.
+- **Agent spend**: all-time and last-24-hours spend and a bar per role, from the HQ snapshot (`spend.totalUsd`, `spend.dayUsd`, `spend.byRole`). In Discord: `usage`.
+- **Pause and resume** (owner only): sends `{"type":"pause","on":true|false}`, which HQ maps to its own pause and resume. Nothing new starts while paused; running tasks finish. In Discord: `pause` or `resume`, then `yes`. The snapshot's `paused` flag shows the state.
+- Discord also has `queue` (queued, working and review tasks).
+
+`roblox-search.mjs` is a copy of `tools/agent-hq/roblox-search.mjs`; a test fails if the two differ. Preview the site locally with fake data: `node tools/lantern-cloud/test/dev-preview.mjs`.
+
+## Use Agent HQ from anywhere (tunnel)
+
+The owner, signed in here, can open the full Agent HQ app at `/hq/`. The PC opens no port: it polls this site outbound and answers requests.
+
+1. Make a random secret of 32 or more characters (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) and set it as `TUNNEL_SECRET` in Render. Without it the tunnel endpoints do not exist.
+2. On the PC, create `.agent-hq/remote.json` (the Agent HQ state folder): `{"url": "https://roblox-project-v8ym.onrender.com", "secret": "<the same secret>"}`, then restart Agent HQ. Delete the file to turn remote access off.
+3. Sign in here as the owner and use "Open Agent HQ" (green dot: the PC is polling; red: offline, `/hq/` shows "Agent HQ on your PC is offline").
+
+Security model:
+- `/tunnel/next` and `/tunnel/reply/<id>` accept only `Authorization: Bearer <TUNNEL_SECRET>` (constant-time compare, no cookies, failed guesses rate limited). They carry no browser session, so a signed-in browser cannot use them.
+- `/hq` needs the owner session (Voltage). The collaborator gets 403, signed-out visitors go to sign-in. POST, PUT and DELETE keep the same-origin check.
+- Cookies, `Authorization` and every header except content-type, accept and last-event-id are dropped before a request is queued. Paths with `..`, `//` or a scheme are refused here and again on the PC.
+- The owner token never leaves the PC: the PC adds it when it calls HQ on 127.0.0.1 and removes it from any text reply. The page under `/hq` holds only a placeholder.
+- Only content-type, cache-control and content-disposition come back from HQ. Replies are limited to 1 MB per call and 16 MB per response; live event streams are cut after 10 minutes and the page reconnects. `/hq` pages get a CSP for the HQ UI (own scripts only, inline styles allowed, no framing).
+- Anyone holding `TUNNEL_SECRET` can read the queued requests of the owner, so treat it like a password and rotate it in Render and `remote.json` if it leaks. A signed-in owner session gives full control of HQ, so keep the authenticator code on.
+
 ## Make the password hash
 
 From this folder, run `node hash-password.mjs`, type the password, press Enter, and paste the `scrypt$...` line into `DV_PASSWORD_HASH`. Use 12 or more characters you have never typed into a chat.

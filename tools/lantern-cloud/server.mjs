@@ -6,10 +6,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAuth, sessionCookie, pendingCookie } from './auth.mjs';
 import { createDiscord } from './discord.mjs';
 import { createBrain, createBot } from './brain.mjs';
+import { createTunnel, safePath } from './tunnel.mjs';
+import { searchGames } from './roblox-search.mjs';
 import { createHqState, noHqState, validateCommand, postCommand } from './hq-state.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BODY_LIMIT = 32 * 1024;
+const HQ_BODY_LIMIT = 6 * 1024 * 1024; // HQ uploads are base64 images
 const AVATAR_ID = /^[a-z0-9-]{1,40}$/;
 const ENV_NAMES = ['DISCORD_BOT_TOKEN', 'GROQ_API_KEY', 'PASSWORD_HASH', 'SESSION_SECRET', 'OWNER_IDS', 'GUILD_ID', 'ASK_CHANNEL_ID', 'STATE_CHANNEL_ID', 'COMMANDS_CHANNEL_ID'];
 const SECURITY_HEADERS = {
@@ -51,7 +54,8 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     if (hits.size > 5000) for (const [k, v] of hits) if (!v.some((x) => t - x < windowMs)) hits.delete(k);
     return list.length > max;
   };
-  const brain = createBrain({ fetch: f, apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL, getState: () => hq.get() });
+  const tunnel = createTunnel({ secret: env.TUNNEL_SECRET, now });
+  const brain = createBrain({ fetch: f, apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL, getState: () => hq.get(), findGames: (q) => searchGames(q, { fetch: f, limit: 6 }) });
   const sendCommand = async (command) => {
     if (!discord || !env.COMMANDS_CHANNEL_ID) throw new Error('Discord commands channel is not configured');
     return postCommand(discord, env.COMMANDS_CHANNEL_ID, command);
@@ -83,24 +87,25 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     }
   };
 
-  function readBody(req) {
+  function readRaw(req, limit = BODY_LIMIT) {
     return new Promise((resolve, reject) => {
       const chunks = [];
       let size = 0;
       req.on('data', (c) => {
         size += c.length;
-        if (size > BODY_LIMIT) {
+        if (size > limit) {
           reject(Object.assign(new Error('body too large'), { status: 413 }));
           req.destroy();
         } else chunks.push(c);
       });
-      req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      req.on('end', () => resolve(Buffer.concat(chunks)));
       req.on('error', reject);
     });
   }
-  const readJson = async (req) => {
+  const readBody = async (req) => (await readRaw(req)).toString('utf8');
+  const readJson = async (req, limit) => {
     try {
-      const v = JSON.parse((await readBody(req)) || '{}');
+      const v = JSON.parse((await readRaw(req, limit)).toString('utf8') || '{}');
       if (v && typeof v === 'object' && !Array.isArray(v)) return v;
     } catch (e) {
       if (e.status) throw e;
@@ -141,6 +146,17 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     if (get && (p === '/fonts/space-grotesk.woff2' || p === '/fonts/geist-mono.woff2')) return file(res, path.join(publicDir, 'fonts'), p.slice(7), 'font/woff2');
     if (get && p === '/login') return loginPage(res, 200, auth.hasPassword ? '' : NOTES[503], { 'Set-Cookie': pendingCookie('', 0) });
     if (get && p === '/login/code') return auth.hasPending(req.headers.cookie) ? codePage(res, 200, '') : redirect(res, '/login');
+    if (tunnel.enabled && (p === '/tunnel/next' || p.startsWith('/tunnel/reply/'))) {
+      // the PC's side of the tunnel: bearer secret only, never a cookie
+      if (!tunnel.bearerOk(req)) return limited(`tunbad:${clientIp(req)}`, 10) ? json(res, 429, { error: 'too many attempts' }) : json(res, 401, { error: 'bad tunnel credentials' });
+      if (limited('tunnel', 1200)) return json(res, 429, { error: 'too many requests' });
+      if (get && p === '/tunnel/next') return tunnel.next(req, res);
+      if (post && p.startsWith('/tunnel/reply/')) {
+        const r = tunnel.reply(p.slice(14), await readJson(req, 1024 * 1024));
+        return json(res, r[0], r[1]);
+      }
+      return json(res, 404, { error: 'not found' });
+    }
     if (limited(`ip:${clientIp(req)}`, 240)) return json(res, 429, { error: 'too many requests' });
     if (post && !originOk(req)) return json(res, 403, { error: 'bad origin' });
 
@@ -185,8 +201,17 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
           bot: { connected: Boolean(discord?.connected) },
           groq: { ...brain.stats, configured: Boolean(env.GROQ_API_KEY) },
           me,
+          ...(owner && { tunnel: { connected: tunnel.connected() } }),
           missing: owner ? missing : [], // setup details are for the owner
         });
+      }
+      if (get && p === '/api/tools/games') { // public Roblox data; both accounts may look games up
+        if (limited(`games:${me.role}`, 20)) return json(res, 429, { error: 'Slow down: 20 searches a minute.' });
+        try {
+          return json(res, 200, { games: await searchGames(new URL(req.url, 'http://x').searchParams.get('q'), { fetch: f, limit: 12 }) });
+        } catch (e) {
+          return json(res, /characters/.test(e.message) ? 400 : 502, { error: e.message });
+        }
       }
       if (post && p === '/api/command') {
         if (!owner) return json(res, 403, { error: 'Only the owner can do that.' });
@@ -221,6 +246,16 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
       return json(res, 404, { error: 'not found' });
     }
     if (!authed) return redirect(res, '/login');
+    if (p === '/hq' || p.startsWith('/hq/')) {
+      if (!owner) return json(res, 403, { error: 'Only the owner can open Agent HQ.' });
+      if (p === '/hq') return redirect(res, '/hq/');
+      if (limited('hq', 900)) return json(res, 429, { error: 'too many requests' });
+      if (req.method !== 'GET' && req.method !== 'HEAD' && !originOk(req)) return json(res, 403, { error: 'bad origin' });
+      const rest = req.url.slice(3);
+      if (!safePath(rest)) return json(res, 400, { error: 'bad path' });
+      const body = req.method === 'GET' || req.method === 'HEAD' ? Buffer.alloc(0) : await readRaw(req, HQ_BODY_LIMIT);
+      return tunnel.proxy(req, res, rest, body, req.headers); // cookies and auth headers are not forwarded: proxy keeps only content-type, accept, last-event-id
+    }
     if (get && p === '/') return file(res, publicDir, 'index.html', TYPES.html);
     if (get && p === '/app.js') return file(res, publicDir, 'app.js', TYPES.js);
     return send(res, 404, 'not found');
@@ -238,7 +273,8 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     }
   });
 
-  return { server, auth, discord, brain, hq, missing };
+  server.on('close', tunnel.stop);
+  return { server, tunnel, auth, discord, brain, hq, missing };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

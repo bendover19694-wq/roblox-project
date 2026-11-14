@@ -12,6 +12,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["tools/agent-hq/test/demo.mjs"],
       "port": 4400
+    },
+    {
+      "name": "dv-cloud-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/lantern-cloud/test/dev-preview.mjs"],
+      "port": 4410
     }
   ]
 }

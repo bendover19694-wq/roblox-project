@@ -82,3 +82,30 @@ test('clear-finished is owner only and keeps open work', async () => {
   assert.deepEqual(D.listTasks(db, {}).map((t) => t.title).sort(), ['fresh done', 'queued']);
   assert.equal(clearFinished(db).tasks, 0);
 });
+
+test('a game without a folder is told the repo root is another game, and the brief names the task game', async () => {
+  const { isHomeless, rootGame } = await import('../game-context.mjs');
+  const { openDb, createTask } = await import('../db.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-home-'));
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# Run a Space Agency: Roblox game\n');
+  const two = [{ slug: 'space-agency', name: 'Run a Space Agency', stage: 'built' }, { slug: 'caper', name: 'Roll a Caper Crew', stage: 'pitched' }];
+  assert.equal(rootGame(root, two), 'space-agency');
+  assert.equal(isHomeless(root, 'caper', two), true);
+  assert.equal(isHomeless(root, 'space-agency', two), false);
+  assert.equal(isHomeless(root, 'caper', [two[1]]), false); // a single game owns the root
+  const text = gameSection({ task: { game: 'caper' }, games: two, root, sections: [] });
+  assert.match(text, /no code folder yet/);
+  assert.match(text, /belong to Run a Space Agency/);
+  assert.doesNotMatch(text, /Work folder/);
+  assert.match(gameSection({ task: { game: 'space-agency' }, games: two, root, sections: [] }), /Work folder: the repo root/);
+
+  const repo = path.resolve(import.meta.dirname, '../../..');
+  const db = openDb(':memory:');
+  db.prepare("INSERT INTO games (slug, name, stage, updatedAt) VALUES ('caper', 'Roll a Caper Crew', 'pitched', 'now')").run();
+  const t = createTask(db, { title: 'Study', body: '', role: 'scout', game: 'caper' });
+  const brief = buildBrief({ task: t, role: 'scout', root: repo, db });
+  assert.match(brief, /^You are the Market scout agent \(role id: scout\) on the Roll a Caper Crew Roblox project\./);
+  assert.match(brief, /## Your game\nRoll a Caper Crew \(caper\)/);
+  assert.doesNotMatch(brief, /## Your game's own vault/); // the root docs are another game's
+  db.close();
+});

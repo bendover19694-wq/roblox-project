@@ -702,9 +702,9 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     return text.split('\n').map((l) => /^- (\d{4}-\d{2}-\d{2}): (.+)$/.exec(l.trim())).filter(Boolean).map((x) => ({ date: x[1], text: x[2] }));
   };
   // owner corrections live in memory/<role>.corrections.md (corrections.mjs); only the owner's own actions write them
-  const remember = (role, kind, game, text) => { try { if (addCorrection(memoryDir, role, { kind, game, text }, nowIso().slice(0, 10)).added && kind === 'correction') learning.noted(role); } catch { /* memory is best effort */ } };
+  const remember = (role, kind, game, text) => { try { if (addCorrection(memoryDir, role, { kind, game, text }, nowIso().slice(0, 10)).added && kind === 'correction') learning.noted(role); if (kind === 'correction') lh?.mistake(role, game, text); } catch { /* memory is best effort */ } };
   route('GET', /^\/api\/memory\/([^/]+)$/, ({ m }) => { const role = oneOf(m[1], 'role', roleIds, { required: true }); return { lessons: readLessons(role), corrections: readCorrections(memoryDir, role) }; });
-  const learning = mountLearning(route, { db, D, emit, memoryDir, stateDir, roleIds, roleLabel: (id) => roleOf(id)?.label ?? id, queueTask, nowIso, str, bad, isObj, agentTask, HttpError, onNoteSaved: () => kn.reindex?.('notes') }); lh = createLearningHooks({ db, D, memoryDir, postMessage, queueTask: (f) => queueTask(f), remember, roleLabel: (id) => roleOf(id)?.label ?? id, nowIso });
+  const learning = mountLearning(route, { db, D, emit, memoryDir, stateDir, roleIds, roleLabel: (id) => roleOf(id)?.label ?? id, queueTask, nowIso, str, bad, isObj, agentTask, HttpError, onNoteSaved: () => kn.reindex?.('notes'), getSettings: settingsAll, roles: rolesMerged }); lh = createLearningHooks({ db, D, memoryDir, postMessage, queueTask: (f) => queueTask(f), remember, roleLabel: (id) => roleOf(id)?.label ?? id, nowIso });
   route('POST', /^\/api\/memory\/([^/]+)$/, ({ m, body, who, headers }) => {
     const pathRole = oneOf(m[1], 'role', roleIds, { required: true });
     if (!isObj(body)) throw bad('body must be an object');
@@ -1376,7 +1376,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   });
   boundPort = server.address().port;
 
-  let timer = null;
+  let timer = null, remote = null;
   if (autoTimers) {
     timer = setInterval(() => runTimers().catch(() => {}), tickMs);
     timer.unref();
@@ -1385,7 +1385,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     catalog.refreshAll().catch(() => {});
     setInterval(() => catalog.refreshAll().catch(() => {}), 86400000).unref();
     setInterval(() => link.poll(), 20000).unref(); setInterval(() => bridge.poll(), 15000).unref();
-    assetCatalog.refreshIfOld();
+    assetCatalog.refreshIfOld(); import('./remote-tunnel.mjs').then((m) => { remote = m.createRemoteTunnel({ stateDir, getPort: () => boundPort, getOwnerToken: () => ownerToken }); remote.start(); }).catch(() => {}); // outbound tunnel, only if remote.json exists
     setInterval(() => assetCatalog.refreshIfOld(), 86400000).unref();
   }
   rn = runnerOwned ? runner({ db, root, emit: hookedEmit, port: boundPort, token, memoryDir, providers: readProviders, briefFor, spendGuard }) : (runner ?? null);
@@ -1394,13 +1394,13 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   return {
     server, db, token, ownerToken, port: boundPort, stateDir, runTimers,
     async close() {
-      if (timer) clearInterval(timer);
+      if (timer) clearInterval(timer); remote?.stop();
       if (runnerOwned) rn.stop?.();
       for (const c of clients) c.end();
       clients.clear();
       server.closeAllConnections?.();
       await new Promise((r) => server.close(r));
-      listeners.delete(bridge.onEvent); db.close();
+      listeners.delete(bridge.onEvent); learning.stop?.(); db.close();
     },
   };
 }

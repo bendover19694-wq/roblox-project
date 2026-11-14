@@ -25,6 +25,21 @@ export function gameFolder(root, slug) {
   return exists(path.join(root, own, 'default.project.json')) ? own : '.';
 }
 
+/** The game the repo root belongs to: the one named in the first line of the root CLAUDE.md. A single game owns the root; null when it cannot be told. */
+export function rootGame(root, games) {
+  const list = games ?? [];
+  if (list.length < 2) return list[0]?.slug ?? null;
+  let head = '';
+  try { head = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8').split(/\r?\n/, 1)[0].toLowerCase(); } catch { /* no CLAUDE.md */ }
+  return list.find((g) => g.name && head.includes(String(g.name).toLowerCase()))?.slug ?? null;
+}
+
+/** True for a game that has no folder of its own while the repo root belongs to another game (a game the Lead just created). */
+export function isHomeless(root, slug, games) {
+  const owner = rootGame(root, games);
+  return gameFolder(root, slug) === '.' && owner !== null && owner !== slug;
+}
+
 /** The game bible chapter for a game: the G-section whose title names it, else the list of G sections. */
 export function gameChapter(sections, game) {
   const top = (sections ?? []).filter((s) => /^G\d+$/.test(s.id));
@@ -39,6 +54,16 @@ export function gameSection({ task, games, root, sections }) {
   const g = task.game ? list.find((x) => x.slug === task.game) : null;
   if (!g) {
     return `## Your game\nThis task has no game. Ask the Lead which game it is for (hq_ask) before changing game files. Games: ${list.length ? list.map((x) => `${x.name} (${x.slug})`).join(', ') : '(none yet)'}.`;
+  }
+  if (isHomeless(root, g.slug, list)) {
+    const other = list.find((x) => x.slug === rootGame(root, list));
+    return [
+      '## Your game',
+      `${g.name} (${g.slug}), stage: ${g.stage}.`,
+      `This game has no code folder yet. Its files will live in games/${g.slug}/ (its own default.project.json, docs/ and CLAUDE.md), made when building starts.`,
+      `The repo root, its CLAUDE.md, docs/ and src/ belong to ${other.name}. Take the studio's hard rules from them, never facts about this game, and do not edit them for this game.`,
+      'Study, research and design tasks for this game change no game files.',
+    ].join('\n');
   }
   const dir = gameFolder(root, g.slug);
   const at = (f) => (dir === '.' ? f : `${dir}/${f}`);

@@ -1,6 +1,6 @@
 // Notebook: short notes the owner and the agents leave for each other. Newest first, live on the `notebook` event.
 import { markdown } from './library.js';
-import { h, store, api, act, btn, ic, empty, pageHead, field, selectEl, notify, toast, token, avatar, roleLabel, gameName, ago, fmtTime, inScope } from './core.js';
+import { h, store, api, act, btn, ic, empty, pageHead, field, selectEl, notify, toast, token, BASE, avatar, roleLabel, gameName, ago, fmtTime, inScope } from './core.js';
 
 let data = null; // { entries, doc }
 let bible = null; // { syncedAt, source, sections: [{ id, title, words }] }
@@ -21,7 +21,7 @@ const soon = () => { clearTimeout(timer); timer = setTimeout(load, 200); };
 // One extra event stream while this page is open (the shared one does not carry notebook events).
 function listen() {
   if (es) return;
-  es = new EventSource('/api/events?token=' + encodeURIComponent(token));
+  es = new EventSource(BASE + '/api/events?token=' + encodeURIComponent(token));
   es.addEventListener('notebook', soon);
   es.onopen = () => { if (asked) soon(); };
   const stop = () => { if (!location.hash.startsWith('#/notebook')) { es?.close(); es = null; window.removeEventListener('hashchange', stop); } };

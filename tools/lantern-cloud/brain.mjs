@@ -1,5 +1,6 @@
 // DV Enterprises assistant brain (Groq) and the Discord message handler. Snapshot contents are untrusted data.
 import { validateCommand } from './hq-state.mjs';
+import { gameLine } from './roblox-search.mjs';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const clip = (s, n) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s));
@@ -27,7 +28,7 @@ export function parseBrainOutput(raw, snapshot, collab = false) {
   return { reply: clip(j.reply, 1800), command };
 }
 
-export function createBrain({ fetch: f = globalThis.fetch, apiKey, model, getState }) {
+export function createBrain({ fetch: f = globalThis.fetch, apiKey, model, getState, findGames }) {
   const stats = { requests: 0, tokens: 0 };
   const mdl = model || 'llama-3.3-70b-versatile';
 
@@ -40,12 +41,32 @@ export function createBrain({ fetch: f = globalThis.fetch, apiKey, model, getSta
     return `HQ is ${st.online ? 'online' : 'offline (commands will wait until it is back)'}; last snapshot ${fmtAge(st.ageMs)} ago. ${active.length} active task${active.length === 1 ? '' : 's'}, ${asks.length} open ask${asks.length === 1 ? '' : 's'}.`;
   }
 
-  async function quick(text) {
+  async function quick(text, collab = false) {
     const w = String(text).trim().toLowerCase().replace(/[?!. ]+$/, '');
+    const game = /^games?\s+(.{2,80})$/i.exec(String(text).trim());
+    if (game && findGames) {
+      try {
+        const list = await findGames(game[1]);
+        return list.length ? clip(list.map((g) => `- ${gameLine(g)}`).join('\n'), 1800) : 'No Roblox games found for that search.';
+      } catch (e) {
+        return `Roblox search failed: ${clip(e.message, 120)}`;
+      }
+    }
+    if (w === 'queue') {
+      const tasks = ((await getState()).snapshot?.tasks || []).filter((t) => ACTIVE.has(t.state));
+      return tasks.length ? clip(tasks.slice(0, 15).map((t) => `- [${t.state}] ${clip(t.title, 90)} (${t.role})`).join('\n'), 1800) : 'Nothing queued or working.';
+    }
+    if ((w === 'pause' || w === 'resume') && !collab) {
+      const st = await getState();
+      const v = validateCommand({ type: 'pause', on: w === 'pause' }, st.snapshot);
+      return v.ok ? { reply: w === 'pause' ? 'Pause all agents: nothing new starts, running tasks finish.' : 'Resume agents.', command: v.command } : v.error;
+    }
     if (w === 'status') return statusText();
     if (w === 'usage') {
       const st = await getState();
-      const spend = st.snapshot?.spend ? clip(JSON.stringify(st.snapshot.spend), 600) : 'no HQ spend data';
+      const sp = st.snapshot?.spend;
+      const roles = Object.entries(sp?.byRole ?? {}).slice(0, 6).map(([k, v]) => `${k} $${Number(v).toFixed(2)}`).join(', ');
+      const spend = sp ? `$${Number(sp.totalUsd ?? 0).toFixed(2)} in all${sp.dayUsd == null ? '' : `, $${Number(sp.dayUsd).toFixed(2)} in the last 24 hours`}${roles ? `. Top roles: ${roles}` : ''}` : 'no HQ spend data';
       return `HQ spend: ${spend}. Groq: ${stats.requests} requests, ${stats.tokens} tokens since this server started.`;
     }
     if (w === 'asks') {
@@ -53,7 +74,7 @@ export function createBrain({ fetch: f = globalThis.fetch, apiKey, model, getSta
       if (!asks.length) return 'No open asks.';
       return asks.slice(0, 10).map((a) => `- ${clip(a.title, 120)} (${a.role}, id ${a.id})`).join('\n');
     }
-    if (w === 'help') return 'Ask me about HQ in plain words. Quick commands: status, usage, asks, help. To act, say what you want (for example "tell the designer to ...") and I will propose a command for you to confirm.';
+    if (w === 'help') return 'Ask me about HQ in plain words. Quick commands: status, usage, asks, queue, game <name>, pause, resume, help. To act, say what you want (for example "tell the designer to ...") and I will propose a command for you to confirm.';
     return null;
   }
 
@@ -93,8 +114,8 @@ export function createBrain({ fetch: f = globalThis.fetch, apiKey, model, getSta
 
   /** Always resolves to {reply, command}. */
   async function respond(text, { collab = false } = {}) {
-    const q = await quick(text);
-    if (q) return { reply: q, command: null };
+    const q = await quick(text, collab);
+    if (q) return typeof q === 'string' ? { reply: q, command: null } : q;
     if (!apiKey) return { reply: `${await statusText()} (Groq is not configured, so I can only answer: status, usage, asks, help.)`, command: null };
     try {
       return await ask(text, collab);

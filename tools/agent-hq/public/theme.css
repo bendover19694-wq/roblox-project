@@ -1,10 +1,10 @@
 /* Agent HQ tokens, fonts and page backdrop. Every other stylesheet reads from here; colours are measured from the reference app screens (research/agent-hq/tokens.json). */
-@font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-Regular.ttf") format("truetype"); }
-@font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-Medium.ttf") format("truetype"); }
-@font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-SemiBold.ttf") format("truetype"); }
-@font-face { font-family: "Inter"; font-weight: 700; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-Bold.ttf") format("truetype"); }
-@font-face { font-family: "Space Grotesk"; font-weight: 300 700; font-style: normal; font-display: swap; src: url("/static/fonts/space-grotesk-latin-wght-normal.woff2") format("woff2"); }
-@font-face { font-family: "Geist Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url("/static/fonts/geist-mono-latin.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("fonts/Inter-Regular.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url("fonts/Inter-Medium.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("fonts/Inter-SemiBold.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-style: normal; font-display: swap; src: url("fonts/Inter-Bold.ttf") format("truetype"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 300 700; font-style: normal; font-display: swap; src: url("fonts/space-grotesk-latin-wght-normal.woff2") format("woff2"); }
+@font-face { font-family: "Geist Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url("fonts/geist-mono-latin.woff2") format("woff2"); }
 
 /* Font check (home, 1920x1200, against app/home.png): Geist has one weight in the file we have (no fvar table), so headings and button labels render thin and the app's semi-bold titles are lost; Inter 400 to 700 matches the heavier headings and the Inter-like body, so Inter is the sans face. Geist Mono stays for code. */
 :root {

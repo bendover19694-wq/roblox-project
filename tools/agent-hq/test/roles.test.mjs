@@ -54,7 +54,7 @@ test('briefs carry the role rules and the read-before section, and stay small', 
   const limit = { app: 16000, antigravity: 16000, groq: 8000, nim: 8000 };
   for (const engine of Object.keys(limit)) {
     for (const r of roles) {
-      const b = buildBrief({ task: task(engine), role: r.id, root });
+      const b = buildBrief({ task: task(engine), role: r.id, root, memoryDir: path.join(root, 'tools/agent-hq/test/fixtures') }); // no lessons there: the limit is for the brief itself, not this PC's memory
       assert.match(b, /## Rules for your role/, `${engine} ${r.id}`);
       assert.ok(b.includes(`- ${r.rules[0]}`), `${engine} ${r.id} first rule`);
       assert.match(b, /## Read before you start/, `${engine} ${r.id}`);

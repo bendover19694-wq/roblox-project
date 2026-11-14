@@ -6,7 +6,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { mountCorrections, readCorrections } from './corrections.mjs';
-import { mountResearch } from './research-notes.mjs';
+import { mountResearch, NOTES_DIR } from './research-notes.mjs';
+import { startObsidianMirror } from './obsidian-mirror.mjs';
 
 export const STUDIO = 'studio';
 export const PREF_CAP = 30;
@@ -149,5 +150,6 @@ export function mountLearning(route, c) {
     }
     D.setSetting(db, 'distillCounts', counts);
   };
-  return { answered, noted };
+  const mirror = typeof c.getSettings === 'function' ? startObsidianMirror({ memoryDir, notesDir: path.join(c.stateDir, NOTES_DIR), roles: () => c.roles().map(({ id, label }) => ({ id, label })), getSettings: c.getSettings }) : null;
+  return { answered, noted, stop: () => mirror?.stop() };
 }

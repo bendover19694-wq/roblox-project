@@ -255,6 +255,21 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     ? call(API + route, { method, body, headers: { Authorization: `Bot ${token()}`, 'User-Agent': UA } })
     : discord(method, route, body));
 
+  // Totals over every task HQ knows, not only the ones in the snapshot: all time, the last 24 hours, and per role.
+  function spendOf(all, t) {
+    const r4 = (n) => Math.round(n * 1e4) / 1e4;
+    const byRole = {};
+    let totalUsd = 0, dayUsd = 0;
+    for (const x of all) {
+      const c = Number(x.costUsd) || 0;
+      if (!c) continue;
+      totalUsd += c;
+      if (t - (Date.parse(x.endedAt ?? x.startedAt ?? x.createdAt) || 0) < 86400_000) dayUsd += c;
+      if (typeof x.role === 'string') byRole[x.role] = (byRole[x.role] ?? 0) + c;
+    }
+    return { totalUsd: r4(totalUsd), dayUsd: r4(dayUsd), byRole: Object.fromEntries(Object.entries(byRole).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, v]) => [k, r4(v)])) };
+  }
+
   async function publish() {
     const c = config();
     if (!c.stateChannelId) return;
@@ -263,7 +278,8 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     if (age < SNAP_MIN) return;
     const st = await (await hq('GET', '/api/state')).json();
     const lk = (await (await hq('GET', '/api/link')).json().catch(() => null)) ?? {};
-    const pa = (await (await hq('GET', '/api/settings')).json().catch(() => null))?.partnerAccess ?? {};
+    const set = (await (await hq('GET', '/api/settings')).json().catch(() => null)) ?? {};
+    const pa = set.partnerAccess ?? {};
     const tasks = (st.tasks ?? []).map((x) => ({ id: x.id, title: clip(x.title, 200), role: x.role, game: x.game ?? null, state: x.state, engine: x.engine ?? null, costUsd: x.costUsd ?? 0, updatedAt: x.endedAt ?? x.startedAt ?? x.createdAt ?? null }));
     const live = tasks.filter((x) => ['queued', 'working', 'review'].includes(x.state));
     const old = tasks.filter((x) => !live.includes(x)).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, 20);
@@ -274,7 +290,8 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
       asks: (st.asks ?? []).filter((a) => a.state === 'open').map((a) => ({ id: a.id, title: clip(a.title, 200), role: a.role, kind: a.kind ?? null, options: (a.options ?? []).map((o) => ({ id: o.id, label: clip(o.label, 80), description: clip(o.description, 300), recommended: !!o.recommended })) })),
       link: { name: clip(lk.name, 40), peers: (lk.peers ?? []).map((x) => ({ id: x.id, name: clip(x.name, 40) })), log: (lk.log ?? []).slice(-30).map((e) => ({ at: e.at, dir: e.dir, kind: e.kind, from: clip(e.from, 40), text: e.text === undefined ? undefined : clip(e.text, 300), title: e.title === undefined ? undefined : clip(e.title, 200), ref: e.ref, state: e.state })) },
       partnerAccess: { enabled: pa.enabled !== false, autoRoles: (pa.autoRoles ?? []).filter((r) => typeof r === 'string').slice(0, 20), dailyLimit: Number(pa.dailyLimit) || 0, usedToday: Number(lk.partnerUsedToday) || 0 },
-      spend: { totalUsd: Math.round(tasks.reduce((n, x) => n + (Number(x.costUsd) || 0), 0) * 1e4) / 1e4 },
+      spend: spendOf(st.tasks ?? [], t),
+      paused: set.paused === true,
       lanes: st.lanes ?? {},
     };
     const hash = createHash('sha256').update(JSON.stringify(snap)).digest('hex');
@@ -293,7 +310,8 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     try { cmd = JSON.parse(content.slice(7)); } catch { throw new Error('not valid JSON'); }
     const text = (v, k, max) => { if (typeof v !== 'string' || !v.trim() || v.length > max) throw new Error(`${k} must be 1-${max} characters`); return v; };
     if (!cmd || typeof cmd !== 'object' || !CMD_ID.test(cmd.id)) throw new Error('bad command id');
-    if (!['message', 'task', 'answer', 'link-chat', 'link-task', 'relay'].includes(cmd.type)) throw new Error('unknown command type');
+    if (!['message', 'task', 'answer', 'link-chat', 'link-task', 'relay', 'pause'].includes(cmd.type)) throw new Error('unknown command type');
+    if (cmd.type === 'pause') { if (typeof cmd.on !== 'boolean') throw new Error('on must be true or false'); return { route: cmd.on ? '/api/pause' : '/api/resume', body: {} }; }
     if (cmd.type === 'link-chat') return { route: '/api/link/say', body: { text: text(cmd.text, 'text', 1800) } };
     const role = () => { if (cmd.role === undefined) return undefined; if (typeof cmd.role !== 'string' || !ROLE_ID.test(cmd.role)) throw new Error('role must be a role id like scout'); return cmd.role; };
     if (cmd.type === 'link-task') return { route: '/api/link/share', body: { title: text(cmd.title, 'title', 200), body: cmd.body === undefined ? '' : text(cmd.body, 'body', 1600), ...(cmd.role === undefined ? {} : { role: role() }) } };

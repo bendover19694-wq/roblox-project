@@ -19,3 +19,10 @@ test('routeEngine sends art to antigravity only when allowed', () => {
   assert.equal(routeEngine({ title: 'Fix icon spacing', role: 'builder' }, on), undefined);
   assert.equal(routeEngine({ title: 'Plan it', role: 'lead', body: 'icon art too' }, on), undefined);
 });
+
+test('routeEngine keeps research about art on its own lane', () => {
+  const on = { laneSchedules: { antigravity: { enabled: true } } };
+  assert.equal(routeEngine({ role: 'librarian', engine: 'claude-cli', title: 'Asset study: list of free icons and thumbnail references' }, on), 'claude-cli');
+  assert.equal(routeEngine({ role: 'scout', engine: 'claude-cli', title: 'Research competitor thumbnails' }, on), 'claude-cli');
+  assert.equal(routeEngine({ role: 'designer', engine: 'claude-cli', title: 'Make 3 thumbnails' }, on), 'antigravity');
+});

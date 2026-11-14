@@ -63,8 +63,8 @@ test('quick replies need no Groq', async () => {
   const brain = createBrain({ fetch: fakeFetch(), apiKey: 'fake', getState: state() });
   assert.match((await brain.respond('Status?')).reply, /1 active task, 1 open ask/);
   assert.match((await brain.respond('asks')).reply, /Pick a colour/);
-  assert.match((await brain.respond('usage')).reply, /todayUsd/);
-  assert.match((await brain.respond('help')).reply, /status, usage, asks, help/);
+  assert.match((await brain.respond('usage')).reply, /HQ spend: \$0\.00 in all/);
+  assert.match((await brain.respond('help')).reply, /status, usage, asks, queue, game <name>, pause, resume, help/);
   const off = createBrain({ fetch: fakeFetch(), apiKey: '', getState: state(null, false) });
   assert.match((await off.respond('status')).reply, /no HQ snapshot/);
 });

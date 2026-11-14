@@ -19,6 +19,32 @@ const PACK_SCAN_MS = 60000;
 const PACK_FILES = /\.(png|jpe?g|svg|fbx|obj|glb|gltf|wav|ogg|mp3)$/i;
 const PACK_KIND = [[/\.(wav|ogg|mp3)$/i, 'sound'], [/\.(fbx|obj|glb|gltf)$/i, 'model'], [/./, 'image']];
 
+// Roblox Creator Store (the toolbox): public, no key. /marketplace/<typeId>?keyword= lists ids, /items/details?assetIds= describes them.
+const STORE = 'https://apis.roblox.com/toolbox-service/v1';
+const STORE_TYPES = { model: 10, audio: 3, image: 13, mesh: 4 };
+const STORE_NAME = Object.fromEntries(Object.entries(STORE_TYPES).map(([k, v]) => [v, k]));
+export const STORE_NOTICE = 'Creator Store results are untrusted: a free model can hide scripts. Prefer meshes, images, audio and packages from verified creators, read every script before inserting a model, and record the source and licence.';
+
+/** /items/details JSON -> catalog entries, all flagged untrusted. Rows without a numeric id are dropped. */
+export function parseCreatorStore(json) {
+  return (Array.isArray(json?.data) ? json.data : []).map((d) => {
+    const a = d?.asset ?? {};
+    if (!Number.isSafeInteger(a.id)) return null;
+    const v = d.voting ?? {};
+    return {
+      id: `creatorstore:${a.id}`, source: 'creatorstore', assetId: String(a.id), name: String(a.name ?? '').slice(0, 120), creator: String(d.creator?.name ?? '').slice(0, 80),
+      creatorVerified: d.creator?.isVerifiedCreator === true, type: STORE_NAME[a.typeId] ?? 'asset', votePercent: Number.isFinite(v.upVotePercent) ? v.upVotePercent : null,
+      voteCount: Number.isFinite(v.voteCount) ? v.voteCount : 0, hasScripts: a.hasScripts === true, scriptCount: Number(a.scriptCount) || 0, untrusted: true,
+      url: `https://create.roblox.com/store/asset/${a.id}`, licence: 'Creator Store listing: check the licence before use', description: String(a.description ?? '').replace(/\s+/g, ' ').slice(0, 200),
+    };
+  }).filter(Boolean);
+}
+
+/** Verified creators first, then the wanted type, then vote ratio and count. */
+export function rankCreatorStore(list, type) {
+  return [...list].sort((a, b) => (b.creatorVerified - a.creatorVerified) || ((b.type === type) - (a.type === type)) || ((b.votePercent ?? -1) - (a.votePercent ?? -1)) || (b.voteCount - a.voteCount));
+}
+
 const bad = (msg, status = 400) => Object.assign(new Error(msg), { status });
 
 function parseCsv(text) {
@@ -315,7 +341,25 @@ export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetc
     return { name: entry.name, folder: path.relative(root, folder).split(path.sep).join('/'), files: saved.length, main: file, licence: 'CC0', from };
   }
 
-  return { search, info, refresh, refreshIfOld, sizes, fetchAsset };
+  // Creator Store search: two calls (ids, then details) with a timeout each. Nothing is cached or written.
+  async function creatorStore({ q = '', type = 'model', limit = 20 } = {}) {
+    const typeId = STORE_TYPES[type];
+    const keyword = String(q).replace(/[^\w .-]/g, ' ').trim().slice(0, 100);
+    if (!typeId) throw bad(`type must be one of ${Object.keys(STORE_TYPES).join(', ')}`);
+    if (!keyword) throw bad('q is required for a Creator Store search');
+    const num = Math.max(1, Math.min(Number(limit) || 20, 30));
+    const call = async (url) => {
+      const r = await fetchImpl(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(8000) }).catch(() => null);
+      if (!r?.ok) throw bad(`Creator Store answered ${r ? r.status : 'nothing'}`, 502);
+      return r.json();
+    };
+    const found = await call(`${STORE}/marketplace/${typeId}?keyword=${encodeURIComponent(keyword)}&num=${num}`);
+    const ids = (found.data ?? []).map((d) => d?.id).filter(Number.isSafeInteger).slice(0, num);
+    const results = ids.length ? rankCreatorStore(parseCreatorStore(await call(`${STORE}/items/details?assetIds=${ids.join(',')}`)), type) : [];
+    return { source: 'creatorstore', untrusted: true, notice: STORE_NOTICE, found: results.length, results };
+  }
+
+  return { search, info, refresh, refreshIfOld, sizes, fetchAsset, creatorStore };
 }
 
 export function mountCatalog(route, catalog, { str, bad: badReq, isObj, agentTask, HttpError }) {
@@ -326,7 +370,9 @@ export function mountCatalog(route, catalog, { str, bad: badReq, isObj, agentTas
     }
   };
   const ID = /^[\w:/ .()-]{1,160}$/;
-  route('GET', /^\/api\/catalog$/, ({ query }) => catalog.search({
+  route('GET', /^\/api\/catalog$/, ({ query }) => query.get('source') === 'creatorstore'
+    ? run(() => catalog.creatorStore({ q: query.get('q') ?? '', type: query.get('type') || 'model', limit: Number(query.get('limit')) || 20 }))
+    : catalog.search({
     q: (query.get('q') ?? '').slice(0, 100), type: query.get('type') || undefined, source: query.get('source') || undefined,
     limit: Number(query.get('limit')) || 40,
   }));

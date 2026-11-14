@@ -102,6 +102,12 @@ Each role can be turned off, and given extra rules (up to 12) and extra skills (
 
 "Daily spend cap" (USD, 0 means off) pauses all agents when today's spend since local midnight reaches it, and posts one message to you. HQ never resumes by itself: raise the cap or press Resume. Only runs that report a cost (the Claude CLI engine) count. The other Usage settings shape briefs: terse replies, a screenshot limit per task, cheap vault lookups through a small model, and batching (a worker takes the next task of the role it just ran).
 
+### Lean sessions and smart models (2026-11-12)
+
+- **Lean agent sessions** (Settings > Usage, on by default). An agent started on this PC used to load every plugin, skill and agent type installed for the owner: about 70,000 tokens of fixed context on every turn. A lean session loads project settings only (`--setting-sources project,local`), switches on just the plugins the role's skills name (`lihfolk:...` turns on lihfolk), and offers only the built-in tools the role is allowed. Measured on the same builder task: 35,400 to 18,500 tokens per turn and 58% lower cost, with the Skill tool, the HQ tools and file reads all still working. User-level skills (for example `roblox-game-gate`) are not listed in a lean session, so the brief gives their file path to read instead. Owner hooks and the ponytail and caveman plugins do not load; the brief carries the ponytail rules. Turn the setting off if an agent reports a missing skill. Code: `leanArgs` in `engines.mjs`.
+- **Smart model choice** (Settings > Usage, on by default). Short Lead replies (280 characters or fewer, no planning words) and "Results in:" follow-ups run on Sonnet instead of Opus. A task on its third attempt (or its second, for a Haiku role) moves one model up. A model set per task or per role in Settings always wins. The choice is written to the task log. Code: `smart-model.mjs`.
+- **`hq_game_search {q}`**: agents find live Roblox games by keyword in one call (players now, like ratio, visits, last update, universe id) instead of opening web pages. Code: `roblox-search.mjs`.
+
 ## Art routing
 
 With "Send art to Antigravity" on, a new task whose title is about an icon, thumbnail, ad, key art, store art, banner or promo image goes to the Antigravity lane, unless the creator named an engine or the lane is switched off. Roles that write or check code (builder, economy, merchant, reviewer, playtester, kid tester, producer) are never moved. Blender stays off unless "Allow Blender" is on.
@@ -126,6 +132,16 @@ Pro > Thumbnail tester places one of your images in a grid of today's trending g
 
 - **Gates**: when a role finishes, HQ queues its checkers (for example Reviewer and Playtester after a Builder task). A checker starts its summary with PASS or FAIL. FAIL queues a Fix task for the original role with the feedback; after 3 attempts it becomes a decision for you. When every gate passes, the task is marked done.
 - **Memory**: roles record reusable lessons (`hq_learn`); the newest 10 are included in every later brief. Edit or prune `memory/<role>.md` by hand if one is wrong.
+
+## Obsidian vault
+
+HQ can copy what it learns into your Obsidian vault so you can read, search and link it there. It mirrors owner corrections, preferences (per role and studio-wide), agent lessons, repeated mistakes and research notes.
+
+- **Layout**, inside one folder of the vault (default `Agent HQ Memory`): `Agent HQ Memory.md` (index), `Roles/<Role>.md`, `Studio preferences.md`, `Mistakes.md` and `Research/<note>.md`.
+- **Turn it on**: Settings > Knowledge > Obsidian vault folder, an absolute path to an existing vault. Empty turns it off. The folder name can be changed in the next setting.
+- **One way**: HQ's files are the source of truth. Notes are rewritten when memory changes (a couple of seconds after a change, and once at start), so edit in HQ, not in the vault. Text in the vault is never read back into briefs.
+- **Safe**: HQ never overwrites a note it did not write (its notes carry `source: agent-hq` in the frontmatter), never deletes or renames anything, and writes only inside the chosen folder.
+- After saving the vault setting, the first copy happens on the next memory change or restart.
 
 ## Engines and lanes
 
@@ -229,3 +245,7 @@ Games: the Lead can create one (`hq_game_create`), tag tasks with `game`, and mo
 
 ### Run mode, instant results and learning (r5e)
 Settings > Run control > Run mode: `instant` (default) sends every role whose default engine is `app` to `claude-cli`, which starts on this PC within seconds; `hourly` keeps them for the Claude app worker. An explicit engine and a per-role engine choice always win, and Antigravity roles stay on Antigravity (`run-mode.mjs`, `db.mjs` `createTask`). When a task a Lead plan created finishes, fails or reaches review, a line appears in the Lead's thread at once, and when every task of the plan has settled HQ queues one "Results in: <title>" task for the Lead (at most 3 rounds). A reviewer's FAIL becomes a lesson for the worked role (`memory/<role>.md`), an owner message that criticises ("no", "wrong", "don't", "instead", ...) becomes an owner correction, and a rejected or held stage request saves its reason for the role that asked (`learning-hooks.mjs`). `npm test` runs with `HQ_RUN_MODE=hourly` through `test/hourly-setup.mjs` because the older tests assume the app lane.
+
+## Remote access (optional)
+
+If `.agent-hq/remote.json` holds `{"url": "<DV Enterprises site>", "secret": "<TUNNEL_SECRET from Render>"}`, `remote-tunnel.mjs` polls the site outbound and forwards the signed-in owner's requests (under `/hq/` on the site) to this HQ on 127.0.0.1. It adds the owner token itself and strips it from text replies, refuses paths with `..`, `//` or a scheme, runs at most 6 requests at once, and stops when the file is removed. The web UI uses relative paths plus a `BASE` of `/hq` when served there. Setup and the security model are in `../lantern-cloud/README.md`.
