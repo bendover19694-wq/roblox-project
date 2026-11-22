@@ -196,6 +196,7 @@ export const LIBRARY = {
   'pattern-cards': ['research/pattern-cards/', 'one card per studied hit game'],
   monetization: ['research/monetization-policy.md', 'Roblox monetization rules this game follows'],
   airline: ['research/run-an-airline-study.md', 'hands-on study of the reference game'],
+  world: ['research/exemplars/world-building.md', 'LihFolk notes, Creator Hub showcase builds and games to study, per world-building job'],
 };
 function librarySection(r) {
   const items = (r.library ?? []).map((k) => LIBRARY[k]).filter(Boolean);
@@ -221,6 +222,13 @@ function skillsSection(r, engine, root, lean) {
     return file ? `- Read \`${file}\` (${s.when})` : `- Invoke with the Skill tool: ${s.name} (${s.when})`;
   });
   return `## Skills you must use\n${lines.join('\n')}\nIf a listed skill is not installed, say so in hq_note and continue.`;
+}
+
+// The vault-derived quality standards (.claude/skills/roblox-agent-team/standards/*.md). Reviewers grade against them.
+const STANDARDS = '.claude/skills/roblox-agent-team/standards';
+function standardsSection(r) {
+  return `## Quality bar
+Read first (${STANDARDS}/): ${['anti-slop', ...(r.standards ?? [])].map((f) => `${f}.md`).join(', ')}. hq_complete names each check passed or missed.`;
 }
 
 function rolesRulesSection(r) {
@@ -343,12 +351,12 @@ function researchLine(small, lead) {
  */
 function refSheetSection(task, db, settings = {}) {
   if (!isRefTask(db, task.id)) return null;
-  const chat = settings.modelRefLane === 'chatgpt';
+  const lane = settings.modelRefLane ?? 'claude-design';
   return `## Reference sheet (3D work waits for this)
 This task only finds references. Build no model here.
 - Research first: real photos and mockups of the object, and how top Roblox games show this kind of thing. References are for shape and proportion only; copy no one's design.
 - Make or collect front, side, back, three-quarter and top views on a plain background at the same scale: at least 4 images. Save them as assets/concepts/<taskId>-ref-<view>.png and attach each with hq_add_media, titled "Reference sheet: <name> <view>".
-- ${chat ? 'Use a ChatGPT image tool if one is connected; otherwise use web image search.' : 'You run on the Antigravity image lane: generate or find the views there.'}
+- ${lane === 'chatgpt' ? 'Use a ChatGPT image tool if one is connected; otherwise use web image search.' : lane === 'antigravity' ? 'You run on the Antigravity image lane: generate or find the views there.' : 'Design the views in Claude Design: Artifact tool, action quickstart, intent "design", one artboard per view at one scale with sizes in studs. Put the link in hq_complete and attach PNG exports. No Artifact tool? Say so in hq_note and use web image search.'}
 - Then hq_complete with a description: size in studs, parts list, materials and colours, part or triangle budget, what to leave out, and the style it must match (the game's Visual bar).
 - ${settings.modelRefApproval === 'auto' ? 'The build starts the moment you complete this task, so the description must be complete.' : 'The build waits until the owner approves the sheet.'}`;
 }
@@ -382,6 +390,7 @@ export function buildBrief({ task, role, root, db, taskToken, memoryDir, referen
     skillsSection(r, engine, root, lean),
     r.mcp?.length ? `## Tools to prefer\nPrefer these when present: ${r.mcp.join(', ')}.` : null,
     rolesRulesSection(r),
+    standardsSection(r),
     usageSection(engine, settings),
     ponytailSection(engine, settings, r.mode === 'write', lean),
     researchLine(small, r.id === 'lead'),

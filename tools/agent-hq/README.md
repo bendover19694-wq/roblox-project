@@ -108,6 +108,12 @@ Each role can be turned off, and given extra rules (up to 12) and extra skills (
 - **Smart model choice** (Settings > Usage, on by default). Short Lead replies (280 characters or fewer, no planning words) and "Results in:" follow-ups run on Sonnet instead of Opus. A task on its third attempt (or its second, for a Haiku role) moves one model up. A model set per task or per role in Settings always wins. The choice is written to the task log. Code: `smart-model.mjs`.
 - **`hq_game_search {q}`**: agents find live Roblox games by keyword in one call (players now, like ratio, visits, last update, universe id) instead of opening web pages. Code: `roblox-search.mjs`.
 
+## Quality standards (anti-slop)
+
+Every brief has a "Quality bar" section naming the standards the agent must read first: `anti-slop.md` for every role, plus its craft (`world.md`, `3d.md`, `ui.md`, `code.md` or `docs.md`) from `.claude/skills/roblox-agent-team/standards/`. The files are distilled from the LihFolk Vault V2 (CC BY 4.0) notes they cite. They list the AI tells that fail review on sight, the build order, and the tests to attach. `roles.json` `standards` picks the files per role. The reviewer grades against the worked role's files. World-building references (LihFolk notes by job, Creator Hub showcase builds, games to study) are in `research/exemplars/world-building.md`, the `world` library entry.
+
+Claude Design (the Artifact tool, quickstart intent "design") is the default for 3D and world design. The world role has the Artifact tool and designs maps there first: a top-down layout artboard and a mood board per zone, then a grey-box. 3D reference sheets default to Claude Design on the app lane (Settings, Art, "References lane": Claude Design, Antigravity or ChatGPT). The 3D order is still the catalog or an asset pack, then Claude Design, then Blender only when it is on.
+
 ## Art routing
 
 With "Send art to Antigravity" on, a new task whose title is about an icon, thumbnail, ad, key art, store art, banner or promo image goes to the Antigravity lane, unless the creator named an engine or the lane is switched off. Roles that write or check code (builder, economy, merchant, reviewer, playtester, kid tester, producer) are never moved. Blender stays off unless "Allow Blender" is on.

@@ -72,7 +72,7 @@ export function createModelRefs({ db, D, settingsAll, create, postMessage, roleO
       const name = f.title.slice(0, 160);
       const ref = create({
         title: `Reference sheet: ${name}`, role: 'designer', game: f.game ?? null, needsStudio: false, createdBy: f.createdBy ?? 'owner',
-        engine: s.modelRefLane === 'chatgpt' ? 'app' : 'antigravity',
+        engine: s.modelRefLane === 'antigravity' ? 'antigravity' : 'app', // Claude Design and ChatGPT both run on the app lane
         body: `Find references for this 3D work before anything is built.\n\nTitle: ${f.title}\n\n${f.body || ''}`.slice(0, 20000),
       });
       db.prepare('INSERT INTO model_refs (id, refTaskId, spec, state, createdAt) VALUES (?,?,?,?,?)')

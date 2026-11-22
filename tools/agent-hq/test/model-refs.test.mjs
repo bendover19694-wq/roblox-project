@@ -39,6 +39,7 @@ test('isModelTask: 3D work hits, other "model" words miss', () => {
 
 test('hold, approve releases once with paths, no concept build, agents cannot approve', async () => {
   const { api, agent } = await boot();
+  await api('POST', '/api/settings', { key: 'modelRefLane', value: 'antigravity' }); // the default is now Claude Design on the app lane
   const t = (await api('POST', '/api/tasks', { title: 'Make a 3D rocket model', role: 'world', body: 'Orange.' })).json;
   assert.equal(t.title, 'Reference sheet: Make a 3D rocket model');
   assert.equal(t.role, 'designer');
@@ -58,6 +59,7 @@ test('hold, approve releases once with paths, no concept build, agents cannot ap
 
 test('a Changes rework approval releases; reject drops', async () => {
   const { api, agent } = await boot();
+  await api('POST', '/api/settings', { key: 'modelRefLane', value: 'antigravity' }); // the default is now Claude Design on the app lane
   await api('POST', '/api/tasks', { title: 'Low poly statue', role: 'world' });
   const { ask } = await sheet(agent, 'antigravity');
   await api('POST', `/api/asks/${ask.id}/answer`, { answer: 'changes:add a back view' });
@@ -69,6 +71,7 @@ test('a Changes rework approval releases; reject drops', async () => {
   assert.equal((await worldTasks(api)).length, 1);
 
   const b = await boot();
+  await b.api('POST', '/api/settings', { key: 'modelRefLane', value: 'antigravity' });
   await b.api('POST', '/api/tasks', { title: 'Low poly statue', role: 'world' });
   const r = await sheet(b.agent, 'antigravity');
   await b.api('POST', `/api/asks/${r.ask.id}/answer`, { answer: 'reject:wrong style' });
