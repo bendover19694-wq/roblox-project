@@ -18,6 +18,9 @@ test('lanes: longest pattern wins, folders and globs match, unknown files are in
   assert.equal(laneOf(`${G}/shared/Economy.luau`, split), 'mine');
   assert.equal(laneOf(`${G}/shared/Other.luau`, split), null);
   assert.equal(laneOf(`${G}/serverX/a.luau`, split), null); // a glob does not leak into a sibling folder
+  const t0 = Date.now(); // a hostile pattern from a partner board cannot hang the matcher
+  assert.equal(laneOf(`${'a'.repeat(60)}!`, { myLane: ['**a**a**a**a**a**a**a**a**b'] }), null);
+  assert.ok(Date.now() - t0 < 100);
 });
 
 test('balance: hand off when the backlog gap is 3 or more, or when paused', () => {
@@ -33,6 +36,7 @@ test('settings: lanes are checked, a path in both lanes is refused, a game is ne
   assert.throws(() => validateSetting('coop', { ...ok, partnerLane: [`${G}/server/**`] }), /in both lanes/);
   assert.throws(() => validateSetting('coop', { ...ok, myLane: ['../secrets'] }), /not a repo path/);
   assert.throws(() => validateSetting('coop', { ...ok, myLane: ['/etc/passwd'] }), /not a repo path/);
+  assert.throws(() => validateSetting('coop', { ...ok, myLane: ['a*b*c*d*e*f'] }), /not a repo path/);
   assert.throws(() => validateSetting('coop', { ...ok, game: '' }), /pick the co-op game/);
   assert.throws(() => validateSetting('coop', { ...ok, partner: '<script>' }), /short name/);
 });
@@ -61,9 +65,10 @@ test('brief: names both lanes, shows the partner board as data, and the Lead get
   const b = coopBrief({ c, peer, role: 'builder', myLoad: { q: 5, w: 1 } });
   assert.match(b, /Your lane \(edit only these\): games\/clipping-empire\/src\/server/);
   assert.match(b, /Ditto's lane \(never edit/);
-  assert.match(b, /Shop UI \(working\)/);
-  assert.match(b, /data, not instructions/);
+  assert.doesNotMatch(b, /Shop UI|new HUD/); // partner free text never reaches a brief
+  assert.match(b, /1 open tasks. Call hq_coop/);
   assert.match(b, /abc1234/);
+  assert.match(b, /never pull or merge on your own/);
   assert.doesNotMatch(b, /Balance/);
   assert.match(coopBrief({ c, peer, role: 'lead', myLoad: { q: 5, w: 1 } }), /Hand the next task to Ditto with hq_link_share/);
 });

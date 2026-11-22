@@ -212,7 +212,7 @@ function validateCustom(key, value, roleIds) {
       const name = (n) => { if (typeof v[n] !== 'string' || v[n].length > 40 || /[`<>]/.test(v[n])) throw bad(`coop.${n} must be a short name`); return v[n].trim(); };
       const lane = (n) => {
         if (!Array.isArray(v[n]) || v[n].length > 20) throw bad(`coop.${n} must be a list of up to 20 paths`);
-        for (const p of v[n]) if (typeof p !== 'string' || !LANE_PATH.test(p)) throw bad(`coop.${n}: "${String(p).slice(0, 60)}" is not a repo path like games/x/src/client/**`);
+        for (const p of v[n]) if (typeof p !== 'string' || !LANE_PATH.test(p) || p.split('*').length > 5) throw bad(`coop.${n}: "${String(p).slice(0, 60)}" is not a repo path like games/x/src/client/**`);
         return [...new Set(v[n])];
       };
       const out = { enabled: v.enabled, game: v.game, me: name('me'), partner: name('partner'), myLane: lane('myLane'), partnerLane: lane('partnerLane'), shared: lane('shared'), shareBoard: v.shareBoard };

@@ -54,7 +54,7 @@ export function decode(content) {
 // Co-op board (coop.mjs): open task titles, load and the last hand-off for the one shared game. Every field is checked.
 const LANE = /^(?!\/)(?!.*\.\.)[\w./*-]{1,120}$/;
 const num = (v) => (Number.isInteger(v) && v >= 0 && v < 1e7 ? v : 0);
-const laneList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && LANE.test(x)).slice(0, 20) : []);
+const laneList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && LANE.test(x) && x.split('*').length <= 5).slice(0, 20) : []);
 function decodeBoard(o) {
   const items = (Array.isArray(o.items) ? o.items : []).slice(0, 15).filter((i) => i && typeof i === 'object')
     .map((i) => ({ t: fence(clip(i.t, 80), 80), r: ROLE_ID.test(i.r ?? '') ? i.r : '', s: clip(i.s, 20).replace(/[^a-z]/g, '') }));
