@@ -158,21 +158,23 @@ function Hud.build(actions: Actions)
 	})
 
 	-- Menus come from the LihFolk UI kit (Panels.luau); these image launchers open them.
-	local left = group("Menu", Vector2.new(0, 0.5), UDim2.new(0, 10, 0.44, 0), Vector2.new(150, 400)) -- clear of the phone thumbstick
+	local left = group("Menu", Vector2.new(0, 0.5), UDim2.new(0, 10, 0.44, 0), Vector2.new(264, 361)) -- clear of the phone thumbstick
 	Kit.make(
 		"UIListLayout",
 		{ Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = left }
 	)
 	local launchers: { [string]: ImageButton } = {}
 	local LAUNCHERS = {
-		{ name = "Upgrades", art = Art.upgrades },
-		{ name = "Rebirth", art = Art.goViral },
-		{ name = "Settings", art = Art.settings },
+		{ name = "Upgrades", art = Art.upgrades, label = "UPGRADES" },
+		{ name = "Rebirth", art = Art.goViral, label = "GO VIRAL" },
+		{ name = "Settings", art = Art.settings, label = "SETTINGS" },
 	}
 	for i, spec in LAUNCHERS do
 		launchers[spec.name] = Kit.imageButton({
 			Name = "Open" .. spec.name,
-			Size = UDim2.fromOffset(150, 128), -- 75 px tall on the smallest phone
+			Size = UDim2.fromOffset(264, 115), -- 68 px tall on the smallest phone; label fits at 12 px
+			Label = spec.label,
+			LabelMax = 30,
 			LayoutOrder = i,
 			Parent = left,
 		}, spec.art, function() end) -- the kit's bindOpener does the opening
@@ -229,13 +231,17 @@ function Hud.build(actions: Actions)
 	})
 	local clipBtn = Kit.imageButton({
 		Name = "Clip",
-		Size = UDim2.fromOffset(270, 100),
+		Label = "CLIP",
+		Shine = 3.5,
+		Size = UDim2.fromOffset(270, 104),
 		Position = UDim2.fromOffset(5, 96),
 		Parent = bottom,
 	}, Art.clip, actions.tap)
 	local postBtn = Kit.imageButton({
 		Name = "Post",
-		Size = UDim2.fromOffset(270, 100),
+		Label = "POST",
+		Shine = 4.5,
+		Size = UDim2.fromOffset(270, 104),
 		Position = UDim2.fromOffset(285, 96),
 		Parent = bottom,
 	}, Art.post, actions.post)
@@ -283,6 +289,7 @@ function Hud.build(actions: Actions)
 		local ratio = if s.capacity > 0 then math.clamp(s.clips / s.capacity, 0, 1) else 0
 		Kit.tween(fill, 0.15, { Size = UDim2.fromScale(ratio, 1) })
 		local full = s.clips >= s.capacity
+		postBtn:SetAttribute("Pulse", full) -- a full drive makes POST breathe
 		barText.Text = if full
 			then `DRIVE FULL {Format.short(s.clips)} / {Format.short(s.capacity)}: POST!`
 			else `CLIPS {Format.short(s.clips)} / {Format.short(s.capacity)}`
@@ -391,7 +398,7 @@ function Hud.build(actions: Actions)
 	end
 
 	-- Tutorial objective and a pulsing pointer on the target button.
-	local pointer: Frame? = nil
+	local pointer: ImageLabel? = nil
 	local shownObjective = ""
 	function api.objective(text: string?, target: string?)
 		local key = `{text or ""}|{target or ""}`
@@ -412,21 +419,28 @@ function Hud.build(actions: Actions)
 			elseif launcher then launcher
 			else nil
 		if btn then
-			-- A ring frame of its own, so it never fights a button's existing UIStroke.
-			local ring = Kit.make("Frame", {
+			-- A gold glow in the button's own shape (its white face mask, scaled up and tinted), drawn
+			-- behind the button, so the pointer follows the lean exactly.
+			local shine = btn:FindFirstChild("Shine")
+			local ring = Kit.make("ImageLabel", {
 				Name = "Pointer",
 				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.new(1, 14, 1, 14),
 				BackgroundTransparency = 1,
-				ZIndex = 20,
-				Parent = btn,
-			}, { Kit.corner(18) })
-			local p = Kit.make("UIStroke", { Color = C.gold, Thickness = 6, Parent = ring })
+				Image = if shine and shine:IsA("ImageLabel") then shine.Image else "",
+				ImageColor3 = C.gold,
+				ScaleType = Enum.ScaleType.Stretch,
+				ZIndex = 0, -- below every HUD group, so it shows only around the button's edge
+				Parent = gui,
+			})
 			pointer = ring
 			task.spawn(function()
 				while pointer == ring do
-					p.Transparency = if Kit.reduced() then 0 else (math.sin(os.clock() * 6) + 1) / 3
+					ring.ImageTransparency = if Kit.reduced() then 0 else (math.sin(os.clock() * 6) + 1) / 3
+					-- Follow the button on screen (it lives inside a scaled group; this layer does not).
+					local size, at = btn.AbsoluteSize, btn.AbsolutePosition
+					ring.Visible = btn.Visible and (btn.Parent :: GuiObject).Visible
+					ring.Size = UDim2.fromOffset(size.X * 1.1, size.Y * 1.22)
+					ring.Position = UDim2.fromOffset(at.X + size.X / 2, at.Y + size.Y * 0.46)
 					task.wait(0.05)
 				end
 			end)

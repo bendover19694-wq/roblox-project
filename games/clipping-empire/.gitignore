@@ -1,2 +1,5 @@
 # The base place holds the saved free props (ServerStorage.Props); keep it in git.
 !place/ClippingEmpire.rbxlx
+# Button build intermediates (the generator recreates them)
+assets/ui/v2/*.html
+assets/ui/v2/zoom.png
