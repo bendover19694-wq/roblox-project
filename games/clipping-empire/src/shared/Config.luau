@@ -1,10 +1,10 @@
 --!strict
 -- All tuning for Clipping Empire. Change numbers here, never inline.
--- The hype game players clip is the fictional "Heist City 6" (no real game names or art).
+-- The hype game players clip is "GT6" (owner's choice, 2026-11-22). No GTA name, logos or art.
 
 local Config = {}
 
-Config.HYPE_GAME = "HEIST CITY 6"
+Config.HYPE_GAME = "GT6"
 
 -- Taps arrive batched from the client. The server caps how many count.
 Config.TAP_BATCH_MAX = 20 -- most taps one batch may claim

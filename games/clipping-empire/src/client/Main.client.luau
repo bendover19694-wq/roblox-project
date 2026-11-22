@@ -30,11 +30,11 @@ local function act(action: string, arg: any?)
 end
 
 -- Device-aware wording: the same step reads "Tap" on touch, "Press R2" on a gamepad, "Click" on PC.
+-- Follows the input the player is using right now (the kit reads PreferredInput), so one HUD rule for all.
+local KitController = require(ReplicatedStorage:WaitForChild("LihFolkUI"):WaitForChild("LihFolkUIController"))
 local function device(): string
-	if UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
-		return "pad"
-	end
-	return if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then "touch" else "pc"
+	local input = KitController.preferredInput()
+	return if input == "Touch" then "touch" elseif input == "Gamepad" then "pad" else "pc"
 end
 local WORDS = {
 	clip = {

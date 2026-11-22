@@ -1,11 +1,11 @@
-# Clipping Empire (working title)
+# GT6 Clipping Empire
 
-A Roblox tap-and-upgrade simulator. Players clip the hype for **Heist City 6**, a made-up open-world game about to launch, post the clips for cash and followers, buy upgrades, unlock bigger creator setups down a neon street, and rebirth ("Go Viral") for permanent Clout.
+A Roblox tap-and-upgrade simulator. Players clip the hype for **GT6**, an open-world game about to launch, post the clips for cash and followers, buy upgrades, unlock bigger creator setups down a neon street, and rebirth ("Go Viral") for permanent Clout.
 
 Self-contained: its own Rojo project, tests and probes. It does not touch the Space Agency game at the repo root.
 
 ## Name and IP
-The owner asked for "GTA 6 Clipping Empire". "GTA" and "Grand Theft Auto" are Rockstar Games / Take-Two trademarks. Using them in a Roblox title, thumbnail or in-game art risks a takedown and breaks Roblox's IP rules. So the game uses its own fictional hype title, `Config.HYPE_GAME = "HEIST CITY 6"`, and no real game names, logos or art. Changing that one value renames it everywhere. **The owner decides the final name.** Safe options that keep the search intent: "Clipping Empire", "Clip Farm Simulator", "Hype Clipper Tycoon".
+The owner asked for "GTA 6 Clipping Empire", then chose "GT6" (2026-11-22). "GTA" and "Grand Theft Auto" are Rockstar Games / Take-Two trademarks, so the game never uses them, nor any logos or art. The hype game is `Config.HYPE_GAME = "GT6"`, and changing that one value renames it everywhere. Note: "GT6" is also the name Gran Turismo 6 (Sony) is known by. Keep thumbnails and art free of any real game's look.
 
 ## Research summary (2026-11-19)
 - **The trend is real.** NPR (May 2026) reports a "clipping economy": clippers cut short clips from streams and trailers and get paid per view through clip marketplaces. Marketplace data puts gaming clips around $1 per 1,000 TikTok views (Content Rewards, Nov 2026), and GTA 6 clipping campaigns exist on those marketplaces. The GTA 6 trailers and 2026 launch are the biggest hype cycle in gaming.
