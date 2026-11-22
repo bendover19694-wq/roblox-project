@@ -238,6 +238,25 @@ local function skyline(parent: Instance)
 			local w = rng:NextInteger(18, 30)
 			local h = rng:NextInteger(40, 140)
 			local z = side * (D / 2 + 20 + rng:NextInteger(0, 20))
+			n += 1
+			-- Every 4th slot: a free Miami tower (Creator Store, scripts stripped) when the place has it.
+			if n % 4 == 0 then
+				local tower = prop(
+					if (n // 4) % 2 == 0 then "Tower1" else "Tower2",
+					parent,
+					CFrame.new(x + 22, 0, side * (D / 2 + 50))
+						* CFrame.Angles(0, if side > 0 then 0 else math.pi, 0),
+					rng:NextInteger(110, 160)
+				)
+				if tower then
+					-- Slide it so its street-facing side sits just behind the kerb, whatever its depth.
+					local box, size = tower:GetBoundingBox()
+					local nearFace = box.Position.Z - side * size.Z / 2
+					tower:PivotTo(tower:GetPivot() + Vector3.new(0, 0, side * (D / 2 + 22) - nearFace))
+					x += math.max(46, size.X + 6)
+					continue
+				end
+			end
 			local b = part(parent, {
 				Name = "Building",
 				Size = Vector3.new(w, h, 24),
@@ -260,7 +279,6 @@ local function skyline(parent: Instance)
 					CanCollide = false,
 				})
 			end
-			n += 1
 			if n % 3 == 0 then
 				local poster = part(parent, {
 					Size = Vector3.new(w - 2, 14, 0.5),
@@ -388,10 +406,24 @@ function World.build()
 			Color = z.color,
 		})
 		setup(zone, cx, z.color, i)
+		-- One full streamer rig per zone (free Creator Store model, scripts stripped): beside the main
+		-- desk in the first two setups, in place of the right-hand desk from Clip Studio on.
+		local rigAt = CFrame.new(cx + (if i >= 3 then 26 else 22), 0.4, 12) * CFrame.Angles(0, math.pi, 0)
+		local rig = prop("StreamerSetup", zone, rigAt, 11)
 		if i >= 3 then
 			setup(zone, cx - 26, z.color, i - 1)
-			setup(zone, cx + 26, z.color, i - 1)
+			if not rig then
+				setup(zone, cx + 26, z.color, i - 1)
+			end
 		end
+		-- A parked sports car along the kerb, alternating sides and colours.
+		local carSide = if i % 2 == 0 then 1 else -1
+		prop(
+			({ "Car_red", "Car_blue", "Car_white" })[(i - 1) % 3 + 1],
+			zone,
+			CFrame.new(cx - 18, 0.4, carSide * (D / 2 - 9)) * CFrame.Angles(0, math.pi / 2, 0),
+			5
+		)
 		local sign = part(zone, {
 			Name = "ZoneSign",
 			Size = Vector3.new(30, 8, 1),

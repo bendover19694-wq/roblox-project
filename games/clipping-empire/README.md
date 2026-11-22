@@ -66,6 +66,11 @@ The street, setups, gates, skyline, palms and posters are built from parts in `W
 - `Chair2`: "gaming chair" (asset 9435226454, creator Equinexes), one per setup.
 - `Lamp2`: "Street Lamp" (asset 14212653287, creator 9bsts), along both kerbs.
 
+- `StreamerSetup`: "Streamer Setup" (asset 9543104349, creator Ssundee27w): desk, green screen and tripod cameras. One per zone, beside the main desk (zones 1 and 2) or in place of the right-hand desk (zones 3 to 5).
+- `Tower1`, `Tower2`: "Miami Building 6" and "Miami Building 15" (assets 89419318 and 89419742, creator ag4Official). Every 4th skyline slot, slid so the front sits just behind the kerb.
+- `Car_red`, `Car_blue`, `Car_white`: split from "Sports Car" (asset 6433323089, creator Roblox, 42 drive scripts removed). One is parked at the kerb in each zone.
+
+The whole street has 4,787 parts (measured in Play).
 All scripts inside the inserted models were deleted (a car came with 17, a chair with 1). Tried and dropped: two sports cars and two palm trees (their meshes did not render), a second chair, a lamp, and a PC setup. If `Props` is missing, `World.luau` falls back to part-built chairs and lamps, so a plain `rojo build` still makes a working map.
 
 ## Run it
