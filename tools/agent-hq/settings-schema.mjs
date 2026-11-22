@@ -34,6 +34,9 @@ export const PARTNER_AUTO_OK = JSON.parse(fs.readFileSync(new URL('./roles.json'
      !(r.mcp || []).includes('Roblox_Studio') && !(r.allowedTools || []).some((t) => UNSAFE_TOOL.test(t)))
   .map((r) => r.id);
 export const DEFAULT_PARTNER_ACCESS = { enabled: false, autoRoles: [], dailyLimit: 0 }; // off until the owner opts in
+// Co-op game (coop.mjs): one game built by two HQs. Lanes are repo paths or globs; the partner's HQ holds the mirror image.
+export const DEFAULT_COOP = { enabled: false, game: '', me: '', partner: '', myLane: [], partnerLane: [], shared: [], shareBoard: false };
+const LANE_PATH = /^(?!\/)(?!.*\.\.)[\w./*-]{1,120}$/;
 
 export const SECTIONS = [
   { id: 'general', label: 'General' },
@@ -80,6 +83,7 @@ export const FIELDS = [
   f('obsidianVault', 'Obsidian vault folder', 'string', '', 'knowledge', 'Absolute path to your Obsidian vault. Agent HQ writes corrections, preferences, lessons, mistakes and research notes into one folder inside it. Empty turns this off.', { max: 300 }),
   f('obsidianFolder', 'Folder inside the vault', 'string', 'Agent HQ Memory', 'knowledge', 'The folder Agent HQ writes into, inside your vault.', { max: 80 }),
   f('notebookDoc', 'Notebook Google Doc', 'string', '', 'notebook', 'Link to a Google Doc to mirror notebook entries. Empty means not linked.', { max: 300 }),
+  f('coop', 'Co-op game', 'custom', DEFAULT_COOP, 'integrations', 'One game built with a partner HQ: who edits which files, and whether your board is shared. Set it on the HQ Link page.'),
   f('partnerAccess', 'Partner agents', 'custom', DEFAULT_PARTNER_ACCESS, 'integrations', 'Which of your agents Ditto may use without asking each time, and how many tasks a day.'),
   f('providers', 'API keys', 'custom', {}, 'integrations', 'Groq and NVIDIA NIM keys. Write-only.'),
   f('openCloud', 'Open Cloud', 'custom', {}, 'integrations', 'Reads live game numbers. Write-only.'),
@@ -198,6 +202,23 @@ function validateCustom(key, value, roleIds) {
         if (!PARTNER_AUTO_OK.includes(r)) throw bad(`${r} can change game files, so it cannot run on a partner's request without your OK`);
       }
       return { enabled: v.enabled, autoRoles: [...new Set(v.autoRoles)], dailyLimit: intIn(v.dailyLimit, 'partnerAccess.dailyLimit', 0, 50) };
+    }
+    case 'coop': {
+      if (!isObj(value)) throw bad('coop must be an object');
+      const v = { ...DEFAULT_COOP, ...value };
+      for (const k of ['enabled', 'shareBoard']) if (typeof v[k] !== 'boolean') throw bad(`coop.${k} must be a boolean`);
+      if (v.game !== '' && !/^[a-z0-9][a-z0-9-]{0,39}$/.test(v.game)) throw bad('coop.game must be a game slug');
+      if (v.enabled && !v.game) throw bad('pick the co-op game first');
+      const name = (n) => { if (typeof v[n] !== 'string' || v[n].length > 40 || /[`<>]/.test(v[n])) throw bad(`coop.${n} must be a short name`); return v[n].trim(); };
+      const lane = (n) => {
+        if (!Array.isArray(v[n]) || v[n].length > 20) throw bad(`coop.${n} must be a list of up to 20 paths`);
+        for (const p of v[n]) if (typeof p !== 'string' || !LANE_PATH.test(p)) throw bad(`coop.${n}: "${String(p).slice(0, 60)}" is not a repo path like games/x/src/client/**`);
+        return [...new Set(v[n])];
+      };
+      const out = { enabled: v.enabled, game: v.game, me: name('me'), partner: name('partner'), myLane: lane('myLane'), partnerLane: lane('partnerLane'), shared: lane('shared'), shareBoard: v.shareBoard };
+      const clash = out.myLane.find((p) => out.partnerLane.includes(p));
+      if (clash) throw bad(`${clash} is in both lanes; give it to one person or move it to shared`);
+      return out;
     }
     default:
       throw bad(`unknown setting ${key}`);

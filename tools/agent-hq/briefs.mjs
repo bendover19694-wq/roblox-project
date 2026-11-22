@@ -353,7 +353,7 @@ This task only finds references. Build no model here.
 - ${settings.modelRefApproval === 'auto' ? 'The build starts the moment you complete this task, so the description must be complete.' : 'The build waits until the owner approves the sheet.'}`;
 }
 
-export function buildBrief({ task, role, root, db, taskToken, memoryDir, references, settings, docSections }) {
+export function buildBrief({ task, role, root, db, taskToken, memoryDir, references, settings, docSections, coop }) {
   const roles = loadRoles();
   const r = typeof role === 'string' ? roles.find((x) => x.id === role) : role;
   if (!r) throw new Error(`unknown role: ${role}`);
@@ -419,6 +419,7 @@ export function buildBrief({ task, role, root, db, taskToken, memoryDir, referen
     attachedImages(task),
     artTask ? ART_SPECS : null,
     refSheetSection(task, db, settings),
+    coop ?? null, // co-op lanes and the partner's board (coop.mjs), only for the shared game
     `## Your task\nTitle: ${task.title}\n\n${task.body || ''}`,
     r.doneWhen?.length ? `## Definition of done\n${r.doneWhen.map((d) => `- ${d}`).join('\n')}` : null,
     `## Reporting\n${REPORTING}${taskToken ? '\nWith hqctl, add --token <your task token> to every task command.' : ''}`,

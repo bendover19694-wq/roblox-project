@@ -47,7 +47,22 @@ export function decode(content) {
   if (o.type === 'status' && REF.test(o.ref ?? '')) {
     return { type: 'status', id: o.id, ref: o.ref, state: clip(o.state, 20), summary: clip(o.summary, 1200) };
   }
+  if (o.type === 'board') return decodeBoard(o);
   return null;
+}
+
+// Co-op board (coop.mjs): open task titles, load and the last hand-off for the one shared game. Every field is checked.
+const LANE = /^(?!\/)(?!.*\.\.)[\w./*-]{1,120}$/;
+const num = (v) => (Number.isInteger(v) && v >= 0 && v < 1e7 ? v : 0);
+const laneList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && LANE.test(x)).slice(0, 20) : []);
+function decodeBoard(o) {
+  const items = (Array.isArray(o.items) ? o.items : []).slice(0, 15).filter((i) => i && typeof i === 'object')
+    .map((i) => ({ t: fence(clip(i.t, 80), 80), r: ROLE_ID.test(i.r ?? '') ? i.r : '', s: clip(i.s, 20).replace(/[^a-z]/g, '') }));
+  const l = o.load && typeof o.load === 'object' ? o.load : {};
+  const L = o.lanes && typeof o.lanes === 'object' ? o.lanes : {};
+  const h = o.h && /^[0-9a-f]{7,40}$/.test(o.h.c ?? '') ? { c: o.h.c, n: fence(clip(o.h.n, 300), 300), at: clip(o.h.at, 30) } : null;
+  return { type: 'board', id: o.id, game: clip(o.game, 40).replace(/[^\w-]/g, ''), items, load: { q: num(l.q), w: num(l.w), d: num(l.d), c: num(l.c) },
+    lanes: { mine: laneList(L.mine), theirs: laneList(L.theirs), shared: laneList(L.shared) }, h };
 }
 
 // An invite holds a channel, a bot id and a name, so pasting one in chat gives nothing away.
@@ -143,6 +158,7 @@ export function createLink({ db, D, stateDir, emit, queueTask, roleIds = () => [
   const track = (taskId, ref) => { const tasks = get('linkTasks', {}); tasks[taskId] = { ref, state: 'queued' }; set('linkTasks', tasks); };
 
   function receive(peer, m) {
+    if (m.type === 'board') { set('coopPeer', { ...m, from: peer.name, at: new Date().toISOString() }); emit('settings', { key: 'coopPeer' }); return; }
     if (m.type === 'chat') addLog({ dir: 'in', kind: 'chat', from: peer.name, text: m.text });
     else if (m.type === 'status') {
       addLog({ dir: 'in', kind: 'status', from: peer.name, ref: m.ref, text: `${m.state}${m.summary ? `: ${m.summary}` : ''}` });
@@ -293,7 +309,9 @@ ${redact(t.summary).slice(0, 3000)}`,
     };
   }
 
-  return { poll, say, share, setup, join, unpair, view, answered, taskChanged, partnerRun };
+  const board = (o) => post(o); // coop.mjs builds and sizes it
+
+  return { poll, say, share, board, setup, join, unpair, view, answered, taskChanged, partnerRun };
 }
 
 // Routes. The owner sets the link up; a task-bound agent can talk, and the Lead can share work.

@@ -1,5 +1,6 @@
 // HQ Link page: pair with a friend's HQ, talk to it, and share tasks. Shared tasks land in the other owner's Review.
 import { h, api, act, btn, empty, field, pageHead, ago, notify } from './core.js';
+import { coopCard, loadCoop } from './coop.js';
 
 let data;
 let timer = null;
@@ -70,10 +71,10 @@ export function render() {
   clearInterval(timer);
   timer = setInterval(() => {
     if (!location.hash.startsWith('#/link')) clearInterval(timer);
-    else if (!['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) load(); // never redraw under someone typing
+    else if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) { load(); loadCoop(); } // never redraw under someone typing
   }, 15000);
   if (!data) return h('div', { class: 'page' }, pageHead('HQ Link', 'Work with another HQ'), empty('Loading.'));
   return h('div', { class: 'page' },
     pageHead('HQ Link', 'Work with another HQ over Discord. No ports are opened.', btn('Check now', () => send('/api/link/poll', {}, []))),
-    data.peers.length ? [peersCard(), talkCard(), shareCard(), pairCard()] : [setupCard(), pairCard()]);
+    data.peers.length ? [peersCard(), coopCard(), talkCard(), shareCard(), pairCard()] : [setupCard(), pairCard()]);
 }

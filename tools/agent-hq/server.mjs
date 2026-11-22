@@ -1,5 +1,5 @@
 // Agent HQ server: HTTP API, SSE, static files. Zero dependencies.
-import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { createBridge, mountBridge, BRIDGE_OWNER_ONLY } from './discord-bridge.mjs'; import { mountGamesAdmin, mountOpenStudio } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs';
+import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { createCoop, mountCoop, COOP_OWNER_ONLY } from './coop.mjs'; import { createBridge, mountBridge, BRIDGE_OWNER_ONLY } from './discord-bridge.mjs'; import { mountGamesAdmin, mountOpenStudio } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs';
 import { createAssetCatalog, mountCatalog, CATALOG_OWNER_ONLY } from './catalog.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -245,7 +245,7 @@ export async function startServer({ root, port = 4317, stateDir, dbFile, runner,
   const clean = (t) => { if (t && 'taskToken' in t) { const { taskToken, ...r } = t; return r; } return t; };
   // a missing vault or skill file must not break claiming a task (the token would be lost)
   const briefFor = (task, taskToken) => {
-    try { return buildBrief({ task, role: roleOf(task.role) ?? task.role, root, db, taskToken, memoryDir, references: D.listReferences(db), settings: settingsAll(), docSections: loadDoc(stateDir)?.sections }); } catch (e) {
+    try { return buildBrief({ task, role: roleOf(task.role) ?? task.role, root, db, taskToken, memoryDir, references: D.listReferences(db), settings: settingsAll(), docSections: loadDoc(stateDir)?.sections, coop: coop.brief(task, task.role) }); } catch (e) {
       // Degraded brief: keep the hard rules and the reporting credentials so the agent stays safe and can still report.
       return `Full brief unavailable (${e.message}). Read CLAUDE.md first and follow it.
 
@@ -258,8 +258,8 @@ Task: ${task.title}
 ${task.body}`;
     }
   };
-  const pubTask = (t) => { emit('task', clean(t)); processTask(clean(t)); link.taskChanged(clean(t)); lh?.taskChanged(clean(t)); return clean(t); };
-  const hookedEmit = (type, payload) => { emit(type, type === 'task' ? clean(payload) : payload); if (type === 'task') { processTask(clean(payload)); link.taskChanged(clean(payload)); lh?.taskChanged(clean(payload)); } };
+  const pubTask = (t) => { emit('task', clean(t)); processTask(clean(t)); link.taskChanged(clean(t)); coop.taskChanged(clean(t)); lh?.taskChanged(clean(t)); return clean(t); };
+  const hookedEmit = (type, payload) => { emit(type, type === 'task' ? clean(payload) : payload); if (type === 'task') { processTask(clean(payload)); link.taskChanged(clean(payload)); coop.taskChanged(clean(payload)); lh?.taskChanged(clean(payload)); } };
 
   // ---- review gates: reviewer/tester tasks after a role finishes; FAIL sends work back (max 3 attempts) ----
   const GATE_ENGINES = new Set(['app', 'claude-cli', 'echo', 'groq', 'nim']);
@@ -326,7 +326,7 @@ ${task.body}`;
   const queueTask = ({ selected, ...f }) => { if (!f.game) f.game = inferGame({ parentGame: f.parentId && D.getTask(db, f.parentId)?.game, selected, text: `${f.title}
 ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued(f); }; // 3D model work waits for a reference sheet (model-refs.mjs)
   const assetCatalog = createAssetCatalog({ root, stateDir, addAsset, fetchImpl: catalogFetch ?? globalThis.fetch, lihfolkPath: catalogLihfolk ?? process.env.HQ_LIHFOLK_ASSETS, polyhavenLocal: catalogMirror });
-  const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), roleIds: () => rolesMerged().map((x) => x.id), fetchImpl: linkFetch ?? globalThis.fetch }); const bridge = createBridge({ db, D, stateDir, root, roles: rolesMerged, port: () => boundPort, fetchImpl: linkFetch ?? globalThis.fetch, now }); listeners.add(bridge.onEvent);
+  const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), roleIds: () => rolesMerged().map((x) => x.id), fetchImpl: linkFetch ?? globalThis.fetch }); const bridge = createBridge({ db, D, stateDir, root, roles: rolesMerged, port: () => boundPort, fetchImpl: linkFetch ?? globalThis.fetch, now }); listeners.add(bridge.onEvent); const coop = createCoop({ db, D, link, emit });
   const postMessage = (f) => { const m = D.addMessage(db, f); emit('message', m); return m; };
 
   const spendGuard = createSpendGuard({ db, emit, now, postMessage });
@@ -353,7 +353,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     ['GET', /^\/api\/games\/[^/]+\/gate$/], ['POST', /^\/api\/games\/[^/]+\/(?:gate\/(?:start|confirm|checklist)|ad-note)$/],
     ['POST', /^\/api\/pitches\/ideas$/], ['POST', /^\/api\/pitches\/[^/]+\/decide$/], ['POST', /^\/api\/stage-requests\/[^/]+\/decide$/],
     ['POST', /^\/api\/games$/], ['PATCH', /^\/api\/games\/[^/]+$/], ['POST', /^\/api\/games\/[^/]+\/mark-live$/],
-    ...LINK_OWNER_ONLY, ...BRIDGE_OWNER_ONLY, ...GAME_CONTEXT_OWNER_ONLY, ...LEARNING_OWNER_ONLY, ...CATALOG_OWNER_ONLY, ...NOTEBOOK_OWNER_ONLY, ['POST', /^\/api\/games\/[^/]+\/play$/], ...IDEAS_OWNER_ONLY, ['POST', /^\/api\/settings$/], ['POST', /^\/api\/roles\/[^/]+$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
+    ...LINK_OWNER_ONLY, ...COOP_OWNER_ONLY, ...BRIDGE_OWNER_ONLY, ...GAME_CONTEXT_OWNER_ONLY, ...LEARNING_OWNER_ONLY, ...CATALOG_OWNER_ONLY, ...NOTEBOOK_OWNER_ONLY, ['POST', /^\/api\/games\/[^/]+\/play$/], ...IDEAS_OWNER_ONLY, ['POST', /^\/api\/settings$/], ['POST', /^\/api\/roles\/[^/]+$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
     ['POST', /^\/api\/messages\/[^/]+\/reset$/], ['POST', /^\/api\/memory\/[^/]+\/corrections$/], ['DELETE', /^\/api\/memory\/[^/]+\/corrections\/[^/]+$/], ['POST', /^\/api\/threads\/[^/]+\/read$/],
     ['POST', /^\/api\/market\/corpus$/], ['DELETE', /^\/api\/market\/corpus\/\d+$/], ['POST', /^\/api\/uploads$/],
   ];
@@ -378,7 +378,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   const route = (method, re, fn, opts = {}) => routes.push([method, re, fn, opts]);
 
   route('GET', /^\/api\/health$/, () => ({ ok: true }));
-  mountLink(route, link, { str, bad, isObj, agentTask, HttpError }); mountBridge(route, bridge, { str, bad, isObj, HttpError }); mountGameContext(route, { db }); mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError });
+  mountLink(route, link, { str, bad, isObj, agentTask, HttpError }); mountCoop(route, coop, { str, bad, isObj }); mountBridge(route, bridge, { str, bad, isObj, HttpError }); mountGameContext(route, { db }); mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError });
 
   route('GET', /^\/api\/state$/, () => {
     const asks = D.listAsks(db);
