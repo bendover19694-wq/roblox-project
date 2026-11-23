@@ -98,9 +98,9 @@ export function createUiLab({ stateDir, root, queueTask = () => null, fetchImpl 
     return files;
   }
 
-  async function study(kit, ask = '') {
+  async function study(kit, ask = '', engine) {
     const t = queueTask({
-      title: `Study UI kit: ${kit.name}`.slice(0, 200), role: 'designer', engine: 'app', createdBy: 'owner',
+      title: `Study UI kit: ${kit.name}`.slice(0, 200), role: 'designer', ...(engine ? { engine } : {}), createdBy: 'owner',
       body: [
         `Study the UI kit "${kit.name}" in the UI Lab (id ${kit.id}). Call hq_uilab_kit {id: "${kit.id}"} for the teardown, then open the contact sheet and a few icons and screenshots with Read.`,
         ask ? `The owner wants you to look at: ${ask}` : '',
@@ -190,7 +190,7 @@ export function createUiLab({ stateDir, root, queueTask = () => null, fetchImpl 
     return { stats: { kits: kits.length, icons: sum('icons'), screens: sum('screens') }, kits: kits.map(card) };
   }
 
-  return { ingest, study: async (id, ask) => { const k = read(id); if (!k) throw new Error('no such kit'); return study(k, ask); }, saveNote, list, get: (id) => { const k = read(id); return k ? { ...k, note: note(id) } : null; } };
+  return { ingest, study: async (id, ask, engine) => { const k = read(id); if (!k) throw new Error('no such kit'); return study(k, ask, engine); }, saveNote, list, get: (id) => { const k = read(id); return k ? { ...k, note: note(id) } : null; } };
 }
 
 export function mountUiLab(route, lab, { str, bad, isObj, agentTask, HttpError }) {
@@ -208,7 +208,9 @@ export function mountUiLab(route, lab, { str, bad, isObj, agentTask, HttpError }
     } catch (e) { throw bad(e.message); }
   }, { maxBody: 85 * 1024 * 1024 });
   route('POST', /^\/api\/uilab\/([a-z0-9-]+)\/study$/, async ({ m, body }) => {
-    const t = await lab.study(id(m[1]), isObj(body) ? str(body.ask, 'ask', { max: 1000 }) ?? '' : '');
+    const engine = isObj(body) ? str(body.engine, 'engine', { max: 20 }) : undefined;
+    if (engine && !STUDY_ENGINES.includes(engine)) throw bad(`engine must be one of ${STUDY_ENGINES.join(', ')}`);
+    const t = await lab.study(id(m[1]), isObj(body) ? str(body.ask, 'ask', { max: 1000 }) ?? '' : '', engine);
     return { taskId: t?.id ?? null };
   });
   route('POST', /^\/api\/uilab\/([a-z0-9-]+)\/note$/, ({ m, body, who, headers }) => {
@@ -218,4 +220,5 @@ export function mountUiLab(route, lab, { str, bad, isObj, agentTask, HttpError }
   });
 }
 
+export const STUDY_ENGINES = ['claude-cli', 'codex', 'app', 'antigravity']; // codex: the ChatGPT account, read-only
 export const UILAB_OWNER_ONLY = [['POST', /^\/api\/uilab(?:\/[a-z0-9-]+\/study)?$/]];

@@ -106,7 +106,8 @@ function detail() {
   const k = kit;
   return [
     pageHead(k.name, `${k.kind} · ${k.file}${k.source ? ' · ' : ''}`, btn('Back to library', () => { location.hash = '#/uilab'; }),
-      btn(k.notes?.state === 'studying' ? 'Studying…' : 'Study again', () => act(() => api('POST', `/api/uilab/${k.id}/study`, { ask: form.ask }), 'An agent is studying it').then(() => loadKit(k.id)), { disabled: k.notes?.state === 'studying' })),
+      btn(k.notes?.state === 'studying' ? 'Study again' : 'Study', () => act(() => api('POST', `/api/uilab/${k.id}/study`, { ask: form.ask }), 'An agent is studying it').then(() => loadKit(k.id))),
+      btn('Study with ChatGPT', () => act(() => api('POST', `/api/uilab/${k.id}/study`, { ask: form.ask, engine: 'codex' }), 'Codex is studying it').then(() => loadKit(k.id)), { kind: 'ghost', title: 'Runs on your ChatGPT account through the Codex CLI' })),
     k.source ? h('p', { class: 'small' }, 'Source: ', h('a', { href: k.source, target: '_blank', rel: 'noopener noreferrer' }, k.source), k.licence ? ` · Licence: ${k.licence}` : '') : null,
     h('section', { class: 'card stack' }, h('h3', {}, 'Palette'), swatches(k.palette), h('div', { class: 'muted small' }, (k.palette ?? []).slice(0, 12).map((c) => c.hex).join('  '))),
     section('Gradients', k.gradients, (g) => h('div', { class: 'stack' }, g.slice(0, 24).map((x) => h('div', { class: 'uil-grad', style: `background:linear-gradient(90deg, ${x.stops.join(', ')})` }, h('span', {}, x.stops.join(' → ')))))),
