@@ -1,4 +1,4 @@
-"""Automated first session: tap CLIP, POST, open Upgrades, buy Tap Power, visit every panel.
+"""Automated first session: tap CLIP, POST, open Upgrades, buy Tap Power, visit every panel, show two reveals.
 
 Usage: python scripts/probes/ftue.py <studio_id> [label]
 Starts Play itself (Edit mode, synced, fresh unsaved profile) and stops it at the end.
@@ -61,6 +61,19 @@ step("closed")
 print(" ", s.click("OpenRebirth", 900))
 step("rebirth")
 print(" ", s.click("@Close", 700))
+print(" ", s.click("OpenIndex", 900))
+step("index")
+print(" ", s.click("@Close", 700))
+# Force one reveal per big tier from the server, the same remote a real roll uses.
+for tier in (4, 6):
+    s.luau(
+        "local p = game.Players:GetPlayers()[1] "
+        f"game.ReplicatedStorage.Remotes.Celebrate:FireClient(p, 'clip', {{tier = {tier}, isNew = true}})",
+        "Server",
+    )
+    time.sleep(0.6)
+    step(f"reveal_tier{tier}")
+    time.sleep(2.4)
 print(" ", s.click("OpenSettings", 900))
 step("settings")
 print(" ", s.click("@Close", 700))

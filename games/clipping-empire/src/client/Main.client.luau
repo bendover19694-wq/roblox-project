@@ -178,6 +178,11 @@ Remotes.Celebrate.OnClientEvent:Connect(function(kind, data)
 				44
 			)
 		end
+	elseif kind == "clip" then
+		-- Server-rolled rarity of the best clip in a batch. Only a known tier index is shown.
+		if type(data) == "table" and Config.RARITIES[data.tier] then
+			hud.reveal(data.tier, data.isNew == true)
+		end
 	elseif kind == "zone" then
 		Kit.big()
 		local z = Config.ZONES[data.index]
