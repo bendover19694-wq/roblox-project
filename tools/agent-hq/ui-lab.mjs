@@ -61,13 +61,18 @@ export function related(kit, kits) {
   }).filter((r) => r.colours >= 2 || r.tags >= 2).sort((a, b) => b.score - a.score).slice(0, 6);
 }
 
-export function createUiLab({ stateDir, root, queueTask = () => null, fetchImpl = globalThis.fetch, lune = 'lune', python = 'python', now = Date.now,
+export function createUiLab({ stateDir, root, queueTask = () => null, taskState = () => null, fetchImpl = globalThis.fetch, lune = 'lune', python = 'python', now = Date.now,
   teardown = (src) => run(lune, ['run', path.join(root, 'scripts', 'uilab', 'teardown.luau'), src], { cwd: root }),
   palette = (dir, sheet) => run(python, ['-I', path.join(root, 'scripts', 'uilab', 'palette.py'), dir, sheet, '120']) }) {
   const dataDir = path.join(stateDir, 'uilab');
   const mediaDir = path.join(stateDir, 'media', 'uilab');
   const kitFile = (id) => path.join(dataDir, id, 'kit.json');
-  const read = (id) => { try { return JSON.parse(fs.readFileSync(kitFile(id), 'utf8')); } catch { return null; } };
+  const read = (id) => {
+    let k; try { k = JSON.parse(fs.readFileSync(kitFile(id), 'utf8')); } catch { return null; }
+    // a study whose task failed or was canceled must not show as studying forever
+    if (k.notes?.state === 'studying' && ['failed', 'canceled'].includes(taskState(k.notes.taskId))) k.notes = { ...k.notes, state: 'failed' };
+    return k;
+  };
   const write = (kit) => { fs.mkdirSync(path.join(dataDir, kit.id), { recursive: true }); fs.writeFileSync(kitFile(kit.id), JSON.stringify(kit, null, 1)); };
   const all = () => { try { return fs.readdirSync(dataDir).filter((d) => ID.test(d)).map(read).filter(Boolean); } catch { return []; } };
 

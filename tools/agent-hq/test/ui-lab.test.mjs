@@ -114,3 +114,13 @@ test('only the kit study task may write its note, never a partner task; a zip bo
   assert.throws(() => zipImages(b));
   assert.ok(forged.length > 0);
 });
+
+test('a study whose task failed shows as failed, not studying', async () => {
+  let state = 'working';
+  const { l } = lab({ taskState: () => state });
+  const k = await l.ingest({ name: 'Kit D', filename: 'd.zip', data: zip([['a.png', PNG]]) });
+  assert.equal(l.get(k.id).notes.state, 'studying');
+  state = 'failed';
+  assert.equal(l.get(k.id).notes.state, 'failed');
+  assert.equal(l.list().kits[0].notes, 'failed');
+});

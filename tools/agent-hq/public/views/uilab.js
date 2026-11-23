@@ -85,7 +85,7 @@ const cardFor = (k) => h('a', { class: 'card uil-card', href: '#/uilab/' + k.id,
   h('div', { class: 'uil-preview' }, k.preview.length ? k.preview.map((p) => h('img', { src: mediaUrl(p), alt: '', loading: 'lazy', class: k.kind === 'screenshot' ? 'wide' : null })) : h('span', { class: 'muted small' }, 'no previews')),
   h('div', { class: 'small' }, (k.tags ?? []).slice(0, 4).join(', ') || k.kind),
   h('div', { class: 'muted small' }, [k.counts?.objects ? `${(k.counts.objects / 1000).toFixed(1)}k objects` : null, k.counts?.icons ? `${k.counts.icons} icons` : null, k.counts?.screens ? `${k.counts.screens} screenshot` : null, k.counts?.scripts != null ? `${k.counts.scripts} scripts` : null].filter(Boolean).join(' · ')),
-  h('div', { class: 'muted small' }, k.notes === 'done' ? 'Studied' : k.notes === 'studying' ? 'An agent is studying it…' : 'Not studied'),
+  h('div', { class: 'muted small' }, k.notes === 'done' ? 'Studied' : k.notes === 'studying' ? 'An agent is studying it…' : k.notes === 'failed' ? 'Study failed: try Study again' : 'Not studied'),
   swatches(k.palette));
 
 function library() {
