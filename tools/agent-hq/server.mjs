@@ -22,7 +22,7 @@ import { createModelRefs } from './model-refs.mjs';
 import { createRoleOverrides } from './role-overrides.mjs';
 import { createSpendGuard } from './spend.mjs';
 import { loadPlaybook } from './briefs.mjs';
-import { createReadiness } from './readiness.mjs';
+import { createReadiness } from './readiness.mjs'; import { creativeStatus } from './creative-tools.mjs';
 import { createPlay } from './play.mjs';
 import { mountNotebook, NOTEBOOK_OWNER_ONLY } from './notebook.mjs';
 import { normalizePitch } from './pitches.mjs';
@@ -1167,7 +1167,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   const knowledge = { status: (...a) => kn.status(...a), search: (...a) => kn.search(...a), read: (...a) => kn.read(...a), quarantined: () => kn.quarantined() };
   mountKnowledge(route, knowledge, { bad, HttpError });
   const readiness = createReadiness({ root, knowledge, getRoles: rolesMerged, now, ...readinessOpts });
-  route('GET', /^\/api\/readiness$/, () => readiness());
+  route('GET', /^\/api\/readiness$/, () => readiness()); route('GET', /^\/api\/tools$/, () => creativeStatus({ meshy: D.getSetting(db, 'useMeshy', false) === true }));
   const play = createPlay({ root, stateDir, ...playOpts });
   route('POST', /^\/api\/games\/([^/]+)\/play$/, ({ m }) => play(needGame(m[1]).slug)); mountOpenStudio(route, { play, needGame, agentTask, roleOf, HttpError, now });
   const nb = mountNotebook(route, { db, str, bad, isObj, agentTask, gameSlugs, emit, getDoc: () => settingsAll().notebookDoc, HttpError, stateDir, touchLane, now }); // /api/notebook // GET /api/knowledge/status, /search, /read

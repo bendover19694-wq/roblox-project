@@ -7,6 +7,23 @@
     "agent-hq": {
       "command": "node",
       "args": ["tools/agent-hq/mcp.mjs"]
+    },
+    "blender": {
+      "command": "uvx",
+      "args": ["mcp-for-blender==2.3.1"]
+    },
+    "sfxmint": {
+      "type": "http",
+      "url": "https://sfxmint.com/mcp"
+    },
+    "meshy": {
+      "command": "cmd.exe",
+      "args": ["/c", "npx", "-y", "@meshy-ai/meshy-mcp-server@0.6.12"],
+      "env": { "MESHY_API_KEY": "${MESHY_API_KEY:-}" }
+    },
+    "penpot": {
+      "type": "http",
+      "url": "http://localhost:4401/mcp"
     }
   }
 }

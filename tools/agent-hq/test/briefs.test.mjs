@@ -205,7 +205,7 @@ test('cache-friendly order: the same-per-role sections come first, the task, don
 });
 
 test('usage settings: terse vs normal differ by the terse line, screenshot cap and Blender follow the settings', () => {
-  const brief = (settings, engine = 'app') => buildBrief({ task: { ...task, engine }, role: 'ui', root, settings });
+  const brief = (settings, engine = 'app') => buildBrief({ task: { ...task, engine }, role: 'world', root, settings });
   const terse = brief({ replyStyle: 'terse' });
   const normal = brief({ replyStyle: 'normal' });
   const TERSE = 'Keep notes and replies short: facts, paths, numbers.';
@@ -215,7 +215,7 @@ test('usage settings: terse vs normal differ by the terse line, screenshot cap a
   assert.match(brief({ screenshotCap: 0 }), /Take no screenshots/);
   assert.ok(brief({ blenderFallback: false }).includes('Blender is off: do not open Blender.'));
   assert.doesNotMatch(brief({ blenderFallback: true }), /Blender is off/);
-  assert.match(brief({ blenderFallback: true }), /Blender is on, as the last step only/);
+  assert.match(brief({ blenderFallback: true }), /Blender is on: models and maps via roblox-map-builder/);
   assert.match(brief({ cheapLookups: true }), /lihfolk:lihfolk-lookup/);
   assert.doesNotMatch(brief({ cheapLookups: false }), /lihfolk-lookup/);
   assert.doesNotMatch(brief({ cheapLookups: true }, 'groq'), /lihfolk-lookup/, 'Claude engines only');

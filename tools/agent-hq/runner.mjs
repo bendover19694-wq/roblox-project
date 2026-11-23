@@ -30,6 +30,8 @@ function killTree(child) {
  * The Roblox Studio MCP server, pinned to Roblox's own launcher outside the repo (never read from repo files agents can edit).
  * Only for roles that list Roblox_Studio in their mcp, on tasks that need Studio. Null when Studio's MCP launcher is not installed.
  */
+import { creativeServers, creativeAllowed, creativeEnv, blenderExe } from './creative-tools.mjs';
+
 export function studioServer(role, { env = process.env, exists = fs.existsSync } = {}) {
   if (!(role?.mcp ?? []).includes('Roblox_Studio')) return null;
   const bat = env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, 'Roblox', 'mcp.bat') : null;
@@ -70,14 +72,15 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     try {
       mcpConfigPath = path.join(stateDir, `mcp-${task.id}.json`);
       const studio = task.needsStudio ? studioServer(role) : null; // Studio tasks of Studio roles get the Roblox Studio MCP too
+      const creative = creativeServers(role, { meshy: getSetting(db, 'useMeshy', false) === true }); // Blender, Penpot, SFXMint, Meshy per roles.json mcp
       fs.writeFileSync(mcpConfigPath, JSON.stringify({
         mcpServers: { hq: { command: process.execPath, args: [mcpPath], env: {
           HQ_URL: `http://127.0.0.1:${port}`, HQ_TOKEN: token, HQ_TASK: task.id, HQ_ROLE: task.role, HQ_TASK_TOKEN: taskToken,
-        } }, ...(studio ? { Roblox_Studio: studio } : {}) },
+        } }, ...(studio ? { Roblox_Studio: studio } : {}), ...creative },
       }), { mode: 0o600 }); // holds the HQ token; owner-only, deleted when the task ends
       const briefTask = { ...task, engine }; // the brief must describe the engine that really runs, not the role's default lane
       const brief = briefFor ? briefFor(briefTask, taskToken) : buildBrief({ task: briefTask, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) });
-      let env = { ...process.env, HQ_ECHO_MS: String(echoMs) };
+      let env = creativeEnv({ ...process.env, HQ_ECHO_MS: String(echoMs) }, blenderExe());
       if (llmKey) {
         // the brief can exceed the Windows command-line limit, so it goes in a file; the key only in this child's env
         briefPath = path.join(stateDir, `brief-${task.id}.txt`);
@@ -86,7 +89,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
           HQ_ROOT: root, HQ_LLM_PROVIDER: engine, HQ_LLM_KEY: llmKey, HQ_LLM_MODEL: model ?? '', HQ_BRIEF_FILE: briefPath,
           HQ_ROLE_JSON: JSON.stringify({ id: role?.id, mode: role?.mode, files: role?.files ?? [], allowedTools: role?.allowedTools ?? [] }) };
       }
-      child = spawnEngine({ engine, exe, brief, model, mcpConfigPath, cwd: root, allowedTools: role?.allowedTools ?? [], files: role?.files ?? [], gameDir: task.game ? gameFolder(root, task.game) : '.', env, studio: !!studio, lean });
+      child = spawnEngine({ engine, exe, brief, model, mcpConfigPath, cwd: root, allowedTools: [...(role?.allowedTools ?? []), ...creativeAllowed(creative)], files: role?.files ?? [], gameDir: task.game ? gameFolder(root, task.game) : '.', env, studio: !!studio, lean });
     } catch (e) {
       return fail(task.id, `spawn failed: ${e.message}`);
     }

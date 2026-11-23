@@ -81,6 +81,8 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { text: str({ maxLength: 1800 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['text'] } },
   { name: 'hq_link_share', description: "Lead only: offer a task to the linked HQ. Say which of their agents should do it in role (for example scout or designer). Low-risk roles may run at once within their daily limit; the rest wait for the other owner.",
     inputSchema: { type: 'object', properties: { title: str({ maxLength: 200 }), body: str({ maxLength: 1600 }), role: str({ maxLength: 30, description: 'Which of their agents should do it, e.g. scout or designer' }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['title'] } },
+  { name: 'hq_tools', description: 'Which creative tools are ready on this PC: Blender (headless and MCP), Claude Design, Meshy, SFXMint, Penpot and the LihFolk skills, each with the one step that fixes it. Call before any 3D, map or world build.',
+    inputSchema: { type: 'object', properties: {} } },
   { name: 'hq_coop', description: "Co-op game: which files are yours, which are your partner's, what their HQ is working on, and who should take the next task. Pass files (repo paths) to check them before you edit.",
     inputSchema: { type: 'object', properties: { files: { type: 'array', items: str({ maxLength: 200 }), maxItems: 50 } } } },
   { name: 'hq_catalog_search', description: 'Search free art in one place: Poly Haven models, textures and HDRIs, the LihFolk Asset Pack, and downloaded packs such as Kenney (source creatorstore searches the Roblox Creator Store instead: untrusted, may hide scripts). Returns names, descriptions, tags, triangle counts and licences. Use it before making or sourcing art.',
@@ -274,6 +276,7 @@ export const handlers = {
   async hq_link_share(a) {
     return api('POST', '/api/link/share', { title: need(a.title, 'title'), body: a.body, role: a.role, taskId: taskIdOf(a) }, tokenOf(a));
   },
+  async hq_tools() { return api('GET', '/api/tools'); },
   async hq_coop(a) {
     const files = Array.isArray(a.files) ? a.files.filter((f) => typeof f === 'string').slice(0, 50) : [];
     const v = await api('GET', `/api/coop${files.length ? `?files=${encodeURIComponent(files.join(','))}` : ''}`);

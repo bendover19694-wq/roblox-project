@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { creativeStatus } from './creative-tools.mjs';
 
 const isWin = process.platform === 'win32';
 
@@ -60,7 +61,7 @@ export function indexSkills({ root, home = os.homedir() }) {
 
 const looksLikePath = (n) => /[\\/]/.test(n) || /\.md$/i.test(n);
 
-export function createReadiness({ root, home = os.homedir(), find = findExe, knowledge, getRoles, now = Date.now, env = process.env }) {
+export function createReadiness({ root, home = os.homedir(), find = findExe, knowledge, getRoles, now = Date.now, env = process.env, creative = () => creativeStatus({ env, home }) }) {
   let memo = null; // the skill index reads a few hundred folders: reuse it for a minute
   const index = () => {
     if (!memo || now() - memo.at > 60000) memo = { at: now(), names: indexSkills({ root, home }) };
@@ -93,6 +94,7 @@ export function createReadiness({ root, home = os.homedir(), find = findExe, kno
     for (const [k, v] of Object.entries(tools)) if (!v.found) missing.push(`tool: ${k}`);
     for (const k of kn) if (!k.found) missing.push(`knowledge: ${k.label}`);
     for (const r of roles) if (r.enabled) for (const m of r.missing) missing.push(`skill: ${m} (${r.label})`);
-    return { at: new Date(now()).toISOString(), ok: missing.length === 0, missing, tools, knowledge: kn, roles, quarantined };
+    const cre = await creative(); // optional tools: shown, never counted as missing
+    return { at: new Date(now()).toISOString(), ok: missing.length === 0, missing, tools, knowledge: kn, roles, quarantined, creative: cre };
   };
 }

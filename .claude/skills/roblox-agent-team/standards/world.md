@@ -2,6 +2,16 @@
 
 Read with `anti-slop.md`. Full reference list: `research/exemplars/world-building.md`.
 
+## Map pipeline (every new map, zone or world, in this order)
+1. **Style.** Name one style for the game and write it in the game's docs: stud/LEGO (Parts, outlines), voxel, low-poly stylised, toon hand-painted, simulator-bright, or realistic-lite with Roblox materials. When the owner has not picked one, offer 4 in one `hq_ask_owner`, each with a reference image. Never mix styles.
+2. **References, lots of them.** At least 20 images and 3 clips: overview or map, player's-eye views, the hero landmark, props up close, palette and lighting. Save them under `assets/refs/<taskId>/` with names that say what they show, and list each source URL. Measure clips with `watch-video` (path widths, walk times, landmark heights). Public images and clips for study are pre-approved for this pipeline; never ship them.
+3. **Tools.** Call `hq_tools`. Blender (headless skills or the MCP add-on) or Claude Design must be ready. If neither is, stop with `hq_ask_owner` and name the fix it gives.
+4. **Prompt.** Run `4ghouls-prompter` on the brief plus your references. Save the graded prompt as `assets/refs/<taskId>/prompt.md`. That prompt is the spec for the build.
+5. **Build.** Whole maps: `roblox-map-builder` (headless Blender, exports MeshParts, collision and lighting). Stud props and creatures: `lihfolk-stud-voxel`. Layout and look: Claude Design artboards. Hero props: Meshy only when "Use Meshy" is on (it spends credits). Then grey-box check and the passes below.
+6. **Check.** Run the tests at the end of this file, and give the generated map a look-over in Studio: stray props, seams, lighting.
+
+Tool setup and limits: `research/exemplars/creative-tools.md`.
+
 ## Design it before you build it (Claude Design)
 1. Zone brief, one per zone: mood, shape language, one accent hue no other zone uses, the hero landmark, what the player does there.
 2. Layout artboard in Claude Design (Artifact tool, `action: "quickstart"`, `intent: "design"`): a top-down plan with spawn, critical path, nodes, edges, districts, hero landmark, sightlines from the spawn and sizes in studs. Add one mood-board artboard per zone. Put the link in `hq_complete`; attach PNG exports with `hq_add_media` when you can make them.

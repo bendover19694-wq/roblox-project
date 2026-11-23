@@ -292,14 +292,15 @@ const ART_SPECS =
   '- Attach each variant with hq_add_media; the ask title says icon or thumbnail so it lands in the Review Packaging group, where the owner approves (approved ones join the Visual bar).';
 
 /** Usage savers and the notebook line, from the owner's settings (settingsAll()). Missing settings mean the defaults. Same for every task of a role. */
-function usageSection(engine, settings = {}) {
-  const s = { replyStyle: 'terse', screenshotCap: 4, cheapLookups: true, blenderFallback: false, ...settings };
+const MAKERS = new Set(['world', 'designer', 'librarian', 'builder', 'thumbnails']); // roles that may make 3D: they get the Blender line
+function usageSection(engine, settings = {}, roleId = '') {
+  const s = { replyStyle: 'terse', screenshotCap: 4, cheapLookups: true, blenderFallback: true, ...settings };
   const lines = [];
   if (s.replyStyle === 'terse') lines.push('Keep notes and replies short: facts, paths, numbers. No recap of what you did and no restating the task.');
   const cap = Number(s.screenshotCap);
   if (Number.isFinite(cap)) lines.push(cap > 0 ? `Take at most ${cap} screenshots per task, at half scale, and say why for each.` : 'Take no screenshots this task; use text, logs and console output.');
   if (s.cheapLookups && engine === 'app') lines.push('For vault and docs lookups, spawn the `lihfolk:lihfolk-lookup` subagent on a small model instead of reading notes yourself.');
-  lines.push(s.blenderFallback ? 'Blender is on, as the last step only: after the catalog, asset packs and Claude Design have failed.' : 'Blender is off: do not open Blender.');
+  if (MAKERS.has(roleId)) lines.push(s.blenderFallback ? 'Blender is on: models and maps via roblox-map-builder, lihfolk-stud-voxel or the Blender MCP.' : 'Blender is off: do not open Blender.');
   lines.push('Start with hq_notebook_read; add a short hq_notebook_add entry for anything others need.');
   lines.push('The game bible is split by section: read only what the task needs, e.g. hq_notebook_read {section: "G1.3"} for 3D models, G1.1 world and characters, G1.2 map, G1.4 style. Never the whole bible.');
   return `## Usage and notebook\n${lines.map((l) => `- ${l}`).join('\n')}`;
@@ -391,7 +392,7 @@ export function buildBrief({ task, role, root, db, taskToken, memoryDir, referen
     r.mcp?.length ? `## Tools to prefer\nPrefer these when present: ${r.mcp.join(', ')}.` : null,
     rolesRulesSection(r),
     standardsSection(r),
-    usageSection(engine, settings),
+    usageSection(engine, settings, r.id),
     ponytailSection(engine, settings, r.mode === 'write', lean),
     researchLine(small, r.id === 'lead'),
     `## Your job\n${r.job}`,
