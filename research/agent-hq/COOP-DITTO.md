@@ -64,7 +64,10 @@ Rules for you: never publish a Roblox place, spend Robux, or put any token, pass
      HQL1.eyJjIjoiMTU2MTQxODQ3MjE0MjE0MzY4MCIsImIiOiIxNTU1Njc2MzI4NjIyMjk3MjA5IiwibiI6IkRWIEVudGVycHJpc2VzIn0
    - Copy my own invite from the page (it starts with HQL1.) for my report.
 10. On the same page, open the "Co-op game" card. Once Voltage's board shows up, click "Use their split", then tick "Co-op on" and "Share my board" and Save. If his board is not there yet, tick nothing and tell me; it appears within a minute of his HQ sharing it.
-11. Report back in 5 lines: the smoke result, the HQ Link status line ("Last checked ..." or the problem), my HQL1 invite, whether the Co-op card shows Voltage's board, and anything you could not do.
+11. Creative tools: download the LihFolk packs yourself from the LihFolk Discord into Downloads (map generation, stud voxel, folk-stud-ui, FOLK Icon Pack; they are personal-use, so Voltage cannot send them), plus 4ghouls-prompter.zip and replicate-mode-4ghouls.zip if you have them. Then run:
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%USERPROFILE%\Documents\Agent-HQ-App\scripts\install-creative-tools.ps1"
+    It installs Blender, the Blender MCP add-on and the Python libraries, checks every zip for unsafe files before installing it, and runs a smoke test. Tell me what it printed under "Next, by hand".
+12. Report back in 5 lines: the smoke result, the HQ Link status line ("Last checked ..." or the problem), my HQL1 invite, whether the Co-op card shows Voltage's board, and anything you could not do.
 ```
 
 ## Prompt 2: update Agent HQ to the latest version (Ditto pastes this after Voltage says the new version is out)
