@@ -5,8 +5,8 @@
   python scripts/creative_run.py where                                 prints the Blender and skill folders it would use
 
 Scripts must live inside an installed creative skill (roblox-map-builder, lihfolk-stud-voxel, watch-video, folk-stud-ui)
-or under assets/world/ or games/<slug>/assets/world/ (the world role's own folders, where it writes build scripts). Every run is logged with a hash. Blender is refused
-when Agent HQ set HQ_BLENDER=0 (the owner turned "Allow Blender" off, or the task came from a partner). No shell is used.
+or under assets/world/ or games/<slug>/assets/world/ (the world role's own folders, where it writes build scripts). Every run is logged with a hash. Blender runs only
+when HQ_BLENDER=1, which the HQ runner sets for owner tasks while "Allow Blender" is on (fail closed; set it yourself to run by hand). No shell is used.
 """
 import glob
 import os
@@ -75,8 +75,8 @@ def main(argv):
             print('allowed:', r)
         return 0
     if cmd == 'blender':
-        if os.environ.get('HQ_BLENDER') == '0':
-            sys.exit('creative_run: Blender is off for this task (Settings, Art, "Allow Blender", or a partner task)')
+        if os.environ.get('HQ_BLENDER') != '1':  # fail closed: only the HQ runner turns it on, per task
+            sys.exit('creative_run: Blender is not enabled for this task (the HQ runner sets HQ_BLENDER=1 when "Allow Blender" is on and the task is not from a partner; by hand: set HQ_BLENDER=1)')
         if not rest:
             sys.exit('creative_run: blender needs a script')
         exe = blender_exe()

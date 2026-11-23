@@ -19,7 +19,7 @@
 | Copy something exactly from references (UI, scene, model), measured until it matches | `replicate-mode` skill (+ `4-act-mode`, `4-act-game-dev`, agents `replicate-worker`, `4act-teacher`); uses extra usage | Skill | owner-run |
 | Tear down a UI kit, icon pack or screenshot and study it | UI Lab page, `hq_uilab_search`, `hq_uilab_kit`, `hq_uilab_note` | HQ | ui, designer |
 | Planning, research, review on the ChatGPT account | engine `codex` (read-only) | HQ engine | non-writing roles |
-| Run Blender or a skill script | `python scripts/creative_run.py blender|skill ...` (paths checked; off when Allow Blender is off or the task is a partner's) | Bash | world, librarian |
+| Run Blender or a skill script | `python scripts/creative_run.py blender|skill ...` (paths checked; runs only with HQ_BLENDER=1, which HQ sets for owner tasks while Allow Blender is on) | Bash | world, librarian |
 
 ## Rules
 - Map pipeline order: style, 20+ references, `hq_tools`, a `4ghouls-prompter` prompt, then the build (`.claude/skills/roblox-agent-team/standards/world.md`).
