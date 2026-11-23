@@ -48,6 +48,9 @@ export function decode(content) {
     return { type: 'status', id: o.id, ref: o.ref, state: clip(o.state, 20), summary: clip(o.summary, 1200) };
   }
   if (o.type === 'board') return decodeBoard(o);
+  if (o.type === 'update' && /^[0-9a-f]{7,40}$/.test(o.commit ?? '') && /^[\w./-]{1,100}$/.test(o.branch ?? '')) {
+    return { type: 'update', id: o.id, commit: o.commit, branch: o.branch, notes: fence(clip(o.notes, 1200), 1200) };
+  }
   return null;
 }
 
@@ -158,6 +161,7 @@ export function createLink({ db, D, stateDir, emit, queueTask, roleIds = () => [
   const track = (taskId, ref) => { const tasks = get('linkTasks', {}); tasks[taskId] = { ref, state: 'queued' }; set('linkTasks', tasks); };
 
   function receive(peer, m) {
+    if (m.type === 'update') { set('linkUpdate', { ...m, from: peer.name, at: new Date().toISOString() }); addLog({ dir: 'in', kind: 'update', from: peer.name, text: `shared Agent HQ ${m.commit.slice(0, 7)} (${m.branch})` }); emit('settings', { key: 'linkUpdate' }); return; }
     if (m.type === 'board') { set('coopPeer', { ...m, from: peer.name, at: new Date().toISOString() }); emit('settings', { key: 'coopPeer' }); return; }
     if (m.type === 'chat') addLog({ dir: 'in', kind: 'chat', from: peer.name, text: m.text });
     else if (m.type === 'status') {
@@ -310,8 +314,20 @@ ${redact(t.summary).slice(0, 3000)}`,
   }
 
   const board = (o) => post(o); // coop.mjs builds and sizes it
+  // A version announcement: one readable line for people in the channel, then the HQ1 update message the other HQ acts on.
+  async function announce({ commit, branch, notes }) {
+    const c = config();
+    if (!c.enabled || !c.peers.length) throw new Error('HQ Link is not paired yet');
+    const text = redact(`**Agent HQ update** \`${commit.slice(0, 7)}\` on \`${branch}\`
+${notes}
+To update: Agent HQ, HQ Link, Update now (or run scripts/agent-hq-update.ps1).`).slice(0, 1900);
+    await discord('POST', `/channels/${c.channelId}/messages`, { content: text, allowed_mentions: { parse: [] } });
+    await post({ type: 'update', id: newRef(), commit, branch, notes: redact(notes).slice(0, 1200) });
+    addLog({ dir: 'out', kind: 'update', from: 'owner', text: `shared Agent HQ ${commit.slice(0, 7)} (${branch})` });
+    return { ok: true };
+  }
 
-  return { poll, say, share, board, setup, join, unpair, view, answered, taskChanged, partnerRun };
+  return { poll, say, share, board, announce, setup, join, unpair, view, answered, taskChanged, partnerRun };
 }
 
 // Routes. The owner sets the link up; a task-bound agent can talk, and the Lead can share work.

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { validAccounts } from './codex-accounts.mjs';
 // Settings schema: the one list of every owner setting (key, label, control type, default, section, help).
 // The server validates with it and the Settings page renders from it (GET /api/settings/schema).
 import crypto from 'node:crypto';
@@ -76,6 +77,7 @@ export const FIELDS = [
   f('roleEngines', 'Engine and model per role', 'custom', {}, 'engines', 'Which engine and model each role runs on.'),
   f('artAutoRoute', 'Send art to Antigravity', 'bool', true, 'art', 'Icon, thumbnail, ad and key-art tasks go to the Antigravity lane when it is on.'),
   f('codexModel', 'ChatGPT model (Codex)', 'string', 'gpt-5.6-terra', 'usage', 'Model for tasks on the codex engine, run by the Codex CLI on your ChatGPT account. Read-only: planning, research, review and UI Lab studies. gpt-6-sol is refused by Codex on a ChatGPT account today; set it here when it is offered.', { max: 40 }),
+  f('codexAccounts', 'ChatGPT accounts (Codex)', 'custom', [], 'usage', 'Codex tasks use the first account under its usage limit and switch to the next when one runs out. Add an account with scripts/codex-add-account.ps1 (you sign in yourself).'),
   f('useMeshy', 'Use Meshy', 'bool', false, 'art', 'Agents may generate 3D models with Meshy (needs MESHY_API_KEY). Every model spends Meshy credits: preview first, at most 2 refines per task.'),
   f('blenderFallback', 'Allow Blender', 'bool', true, 'art', 'Agents build 3D models and maps in Blender (the LihFolk headless skills or the Blender MCP add-on), after the catalog and a Claude Design sheet. Off: catalog and Claude Design only.'),
   f('modelRefFirst', 'Find references before 3D work', 'bool', true, 'art', 'A designer finds pictures from several angles before any 3D model is built.'),
@@ -87,6 +89,7 @@ export const FIELDS = [
   f('obsidianFolder', 'Folder inside the vault', 'string', 'Agent HQ Memory', 'knowledge', 'The folder Agent HQ writes into, inside your vault.', { max: 80 }),
   f('notebookDoc', 'Notebook Google Doc', 'string', '', 'notebook', 'Link to a Google Doc to mirror notebook entries. Empty means not linked.', { max: 300 }),
   f('coop', 'Co-op game', 'custom', DEFAULT_COOP, 'integrations', 'One game built with a partner HQ: who edits which files, and whether your board is shared. Set it on the HQ Link page.'),
+  f('announceUpdates', 'Share updates automatically', 'bool', false, 'integrations', 'When Agent HQ starts on a new version, post it on HQ Link (Discord) with the change list, so your partner sees Update now. Off: share by hand on the HQ Link page.'),
   f('partnerAccess', 'Partner agents', 'custom', DEFAULT_PARTNER_ACCESS, 'integrations', 'Which of your agents Ditto may use without asking each time, and how many tasks a day.'),
   f('providers', 'API keys', 'custom', {}, 'integrations', 'Groq and NVIDIA NIM keys. Write-only.'),
   f('openCloud', 'Open Cloud', 'custom', {}, 'integrations', 'Reads live game numbers. Write-only.'),
@@ -206,6 +209,7 @@ function validateCustom(key, value, roleIds) {
       }
       return { enabled: v.enabled, autoRoles: [...new Set(v.autoRoles)], dailyLimit: intIn(v.dailyLimit, 'partnerAccess.dailyLimit', 0, 50) };
     }
+    case 'codexAccounts': return validAccounts(value, bad);
     case 'coop': {
       if (!isObj(value)) throw bad('coop must be an object');
       const v = { ...DEFAULT_COOP, ...value };
