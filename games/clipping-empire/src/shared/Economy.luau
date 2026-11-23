@@ -13,13 +13,22 @@ export type Profile = {
 	totalClips: number,
 	totalPosts: number,
 	levels: { [string]: number },
+	drive: { number }, -- clips stored per rarity tier; sums to `clips`
+	found: { number }, -- takes found per rarity tier, ever
+	best: number, -- rarest tier ever found (0 = none yet)
 	tutorialDone: boolean,
 	settings: { reducedMotion: boolean, sound: boolean },
 }
 
 local Economy = {}
 
-Economy.VERSION = 1
+Economy.VERSION = 2
+
+local TIERS = #Config.RARITIES
+
+local function zeros(): { number }
+	return table.create(TIERS, 0)
+end
 
 function Economy.default(): Profile
 	return {
@@ -31,7 +40,10 @@ function Economy.default(): Profile
 		rebirths = 0,
 		totalClips = 0,
 		totalPosts = 0,
-		levels = { clipSpeed = 0, tapPower = 0, storage = 0, editing = 0, viral = 0, autoPost = 0 },
+		levels = { clipSpeed = 0, tapPower = 0, storage = 0, editing = 0, luck = 0, viral = 0, autoPost = 0 },
+		drive = zeros(),
+		found = zeros(),
+		best = 0,
 		tutorialDone = false,
 		settings = { reducedMotion = false, sound = true },
 	}
@@ -68,6 +80,25 @@ function Economy.migrate(old: any): Profile
 		p.settings.sound = old.settings.sound ~= false
 	end
 	p.clips = math.min(p.clips, Economy.capacity(p))
+	-- The drive must sum to `clips`; anything else (v1 saves, corruption) becomes all Common.
+	local drive, sum = zeros(), 0
+	if type(old.drive) == "table" then
+		for i = 1, TIERS do
+			drive[i] = num(old.drive[i], 0)
+			sum += drive[i]
+		end
+	end
+	if math.abs(sum - p.clips) > 1e-6 then
+		drive = zeros()
+		drive[1] = p.clips
+	end
+	p.drive = drive
+	if type(old.found) == "table" then
+		for i = 1, TIERS do
+			p.found[i] = math.floor(num(old.found[i], 0))
+		end
+	end
+	p.best = math.clamp(math.floor(num(old.best, 0)), 0, TIERS)
 	return p
 end
 
@@ -99,6 +130,49 @@ end
 
 function Economy.viralChance(p: Profile): number
 	return Config.VIRAL_BASE + (p.levels.viral or 0) * Config.VIRAL_PER_LEVEL
+end
+
+-- Luck multiplies every non-Common tier's odds. Upgrades and Clout raise it; a Trailer Drop doubles it.
+function Economy.luck(p: Profile, hypeActive: boolean): number
+	local lens = 1 + (p.levels.luck or 0) * Config.LUCK_PER_LEVEL
+	local clout = 1 + p.clout * Config.CLOUT_LUCK
+	return lens * clout * (if hypeActive then Config.HYPE_LUCK else 1)
+end
+
+-- Chance of each tier at this luck. From the top tier down, tier i takes min(1, luck / oneIn) of
+-- what is left; Common gets the remainder. Always sums to 1.
+function Economy.odds(luck: number): { number }
+	local odds = zeros()
+	local left = 1
+	for i = TIERS, 2, -1 do
+		local p = left * math.min(1, luck / Config.RARITIES[i].oneIn)
+		odds[i] = p
+		left -= p
+	end
+	odds[1] = left
+	return odds
+end
+
+-- Maps a uniform roll u in [0, 1) to a tier, rarest first.
+function Economy.rollTier(luck: number, u: number): number
+	local odds = Economy.odds(luck)
+	local acc = 0
+	for i = TIERS, 2, -1 do
+		acc += odds[i]
+		if u < acc then
+			return i
+		end
+	end
+	return 1
+end
+
+-- Sum of stored clips weighted by their tier's payout.
+function Economy.driveWorth(p: Profile): number
+	local worth = 0
+	for i, n in p.drive do
+		worth += n * Config.RARITIES[i].pays
+	end
+	return worth
 end
 
 function Economy.followerBonus(followers: number): number
@@ -146,28 +220,44 @@ function Economy.clipValue(p: Profile, zone: number, hypeActive: boolean): numbe
 	return edit * zoneMult * hype * Economy.followerBonus(p.followers) * Economy.cloutMult(p.clout)
 end
 
--- Adds clips up to capacity. Returns clips actually added.
-function Economy.addClips(p: Profile, amount: number): number
+-- Adds clips of one tier (default Common) up to capacity. Returns clips actually added.
+function Economy.addClips(p: Profile, amount: number, tier: number?): number
 	local room = math.max(0, Economy.capacity(p) - p.clips)
 	local added = math.min(room, math.max(0, amount))
+	local t = tier or 1
 	p.clips += added
+	p.drive[t] += added
 	p.totalClips += added
 	return added
 end
 
--- Posts every stored clip. `roll` is a number in [0, 1) from the server's Random.
+-- One take: clips of a rolled tier. Records it in the collection when anything was stored.
+-- Returns clips added and whether this tier is new to the player.
+function Economy.take(p: Profile, amount: number, tier: number): (number, boolean)
+	local added = Economy.addClips(p, amount, tier)
+	if added <= 0 then
+		return 0, false
+	end
+	local isNew = p.found[tier] == 0
+	p.found[tier] += 1
+	p.best = math.max(p.best, tier)
+	return added, isNew
+end
+
+-- Posts every stored clip, fractions included. `roll` is a number in [0, 1) from the server's Random.
 -- Returns cash earned, followers gained, viral flag.
 function Economy.post(p: Profile, zone: number, hypeActive: boolean, roll: number): (number, number, boolean)
-	local clips = math.floor(p.clips)
-	if clips <= 0 then
+	if p.clips < 1 then
 		return 0, 0, false
 	end
+	local worth = Economy.driveWorth(p) -- each clip weighted by its rarity
 	local viral = roll < Economy.viralChance(p)
 	local mult = if viral then Config.VIRAL_MULT else 1
-	local cash = math.floor(clips * Economy.clipValue(p, zone, hypeActive) * mult)
+	local cash = math.floor(worth * Economy.clipValue(p, zone, hypeActive) * mult)
 	-- Fractional followers carry over, so spamming 1-clip posts earns no more than one big post.
-	local followers = clips * Config.FOLLOWERS_PER_CLIP * mult
-	p.clips -= clips
+	local followers = worth * Config.FOLLOWERS_PER_CLIP * mult
+	p.clips = 0
+	p.drive = zeros()
 	p.cash += cash
 	p.followers += followers
 	p.totalPosts += 1
@@ -203,6 +293,7 @@ function Economy.rebirth(p: Profile): (boolean, string?)
 	end
 	p.cash = 0
 	p.clips = 0
+	p.drive = zeros()
 	for id in p.levels do
 		if id ~= "autoPost" then
 			p.levels[id] = 0

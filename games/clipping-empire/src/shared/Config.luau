@@ -59,6 +59,15 @@ Config.UPGRADES = {
 		max = 50,
 		order = 4,
 	},
+	luck = {
+		id = "luck",
+		name = "Lucky Lens",
+		blurb = "Rare clip luck",
+		base = 200,
+		growth = 1.5,
+		max = 40,
+		order = 5,
+	},
 	viral = {
 		id = "viral",
 		name = "Viral Hooks",
@@ -66,7 +75,7 @@ Config.UPGRADES = {
 		base = 150,
 		growth = 1.6,
 		max = 26,
-		order = 5,
+		order = 6,
 	},
 	autoPost = {
 		id = "autoPost",
@@ -75,12 +84,19 @@ Config.UPGRADES = {
 		base = 2500,
 		growth = 1,
 		max = 1,
-		order = 6,
+		order = 7,
 	},
 } :: { [string]: Upgrade }
 
-Config.UPGRADE_IDS =
-	{ clipSpeed = true, tapPower = true, storage = true, editing = true, viral = true, autoPost = true }
+Config.UPGRADE_IDS = {
+	clipSpeed = true,
+	tapPower = true,
+	storage = true,
+	editing = true,
+	luck = true,
+	viral = true,
+	autoPost = true,
+}
 
 -- Stat curves, by upgrade level.
 Config.AUTO_PER_LEVEL = 0.6 -- auto clips/sec per Clip Speed level
@@ -100,15 +116,15 @@ export type Zone = { name: string, followers: number, mult: number, color: Color
 Config.ZONES = {
 	{ name = "Bedroom Setup", followers = 0, mult = 1, color = Color3.fromRGB(255, 92, 168) },
 	{ name = "Gamer Cafe", followers = 300, mult = 2, color = Color3.fromRGB(64, 196, 255) },
-	{ name = "Clip Studio", followers = 4000, mult = 4, color = Color3.fromRGB(120, 255, 140) },
-	{ name = "Hype Plaza", followers = 40000, mult = 8, color = Color3.fromRGB(255, 196, 64) },
-	{ name = "Trailer Tower", followers = 400000, mult = 16, color = Color3.fromRGB(190, 110, 255) },
+	{ name = "Clip Studio", followers = 5000, mult = 4, color = Color3.fromRGB(120, 255, 140) },
+	{ name = "Hype Plaza", followers = 60000, mult = 8, color = Color3.fromRGB(255, 196, 64) },
+	{ name = "Trailer Tower", followers = 600000, mult = 16, color = Color3.fromRGB(190, 110, 255) },
 } :: { Zone }
 Config.ZONE_WIDTH = 90 -- studs along X per zone; zone 1 starts at X = 0
 Config.ZONE_DEPTH = 70 -- studs along Z, centred on Z = 0
 
 -- Rebirth: "Go Viral" resets cash, clips and upgrades for permanent Clout.
-Config.REBIRTH_BASE = 150000
+Config.REBIRTH_BASE = 250000
 Config.REBIRTH_GROWTH = 4
 Config.CLOUT_MULT = 0.5 -- cash multiplier per Clout: 1 + CLOUT_MULT * clout
 
@@ -116,6 +132,73 @@ Config.CLOUT_MULT = 0.5 -- cash multiplier per Clout: 1 + CLOUT_MULT * clout
 Config.HYPE_PERIOD = 600 -- seconds between drops
 Config.HYPE_LENGTH = 90 -- seconds a drop lasts
 Config.HYPE_MULT = 3
+
+Config.HYPE_LUCK = 2 -- luck multiplier during a Trailer Drop
+
+-- Clip rarity. The server rolls one tier per take (a counted tap, or an auto tick); see docs/rng-and-loop.md.
+-- oneIn = base odds (Common takes the remainder). pays = cash and follower weight per clip.
+-- reveal: "float" (coloured +N), "callout", "banner", "card" (full reveal with a burst).
+export type Rarity = {
+	name: string,
+	oneIn: number,
+	pays: number,
+	color: Color3,
+	reveal: string,
+	titles: { string },
+}
+Config.RARITIES = {
+	{
+		name = "Common",
+		oneIn = 1,
+		pays = 1,
+		color = Color3.fromRGB(205, 200, 225),
+		reveal = "float",
+		titles = { "Shaky phone clip", "Trailer reaction", "Loading screen", "Menu music loop" },
+	},
+	{
+		name = "Uncommon",
+		oneIn = 5,
+		pays = 1.5,
+		color = Color3.fromRGB(90, 230, 120),
+		reveal = "float",
+		titles = { "Slow-mo car jump", "Map theory", "Neon skyline pan", "Radio station mashup" },
+	},
+	{
+		name = "Rare",
+		oneIn = 20,
+		pays = 3,
+		color = Color3.fromRGB(70, 170, 255),
+		reveal = "callout",
+		titles = { "Frame-by-frame breakdown", "Hidden easter egg", "Perfect drift", "Beach sunset drive" },
+	},
+	{
+		name = "Epic",
+		oneIn = 100,
+		pays = 8,
+		color = Color3.fromRGB(185, 100, 255),
+		reveal = "banner",
+		titles = { "Dev stream highlight", "Wild stunt fail", "Full map comparison", "Boss chase supercut" },
+	},
+	{
+		name = "Legendary",
+		oneIn = 500,
+		pays = 25,
+		color = Color3.fromRGB(255, 190, 50),
+		reveal = "card",
+		titles = { "Launch day countdown", "Trailer 3 first look", "Studio tour exclusive" },
+	},
+	{
+		name = "Mythic",
+		oneIn = 5000,
+		pays = 100,
+		color = Color3.fromRGB(255, 70, 160),
+		reveal = "card",
+		titles = { "The release date reveal", "Gameplay premiere", "Secret ending found" },
+	},
+} :: { Rarity }
+Config.LUCK_PER_LEVEL = 0.1 -- Lucky Lens: luck multiplier per level
+Config.CLOUT_LUCK = 0.1 -- luck multiplier per Clout
+Config.ANNOUNCE_TIER = 6 -- this tier and up is announced to the whole server
 
 Config.MAX_LEVEL_ANY = 60
 

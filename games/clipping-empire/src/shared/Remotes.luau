@@ -1,7 +1,8 @@
 --!strict
 -- All remotes. The server creates them; clients wait for them.
 --   S to C: State(view)  Toast(text, kind)  Celebrate(kind, data)
---     Celebrate kinds: post {cash, followers, viral}, zone {index}, rebirth {clout}
+--     Celebrate kinds: post {cash, followers, viral}, zone {index}, rebirth {clout},
+--       clip {tier, isNew} (rarest clip of a batch, server-rolled)
 --   C to S: Tap(count)   [RemoteEvent, batched taps; capped in GameService]
 --   C to S: Act(action, arg) returns (ok, message)   [RemoteFunction; validated in GameService]
 --     actions: "post", "buy" (upgrade id), "rebirth", "setting" ("reducedMotion" | "sound"), "tutorialDone"
