@@ -225,3 +225,23 @@ html[data-theme="light"] .btn.primary:disabled { background: linear-gradient(rgb
 .nb-sec-btn:hover { background: var(--panel-2); }
 .nb-sec-btn[aria-expanded="true"] { background: var(--panel-2); }
 .nb-sec-body { padding: 4px 12px 12px 30px; overflow-wrap: anywhere; }
+
+/* UI Lab */
+.uil-drop { display: grid; place-items: center; gap: 6px; padding: 28px 16px; border: 1px dashed var(--line); text-align: center; cursor: pointer; }
+.uil-drop.over, .uil-drop:focus-visible { border-color: var(--accent, #8b7cff); outline: 2px solid var(--accent, #8b7cff); outline-offset: 2px; }
+.uil-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.uil-card { display: flex; flex-direction: column; gap: 6px; color: inherit; text-decoration: none; min-width: 0; }
+.uil-card:hover, .uil-card:focus-visible { outline: 2px solid var(--line); }
+.uil-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uil-preview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; min-height: 84px; }
+.uil-preview img { width: 100%; aspect-ratio: 1; object-fit: contain; }
+.uil-preview img.wide { grid-column: 1 / -1; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; }
+.uil-swatches { display: flex; gap: 3px; }
+.uil-sw { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, .3); }
+.uil-grad { border-radius: 6px; padding: 6px 10px; font: 12px var(--mono, monospace); color: #fff; text-shadow: 0 1px 2px #000; text-align: right; }
+.uil-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.uil-icons figure { margin: 0; background: repeating-conic-gradient(#2a2a30 0 25%, #222228 0 50%) 0 0 / 12px 12px; border-radius: 6px; }
+.uil-icons img { width: 100%; aspect-ratio: 1; object-fit: contain; display: block; }
+.uil-shot { grid-column: span 4; width: 100%; height: auto; border-radius: 6px; }
+.uil-note { white-space: pre-wrap; font: 13px/1.5 inherit; max-height: 60vh; overflow: auto; }
+@media (max-width: 760px) { .uil-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .uil-shot { grid-column: span 2; } }

@@ -24,11 +24,14 @@ export function blenderExe({ env = process.env, exists = fs.existsSync, list = l
   return null;
 }
 
-/** MCP server entries for a role's creative tools. Meshy only with a key and with the owner's Meshy setting on (it spends credits). */
-export function creativeServers(role, { env = process.env, meshy = false } = {}) {
-  const want = new Set(role?.mcp ?? []);
+/**
+ * MCP server entries for a role's creative tools. Blender only with the owner's "Allow Blender" on (it runs Python);
+ * Meshy only with a key and "Use Meshy" on (it spends credits). Partner tasks get none: their text is not the owner's.
+ */
+export function creativeServers(role, { env = process.env, meshy = false, blender = true, partner = false } = {}) {
+  const want = new Set(partner ? [] : role?.mcp ?? []);
   const out = {};
-  if (want.has('blender')) out.blender = { command: 'uvx', args: [BLENDER_MCP] };
+  if (want.has('blender') && blender) out.blender = { command: 'uvx', args: [BLENDER_MCP] };
   if (want.has('sfxmint')) out.sfxmint = { type: 'http', url: SFXMINT_URL };
   if (want.has('penpot')) out.penpot = { type: 'http', url: PENPOT_URL };
   if (want.has('meshy') && meshy && env.MESHY_API_KEY) {
@@ -52,8 +55,10 @@ export async function creativeStatus({ env = process.env, home = os.homedir(), e
   const exe = blenderExe({ env, exists, list });
   const skills = PACK_SKILLS.map((s) => ({ name: s, found: exists(path.join(home, '.claude/skills', s, 'SKILL.md')) }));
   const penpot = await probe(4401);
+  const ver = exe ? path.basename(path.dirname(exe)).replace(/^Blender\s*/i, '') : '';
+  const addon = !!ver && exists(path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Blender Foundation', 'Blender', ver, 'scripts', 'addons', 'blender_mcp.py'));
   return [
-    { id: 'blender', label: 'Blender (headless and MCP)', ready: !!exe, detail: exe ?? 'not installed', fix: 'winget install BlenderFoundation.Blender, then uvx ' + BLENDER_MCP + ' install-addon and enable the add-on' },
+    { id: 'blender', label: 'Blender (headless and MCP)', ready: !!exe, detail: exe ? `${exe}; MCP add-on ${addon ? 'installed' : 'missing'}` : 'not installed', fix: 'winget install BlenderFoundation.Blender, then uvx ' + BLENDER_MCP + ' install-addon and enable the add-on' },
     { id: 'claude-design', label: 'Claude Design', ready: true, detail: 'Artifact tool, quickstart intent "design" (Claude agents)', fix: '' },
     { id: 'meshy', label: 'Meshy 3D generation', ready: !!(meshy && env.MESHY_API_KEY), detail: env.MESHY_API_KEY ? (meshy ? 'key set, on' : 'key set, off in Settings') : 'no MESHY_API_KEY', fix: 'Set MESHY_API_KEY (meshy.ai, API keys) and turn on Settings, Art, "Use Meshy". Each model spends credits.' },
     { id: 'sfxmint', label: 'SFXMint sounds (CC0)', ready: true, detail: 'search needs no key; downloads need a free key', fix: '' },

@@ -63,7 +63,8 @@ test('status names a fix for each tool that is not ready', async () => {
 test('world and designer briefs carry the map pipeline and the new skills', () => {
   const w = role('world');
   for (const s of ['roblox-map-builder', 'lihfolk-stud-voxel', '4ghouls-prompter']) assert.ok(w.skills.some((x) => x.name === s), s);
-  assert.ok(w.allowedTools.includes('Bash(blender:*)'));
+  assert.ok(!w.allowedTools.some((t) => /Bash\((blender|python|py):/.test(t)), 'no broad Bash grants');
+  assert.match(w.rules.join(' '), /scripts\/creative_run\.py/);
   const world = fs.readFileSync(path.join(root, '.claude/skills/roblox-agent-team/standards/world.md'), 'utf8');
   assert.match(world, /## Map pipeline/);
   for (const step of ['Style', 'References', 'Tools', 'Prompt', 'Build', 'Check']) assert.ok(world.includes(`**${step}`), step);
@@ -91,4 +92,17 @@ test('the pack installer refuses unsafe archives and never runs anything', (t) =
   const ok = run();
   assert.equal(ok.status, 0, ok.stderr);
   assert.match(ok.stdout, /would install folk-stud-ui/);
+});
+
+test('codex runs read-only on the ChatGPT account and gets HQ MCP servers as TOML values', async () => {
+  const { codexArgs } = await import('../engines.mjs');
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hq-codex-')), 'mcp.json');
+  fs.writeFileSync(f, JSON.stringify({ mcpServers: { hq: { command: 'C:\node.exe', args: ['mcp.mjs'], env: { HQ_TOKEN: 'a"b' } }, penpot: { type: 'http', url: 'http://localhost:4401/mcp' }, 'bad name': { command: 'x' } } }));
+  const a = codexArgs({ brief: 'Do it', model: 'gpt-5.6-terra', mcpConfigPath: f, cwd: 'C:\repo' });
+  assert.deepEqual(a.slice(0, 5), ['exec', '--json', '--skip-git-repo-check', '-s', 'read-only']);
+  assert.ok(a.includes('mcp_servers.hq.command="C:\\node.exe"'));
+  assert.ok(a.includes('mcp_servers.hq.env={HQ_TOKEN="a\\"b"}'));
+  assert.ok(a.includes('mcp_servers.penpot.url="http://localhost:4401/mcp"'));
+  assert.ok(!a.some((x) => x.includes('bad name')));
+  assert.equal(a.at(-1), 'Do it');
 });

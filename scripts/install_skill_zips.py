@@ -24,7 +24,10 @@ PACKS = [
     ('LihFolk-Stud-Voxel-Pack-Full*.zip', ['lihfolk-stud-voxel']),
     ('Folk Stud-Voxel Model Skill*.zip', ['lihfolk-stud-voxel']),
     ('folk map generation*.zip', ['roblox-map-builder']),
+    # replicate-mode ships as a .claude folder: skills under .claude/skills, its two helper agents under .claude/agents
+    ('replicate-mode-4ghouls*.zip', ['.claude/skills/replicate-mode', '.claude/skills/4-act-mode', '.claude/skills/4-act-game-dev']),
 ]
+AGENTS = os.path.join(HOME, '.claude', 'agents')
 ICON_PACK = 'FOLK Icon Pack*.zip'
 BLOCKED = ('.exe', '.dll', '.bat', '.cmd', '.vbs', '.js', '.msi', '.scr', '.lnk', '.jar', '.hta', '.com', '.so', '.dylib',
            '.reg', '.psm1', '.blend', '.zip', '.7z', '.rar', '.skill')
@@ -74,7 +77,7 @@ def main():
     done = set()
     os.makedirs(SKILLS, exist_ok=True)
     for pattern, skills in PACKS:
-        if all(s in done for s in skills):
+        if all(os.path.basename(s) in done for s in skills):
             continue
         z = newest(a.src, pattern)
         if not z:
@@ -84,8 +87,9 @@ def main():
         tmp = tempfile.mkdtemp(prefix='hq-skill-')
         try:
             extract(z, tmp)
-            for s in skills:
-                src = os.path.join(tmp, s)
+            for s_path in skills:
+                s = os.path.basename(s_path)
+                src = os.path.join(tmp, s_path)
                 if not os.path.isfile(os.path.join(src, 'SKILL.md')):
                     raise SystemExit(f'REFUSED {os.path.basename(z)}: no {s}/SKILL.md')
                 dst = os.path.join(SKILLS, s)
@@ -100,6 +104,16 @@ def main():
                 shutil.copytree(src, dst)
                 done.add(s)
                 print(f'ok     {s} <- {os.path.basename(z)}')
+            agents = os.path.join(tmp, '.claude', 'agents')
+            if os.path.isdir(agents) and not a.dry_run:
+                os.makedirs(AGENTS, exist_ok=True)
+                for f in os.listdir(agents):
+                    if f.endswith('.md'):
+                        dst = os.path.join(AGENTS, f)
+                        if os.path.exists(dst):
+                            os.replace(dst, dst + '.bak')
+                        shutil.copy2(os.path.join(agents, f), dst)
+                        print(f'ok     agent {f}')
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
     z = newest(a.src, ICON_PACK)

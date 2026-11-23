@@ -187,7 +187,7 @@ const studioFull = (db) => studioLocks(db).length >= studioLimit(db);
 // Only spawnable engines (claude-cli, echo; legacy "claude" included). App and Antigravity lanes use claimNext.
 // Studio capacity is read from the database (the studioBusy argument is ignored).
 export function nextRunnable(db) {
-  const r = db.prepare(`SELECT * FROM tasks WHERE state='queued' AND engine IN ('claude-cli','claude','echo','groq','nim')
+  const r = db.prepare(`SELECT * FROM tasks WHERE state='queued' AND engine IN ('claude-cli','claude','echo','groq','nim','codex')
     ${studioFull(db) ? 'AND needsStudio=0' : ''} ORDER BY createdAt ASC, rowid ASC LIMIT 1`).get();
   return taskOut(r);
 }

@@ -102,7 +102,7 @@ test('due schedule enqueues a task once', async () => {
 
 test('engines() reports claude-cli, echo and which API providers have keys', () => {
   const s = setup();
-  assert.deepEqual(s.runner.engines(), { 'claude-cli': false, echo: true, groq: false, nim: false });
+  assert.deepEqual(s.runner.engines(), { 'claude-cli': false, codex: false, echo: true, groq: false, nim: false });
   s.cleanup();
 });
 

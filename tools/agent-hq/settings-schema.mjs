@@ -14,7 +14,7 @@ const bad = (m) => new SettingError(m);
 import { defaultRunMode } from './run-mode.mjs';
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
-export const ENGINES = ['app', 'antigravity', 'claude-cli', 'echo', 'groq', 'nim'];
+export const ENGINES = ['app', 'antigravity', 'claude-cli', 'echo', 'groq', 'nim', 'codex'];
 export const CLAUDE_ENGINES = new Set(['app', 'claude-cli']); // these take a Claude model alias
 export const LANES = ['app', 'antigravity'];
 export const DEFAULT_LANE_SCHEDULES = {
@@ -29,9 +29,10 @@ export const mergeLaneSchedules = (v) => Object.fromEntries(LANES.map((k) => [k,
 // Roles a partner may start without the owner: derived from roles.json, never hand-listed. A role qualifies only
 // when it cannot edit files, run shells, touch Studio or delegate.
 const UNSAFE_TOOL = /^(Edit|Write|NotebookEdit|Bash|PowerShell|mcp__Roblox_Studio)/;
+const UNSAFE_MCP = /Roblox_Studio|blender|meshy|penpot/; // roles.json mcp is free text: deny the servers that run code or spend money
 export const PARTNER_AUTO_OK = JSON.parse(fs.readFileSync(new URL('./roles.json', import.meta.url), 'utf8'))
   .filter((r) => r.id !== 'lead' && !r.needsStudio && // the Lead can hand work to every role, so it never runs on a partner's say
-     !(r.mcp || []).includes('Roblox_Studio') && !(r.allowedTools || []).some((t) => UNSAFE_TOOL.test(t)))
+     !(r.mcp || []).some((m) => UNSAFE_MCP.test(m)) && !(r.allowedTools || []).some((t) => UNSAFE_TOOL.test(t))) // Studio, Blender (runs Python), Meshy (credits), Penpot (runs code): never on a partner's say
   .map((r) => r.id);
 export const DEFAULT_PARTNER_ACCESS = { enabled: false, autoRoles: [], dailyLimit: 0 }; // off until the owner opts in
 // Co-op game (coop.mjs): one game built by two HQs. Lanes are repo paths or globs; the partner's HQ holds the mirror image.
@@ -74,6 +75,7 @@ export const FIELDS = [
   f('schedules', 'Recurring tasks', 'custom', [], 'lanes', 'Tasks HQ creates on a timer.'),
   f('roleEngines', 'Engine and model per role', 'custom', {}, 'engines', 'Which engine and model each role runs on.'),
   f('artAutoRoute', 'Send art to Antigravity', 'bool', true, 'art', 'Icon, thumbnail, ad and key-art tasks go to the Antigravity lane when it is on.'),
+  f('codexModel', 'ChatGPT model (Codex)', 'string', 'gpt-5.6-terra', 'usage', 'Model for tasks on the codex engine, run by the Codex CLI on your ChatGPT account. Read-only: planning, research, review and UI Lab studies. gpt-6-sol is refused by Codex on a ChatGPT account today; set it here when it is offered.', { max: 40 }),
   f('useMeshy', 'Use Meshy', 'bool', false, 'art', 'Agents may generate 3D models with Meshy (needs MESHY_API_KEY). Every model spends Meshy credits: preview first, at most 2 refines per task.'),
   f('blenderFallback', 'Allow Blender', 'bool', true, 'art', 'Agents build 3D models and maps in Blender (the LihFolk headless skills or the Blender MCP add-on), after the catalog and a Claude Design sheet. Off: catalog and Claude Design only.'),
   f('modelRefFirst', 'Find references before 3D work', 'bool', true, 'art', 'A designer finds pictures from several angles before any 3D model is built.'),

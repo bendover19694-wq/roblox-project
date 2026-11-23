@@ -55,3 +55,13 @@ If a check still fails after 3 tries, deliver the best one and name the failed c
 
 ## 7. Reference sheets before 3D work (added)
 For a 3D model, find references first. Give 4 or more views (front, side, back, three-quarter, top) on a plain background at the same scale, titled "Reference sheet: <name> <view>", plus a short spec: size in studs, parts, materials and colours, part or triangle budget, what to leave out, and the game's style. References set shape and proportion only; never copy another game's design.
+
+## 4. 3D model reference sheets (when the task title starts with "Reference sheet:")
+One image, this layout, dark grey background with thin panel borders and small caps labels:
+- Title top left (object name) with "MODEL REFERENCE SHEET" under it; a large three-quarter hero render across the top.
+- ORTHOGRAPHIC VIEWS panel: side left, side right, top, bottom (front and back too unless the object is long and thin), same scale, labelled.
+- CLOSE-UPS / DETAILS panel: 4 crops of the parts that make it read.
+- MATERIAL / COLOR REFERENCE panel: 4 labelled swatches (base, accent, wear, variation).
+- DIMENSIONS panel: an outline with length and thickness in studs.
+- TOPOLOGY panel: a wireframe with the triangle budget written beside it.
+The game's style wins over realism: for a cartoon game, draw the sheet in the cartoon style. Save as `assets/concepts/<taskId>-ref-sheet.png` and attach it with `hq_add_media`. Full rules: `.claude/skills/roblox-agent-team/standards/3d.md`.

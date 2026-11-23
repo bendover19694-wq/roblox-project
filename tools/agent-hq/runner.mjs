@@ -62,9 +62,11 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     const engine = task.engine || pref.engine || 'claude-cli';
     const llmKey = LLM_ENGINES.has(engine) ? providers()?.[engine]?.apiKey ?? null : null;
     const exe = LLM_ENGINES.has(engine) ? (llmKey ? llmAgentPath : null) : exes[engine] ?? null;
+    if (engine === 'codex' && role?.mode === 'write') return fail(task.id, 'codex runs read-only: run roles that edit files on claude-cli');
     if (engine !== 'echo' && !exe) return fail(task.id, LLM_ENGINES.has(engine) ? `no ${engine} API key: add one in Settings, Model providers` : 'engine not installed');
     const smart = engine === 'claude-cli' && !task.model && !pref.model ? pickModel({ task, roleModel: role?.model, smart: getSetting(db, 'smartModels', true) !== false }) : null;
-    const model = task.model || pref.model || smart?.model || null;
+    const codexModel = (m) => (m && /^(gpt|o\d|codex)/i.test(m) ? m : getSetting(db, 'codexModel', 'gpt-5.6-terra')); // a Claude model name means nothing to Codex
+    const model = engine === 'codex' ? codexModel(task.model || pref.model) : task.model || pref.model || smart?.model || null;
     const lean = engine === 'claude-cli' && getSetting(db, 'leanSessions', true) !== false ? { skills: role?.skills ?? [], userPlugins: userPlugins() } : null;
 
     let child, mcpConfigPath, briefPath = null;
@@ -72,7 +74,8 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     try {
       mcpConfigPath = path.join(stateDir, `mcp-${task.id}.json`);
       const studio = task.needsStudio ? studioServer(role) : null; // Studio tasks of Studio roles get the Roblox Studio MCP too
-      const creative = creativeServers(role, { meshy: getSetting(db, 'useMeshy', false) === true }); // Blender, Penpot, SFXMint, Meshy per roles.json mcp
+      const blenderOn = getSetting(db, 'blenderFallback', true) !== false;
+      const creative = creativeServers(role, { meshy: getSetting(db, 'useMeshy', false) === true, blender: blenderOn, partner: task.createdBy === 'partner' }); // per roles.json mcp
       fs.writeFileSync(mcpConfigPath, JSON.stringify({
         mcpServers: { hq: { command: process.execPath, args: [mcpPath], env: {
           HQ_URL: `http://127.0.0.1:${port}`, HQ_TOKEN: token, HQ_TASK: task.id, HQ_ROLE: task.role, HQ_TASK_TOKEN: taskToken,
@@ -80,7 +83,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
       }), { mode: 0o600 }); // holds the HQ token; owner-only, deleted when the task ends
       const briefTask = { ...task, engine }; // the brief must describe the engine that really runs, not the role's default lane
       const brief = briefFor ? briefFor(briefTask, taskToken) : buildBrief({ task: briefTask, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) });
-      let env = creativeEnv({ ...process.env, HQ_ECHO_MS: String(echoMs) }, blenderExe());
+      let env = creativeEnv({ ...process.env, HQ_ECHO_MS: String(echoMs), HQ_BLENDER: blenderOn && task.createdBy !== 'partner' ? '1' : '0' }, blenderExe()); // scripts/creative_run.py refuses Blender when HQ_BLENDER is 0
       if (llmKey) {
         // the brief can exceed the Windows command-line limit, so it goes in a file; the key only in this child's env
         briefPath = path.join(stateDir, `brief-${task.id}.txt`);
@@ -107,6 +110,10 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
       fs.appendFileSync(logFile, line + '\n');
       emit('log', { taskId: task.id, line });
       let ev; try { ev = JSON.parse(line); } catch { return; }
+      if (ev.type === 'item.completed' && ev.item?.type === 'agent_message' && ev.item.text) lastText = ev.item.text; // codex --json
+      else if (ev.type === 'turn.completed') resultText = lastText;
+      else if (ev.type === 'turn.failed' || (ev.type === 'error' && engine === 'codex')) resultError = true;
+      else if (ev.type === 'thread.started' && ev.thread_id && !stopped) updateTask(db, task.id, { conversationId: ev.thread_id });
       if (ev.type === 'assistant') {
         const text = (ev.message?.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
         if (text) lastText = text;
@@ -193,7 +200,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
       stopped = false;
       // tasks left "working" by a previous process are dead (app/antigravity ones belong to a desktop session)
       for (const t of listTasks(db, { state: 'working' })) {
-        if ((t.engine === 'claude-cli' || t.engine === 'echo' || LLM_ENGINES.has(t.engine)) && !procs.has(t.id)) fail(t.id, 'interrupted by restart');
+        if ((t.engine === 'claude-cli' || t.engine === 'echo' || t.engine === 'codex' || LLM_ENGINES.has(t.engine)) && !procs.has(t.id)) fail(t.id, 'interrupted by restart');
       }
       timer = setInterval(tick, tickMs);
       tick();
@@ -214,7 +221,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     },
     running: () => [...procs.keys()],
     studioHolder,
-    engines: () => ({ 'claude-cli': !!exes['claude-cli'], echo: true, groq: !!providers()?.groq?.apiKey, nim: !!providers()?.nim?.apiKey }),
+    engines: () => ({ 'claude-cli': !!exes['claude-cli'], codex: !!exes.codex, echo: true, groq: !!providers()?.groq?.apiKey, nim: !!providers()?.nim?.apiKey }),
     tick,
   };
 }

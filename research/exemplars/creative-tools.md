@@ -16,6 +16,10 @@
 | Stud UI simulator kit (Luau components, 1,022 icons) | `stud-ui-clean-roblox` skill (MIT) | Skill | ui |
 | Turn a vague ask into a graded, referenced prompt | `4ghouls-prompter` skill | Skill | lead, designer, world |
 | Measure reference footage (timing, sizes, transcript) | `watch-video` skill (ffmpeg, faster-whisper) | Skill | any |
+| Copy something exactly from references (UI, scene, model), measured until it matches | `replicate-mode` skill (+ `4-act-mode`, `4-act-game-dev`, agents `replicate-worker`, `4act-teacher`); uses extra usage | Skill | owner-run |
+| Tear down a UI kit, icon pack or screenshot and study it | UI Lab page, `hq_uilab_search`, `hq_uilab_kit`, `hq_uilab_note` | HQ | ui, designer |
+| Planning, research, review on the ChatGPT account | engine `codex` (read-only) | HQ engine | non-writing roles |
+| Run Blender or a skill script | `python scripts/creative_run.py blender|skill ...` (paths checked; off when Allow Blender is off or the task is a partner's) | Bash | world, librarian |
 
 ## Rules
 - Map pipeline order: style, 20+ references, `hq_tools`, a `4ghouls-prompter` prompt, then the build (`.claude/skills/roblox-agent-team/standards/world.md`).
@@ -39,5 +43,7 @@ All six archives and the GitHub repo were listed, extracted into separate quaran
 - No path traversal, no executables, DLLs or `.blend` files, no nested archives. Two compiled `.pyc` files (voxel skill zip) were dropped unread.
 - LihFolk packs: no network code at all. Launchers (`run.ps1`, `studio.sh`, `turn.sh`) only call Blender, ffmpeg and Python locally. `.npz` files load with numpy's default `allow_pickle=False`. One finding: `eval(argv[0])` in example `closeup.py` and `turntable.py` (rule above).
 - 4ghouls Prompter and watch-video (MIT): network calls only to the LLM or transcription API you configure (off by default), yt-dlp for public video, and an optional Jira fetch with tests that check the token never leaks. Its smoke test passed.
+- replicate-mode (4ghouls): no network hosts at all; ctypes loads only optional DLLs you build yourself (none shipped); `capture_studio.ps1` screenshots the Studio window locally; the `.gz` is an OpenCV edge model in YAML; two `.pyc` files dropped. SELFTEST PASS.
+- Codex config: `~/.codex/config.toml` had been all NUL bytes since 2026-11-06, which stopped Codex from starting; it was renamed to `config.toml.corrupt-2026-11-06` (not deleted) and Codex now runs on defaults.
 - Stud-UI-Clean-Roblox (MIT, commit 7ae67f3): Luau, Markdown and images only; no HttpService or loadstring.
 - No SKILL.md tells the agent to hide anything, skip permissions or send data out.

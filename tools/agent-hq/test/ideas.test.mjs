@@ -12,7 +12,8 @@ const opened = [];
 after(async () => { for (const s of opened) await s.close().catch(() => {}); });
 
 async function boot() {
-  const s = await startServer({ root, port: 0, stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'hq-idea-')) });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-idea-'));
+  const s = await startServer({ root, port: 0, stateDir: dir, memoryDir: path.join(dir, 'memory') }); // never write the repo's memory folder
   opened.push(s);
   const as = (tok) => async (method, p, body) => {
     const r = await fetch(`http://127.0.0.1:${s.port}${p}`, { method, headers: { ...(tok ? { 'x-hq-token': tok } : {}), 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });

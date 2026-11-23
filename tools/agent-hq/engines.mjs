@@ -18,7 +18,7 @@ function find(name) {
 
 /** Resolved once at startup. Only the optional claude-cli engine needs an exe; "echo" is built in. */
 export function detectEngines() {
-  return { 'claude-cli': find('claude') };
+  return { 'claude-cli': find('claude'), codex: find('codex') };
 }
 
 /**
@@ -42,6 +42,26 @@ const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
 out({ type: 'assistant', message: { content: [{ type: 'text', text: 'echo ok' }] } });
 setTimeout(() => { out({ type: 'result', subtype: 'success', result: 'echo ok', total_cost_usd: 0, session_id: 'echo-session' }); process.exit(0); }, ms);
 `;
+
+/**
+ * Codex CLI on the owner's ChatGPT account. Always a read-only sandbox (it cannot scope writes to a role's files the way
+ * claude-cli does), so the runner sends it only roles that do not edit files. HQ's MCP servers are passed as -c TOML values.
+ */
+export function codexArgs({ brief, model, mcpConfigPath, cwd }) {
+  const toml = (v) => JSON.stringify(v); // JSON strings and string arrays are valid TOML values
+  const flags = [];
+  const servers = mcpConfigPath ? JSON.parse(fs.readFileSync(mcpConfigPath, 'utf8')).mcpServers ?? {} : {};
+  for (const [name, s] of Object.entries(servers)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) continue;
+    const k = `mcp_servers.${name}`;
+    if (s.url) flags.push('-c', `${k}.url=${toml(s.url)}`);
+    else {
+      flags.push('-c', `${k}.command=${toml(s.command)}`, '-c', `${k}.args=${toml(s.args ?? [])}`);
+      if (s.env) flags.push('-c', `${k}.env={${Object.entries(s.env).map(([e, v]) => `${e}=${toml(String(v))}`).join(',')}}`);
+    }
+  }
+  return ['exec', '--json', '--skip-git-repo-check', '-s', 'read-only', ...(model ? ['-m', model] : []), ...(cwd ? ['-C', cwd] : []), ...flags, brief];
+}
 
 /** Replace bare Edit/Write with path rules from the role's files (Edit(path) also covers Write and NotebookEdit; both are listed to be explicit). */
 export function scopedWriteTools(allowedTools = [], files = [], gameDir = '.') {
@@ -102,6 +122,8 @@ export function spawnEngine({ engine, exe, brief, model, allowedTools = [], file
     args = ['-e', ECHO_CODE];
   } else if (engine === 'claude-cli') {
     ({ command, args } = resolveCommand(exe, claudeArgs({ brief, model, allowedTools, files, gameDir, mcpConfigPath, studio, lean })));
+  } else if (engine === 'codex') {
+    ({ command, args } = resolveCommand(exe, codexArgs({ brief, model, mcpConfigPath, cwd })));
   } else if (engine === 'groq' || engine === 'nim') {
     command = process.execPath; // exe is llm-agent.mjs; it reads the brief, key and role from env
     args = [exe];

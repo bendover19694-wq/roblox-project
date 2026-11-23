@@ -13,7 +13,7 @@ import { openLightbox } from './views/lightbox.js';
 
 const views = { home, lead, team, tasks, review, settings };
 // Pages built by another module owner load on their own, so one broken page never takes the shell down.
-await Promise.all(['games', 'pitches', 'market', 'library', 'notebook', 'link', 'pro', 'help'].map(async (n) => {
+await Promise.all(['games', 'pitches', 'market', 'library', 'notebook', 'link', 'uilab', 'pro', 'help'].map(async (n) => {
   try { views[n] = await import(`./views/${n}.js`); } catch (e) {
     console.warn('page not available:', n, e.message);
     views[n] = { render: () => h('div', { class: 'page' }, empty(`The ${n} page is not available yet.`)) };
@@ -22,15 +22,15 @@ await Promise.all(['games', 'pitches', 'market', 'library', 'notebook', 'link', 
 
 const SECTIONS = [
   ['Workspace', [['home', 'Home', 'home'], ['lead', 'Lead', 'sparkles'], ['team', 'Team', 'team'], ['tasks', 'Tasks', 'tasks'], ['review', 'Review', 'review']]],
-  ['Studio', [['games', 'Games', 'games'], ['pitches', 'Pitches', 'pitches'], ['market', 'Market', 'market'], ['library', 'Library', 'library'], ['notebook', 'Notebook', 'pencil'], ['pro', 'Pro', 'gem'], ['link', 'HQ Link', 'team']]],
+  ['Studio', [['games', 'Games', 'games'], ['pitches', 'Pitches', 'pitches'], ['market', 'Market', 'market'], ['library', 'Library', 'library'], ['notebook', 'Notebook', 'pencil'], ['uilab', 'UI Lab', 'palette'], ['pro', 'Pro', 'gem'], ['link', 'HQ Link', 'team']]],
 ];
-const PAGE_LABEL = { link: 'HQ Link', home: 'Home', lead: 'Lead', team: 'Team', tasks: 'Tasks', review: 'Review', games: 'Games', pitches: 'Pitches', market: 'Market', library: 'Library', notebook: 'Notebook', pro: 'Pro', settings: 'Settings', help: 'Help' };
-const PAGE_SUB = { link: 'Work with another HQ', home: 'Overview', lead: 'Chat with the Lead', team: 'Roster', tasks: 'All work', review: 'Images and stages', games: 'All games', pitches: 'Ideas', market: 'Charts and benchmarks', library: 'Assets and knowledge', notebook: 'Notes for the team', pro: 'Rising games and ideas', settings: 'Preferences', help: 'How HQ works' };
+const PAGE_LABEL = { uilab: 'UI Lab', link: 'HQ Link', home: 'Home', lead: 'Lead', team: 'Team', tasks: 'Tasks', review: 'Review', games: 'Games', pitches: 'Pitches', market: 'Market', library: 'Library', notebook: 'Notebook', pro: 'Pro', settings: 'Settings', help: 'Help' };
+const PAGE_SUB = { uilab: 'Tear down UI kits, study them', link: 'Work with another HQ', home: 'Overview', lead: 'Chat with the Lead', team: 'Roster', tasks: 'All work', review: 'Images and stages', games: 'All games', pitches: 'Ideas', market: 'Charts and benchmarks', library: 'Assets and knowledge', notebook: 'Notes for the team', pro: 'Rising games and ideas', settings: 'Preferences', help: 'How HQ works' };
 const NAV_TONE = { home: 'amber', team: 'green', tasks: 'green', review: 'grey', pitches: 'grey' };
 const NAV_WHAT = { home: ' need you', team: ' working', tasks: ' open', review: ' waiting', pitches: ' to decide' };
 const LIVE_UPDATED = new Set(['home', 'lead', 'review']); // these pages say when the numbers last changed, the rest say "watching"
 const TABS = [['home', 'Home', 'home', 'amber'], ['lead', 'Lead', 'sparkles'], ['tasks', 'Tasks', 'tasks', 'violet'], ['review', 'Review', 'review', 'grey']];
-const MORE = [['team', 'Team', 'team'], ['games', 'Games', 'games'], ['pitches', 'Pitches', 'pitches'], ['market', 'Market', 'market'], ['library', 'Library', 'library'], ['notebook', 'Notebook', 'pencil'], ['pro', 'Pro', 'gem'], ['link', 'HQ Link', 'team'], ['settings', 'Settings', 'settings'], ['help', 'Help', 'help']];
+const MORE = [['team', 'Team', 'team'], ['games', 'Games', 'games'], ['pitches', 'Pitches', 'pitches'], ['market', 'Market', 'market'], ['library', 'Library', 'library'], ['notebook', 'Notebook', 'pencil'], ['uilab', 'UI Lab', 'palette'], ['pro', 'Pro', 'gem'], ['link', 'HQ Link', 'team'], ['settings', 'Settings', 'settings'], ['help', 'Help', 'help']];
 
 const side = document.getElementById('side');
 const topbar = document.getElementById('topbar');
