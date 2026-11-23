@@ -98,3 +98,19 @@ test('study notes link related kits and land in the searchable notes folder', as
   assert.match(l.get(b.id).note, /Chunky white studs/);
   assert.equal(related({ id: 'x', palette: [{ hex: '#000000' }], tags: [] }, [{ id: 'y', palette: [{ hex: '#ffffff' }], tags: [] }]).length, 0);
 });
+
+test('only the kit study task may write its note, never a partner task; a zip bomb is refused', async () => {
+  const { l } = lab();
+  const k = await l.ingest({ name: 'Kit C', filename: 'c.zip', data: zip([['a.png', PNG]]) });
+  assert.throws(() => l.saveNote(k.id, 'x', 'designer', { id: 't_other', createdBy: 'owner' }), /only the study task/);
+  assert.throws(() => l.saveNote(k.id, 'x', 'designer', { id: 't_1', createdBy: 'partner' }), /only the study task/);
+  assert.equal(l.saveNote(k.id, 'x', 'designer', { id: 't_1', createdBy: 'owner' }).ok, true);
+  // declared size 10 bytes, real data inflates to 1 MB: refused instead of filling memory
+  const big = zlib.deflateRawSync(Buffer.alloc(1024 * 1024));
+  const forged = zip([['bomb.png', big.subarray(0, 1)]]);
+  const b = Buffer.from(zip([['bomb.png', Buffer.alloc(1024 * 1024), true]]));
+  const cd = b.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  b.writeUInt32LE(10, cd + 24); // lie about the uncompressed size
+  assert.throws(() => zipImages(b));
+  assert.ok(forged.length > 0);
+});

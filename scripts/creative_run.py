@@ -5,7 +5,7 @@
   python scripts/creative_run.py where                                 prints the Blender and skill folders it would use
 
 Scripts must live inside an installed creative skill (roblox-map-builder, lihfolk-stud-voxel, watch-video, folk-stud-ui)
-or under this repo's assets/ or games/<slug>/assets/ (where the world role may write its build scripts). Blender is refused
+or under assets/world/ or games/<slug>/assets/world/ (the world role's own folders, where it writes build scripts). Every run is logged with a hash. Blender is refused
 when Agent HQ set HQ_BLENDER=0 (the owner turned "Allow Blender" off, or the task came from a partner). No shell is used.
 """
 import glob
@@ -31,9 +31,24 @@ def blender_exe():
 
 def roots():
     out = [os.path.realpath(os.path.join(SKILLS, s)) for s in SKILL_NAMES]
-    out.append(os.path.realpath(os.path.join(REPO, 'assets')))
-    out += [os.path.realpath(p) for p in glob.glob(os.path.join(REPO, 'games', '*', 'assets'))]
+    # agent-written build scripts: only the world folders (the world role's own files), never the whole repo
+    out.append(os.path.realpath(os.path.join(REPO, 'assets', 'world')))
+    out += [os.path.realpath(p) for p in glob.glob(os.path.join(REPO, 'games', '*', 'assets', 'world'))]
     return out
+
+
+def audit(kind, script):
+    """One line per run in .agent-hq/logs/creative_run.log (time, task, kind, sha256, path), so the owner can see what ran."""
+    import datetime
+    import hashlib
+    try:
+        digest = hashlib.sha256(open(script, 'rb').read()).hexdigest()[:16]
+        log = os.path.join(REPO, '.agent-hq', 'logs')
+        os.makedirs(log, exist_ok=True)
+        with open(os.path.join(log, 'creative_run.log'), 'a', encoding='utf-8') as f:
+            f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {os.environ.get('HQ_TASK', '-')} {kind} {digest} {script}" + chr(10))
+    except OSError:
+        pass
 
 
 def inside(path, base):
@@ -77,6 +92,7 @@ def main(argv):
         args = [sys.executable, '-E', '-s', script, *rest[2:]]  # not -I: skill scripts import their siblings
     else:
         sys.exit(f'creative_run: unknown command {cmd}')
+    audit(cmd, script)
     try:
         return subprocess.run(args, cwd=os.path.dirname(script), timeout=TIMEOUT).returncode
     except subprocess.TimeoutExpired:

@@ -41,7 +41,8 @@ export function zipImages(buf, { max = 10000, maxTotal = 300 * 1024 * 1024 } = {
     if (out.length >= max || (total += usize) > maxTotal) throw new Error('zip holds too many images');
     const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
     const data = buf.subarray(start, start + csize);
-    const body = method === 0 ? data : method === 8 ? zlib.inflateRawSync(data) : null;
+    if (usize > 20 * 1024 * 1024) throw new Error(`image too large in zip: ${name}`);
+    const body = method === 0 ? data : method === 8 ? zlib.inflateRawSync(data, { maxOutputLength: usize }) : null; // never inflate past the declared size (zip bombs)
     if (body && body.length === usize) out.push({ name, body });
   }
   return out;
@@ -160,9 +161,11 @@ export function createUiLab({ stateDir, root, queueTask = () => null, fetchImpl 
     return read(id);
   }
 
-  function saveNote(id, note, by) {
+  function saveNote(id, note, by, task = null) {
     const kit = read(id);
     if (!kit) throw new Error('no such kit');
+    // an agent may only write the note of the study task it was given, and never from a partner's task
+    if (task && (task.createdBy === 'partner' || task.id !== kit.notes?.taskId)) throw new Error('only the study task of this kit can write its note');
     const rel = related(kit, all());
     const links = rel.length ? `\n\n## Related kits\n${rel.map((r) => `- ${r.name} (${r.id}): ${r.colours} shared colours, ${r.tags} shared tags`).join('\n')}` : '';
     const md = `# UI kit study: ${kit.name}\n\nKit ${kit.id} · ${kit.kind} · ${kit.file}${kit.source ? ` · source ${kit.source}` : ''}${kit.licence ? ` · licence: ${kit.licence}` : ''}\nStudied by ${by}, ${new Date(now()).toISOString().slice(0, 10)}. Tags: ${arr(kit.tags).join(', ') || 'none'}. Palette: ${arr(kit.palette).slice(0, 8).map((c) => c.hex).join(' ')}.\n\n${String(note).slice(0, 20000)}${links}\n`;
@@ -210,8 +213,8 @@ export function mountUiLab(route, lab, { str, bad, isObj, agentTask, HttpError }
   });
   route('POST', /^\/api\/uilab\/([a-z0-9-]+)\/note$/, ({ m, body, who, headers }) => {
     if (!isObj(body)) throw bad('body must be an object');
-    const by = who === 'agent' ? agentTask(body, ['designer', 'ui'], headers).role : 'owner';
-    try { return lab.saveNote(id(m[1]), str(body.note, 'note', { max: 20000, required: true }), by); } catch (e) { throw bad(e.message); }
+    const t = who === 'agent' ? agentTask(body, ['designer', 'ui'], headers) : null;
+    try { return lab.saveNote(id(m[1]), str(body.note, 'note', { max: 20000, required: true }), t?.role ?? 'owner', t); } catch (e) { throw bad(e.message); }
   });
 }
 
