@@ -55,6 +55,7 @@ export function codexArgs({ brief, model, mcpConfigPath, cwd }) {
   for (const [name, s] of Object.entries(servers)) {
     if (!/^[A-Za-z0-9_-]+$/.test(name)) continue;
     const k = `mcp_servers.${name}`;
+    flags.push('-c', `${k}.default_tools_approval_mode="approve"`); // exec mode cannot ask anyone; HQ picked these servers for this task
     if (s.url) flags.push('-c', `${k}.url=${toml(s.url)}`);
     else {
       flags.push('-c', `${k}.command=${toml(s.command)}`, '-c', `${k}.args=${toml(s.args ?? [])}`);

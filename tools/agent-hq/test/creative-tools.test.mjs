@@ -103,6 +103,7 @@ test('codex runs read-only on the ChatGPT account and gets HQ MCP servers as TOM
   assert.ok(a.includes('mcp_servers.hq.command="C:\\node.exe"'));
   assert.ok(a.includes('mcp_servers.hq.env={HQ_TOKEN="a\\"b"}'));
   assert.ok(a.includes('mcp_servers.penpot.url="http://localhost:4401/mcp"'));
+  assert.ok(a.includes('mcp_servers.hq.default_tools_approval_mode="approve"')); // without it exec mode cancels every HQ call
   assert.ok(!a.some((x) => x.includes('bad name')));
   assert.equal(a.at(-1), 'Do it');
 });
