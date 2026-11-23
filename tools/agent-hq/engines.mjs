@@ -25,10 +25,11 @@ export function detectEngines() {
  * Node refuses to spawn .cmd/.bat with shell:false (EINVAL), and we never use a shell for user text.
  * npm shims just forward to a real exe or js file, so read the target out of the shim.
  */
-function resolveCommand(exe, args) {
+export function resolveCommand(exe, args) {
   if (!/\.(cmd|bat)$/i.test(exe)) return { command: exe, args };
   const shim = fs.readFileSync(exe, 'utf8');
-  const m = shim.match(/"%dp0%\\([^"]+\.(?:exe|js|mjs|cjs))"/i);
+  // npm shims name "%dp0%\node.exe" first (a local node, if one is there); the real target is the next file named
+  const m = [...shim.matchAll(/"%dp0%\\([^"]+\.(?:exe|js|mjs|cjs))"/gi)].find((x) => !/^node\.exe$/i.test(x[1]));
   if (!m) throw new Error(`cannot resolve ${exe} without a shell`);
   const target = path.join(path.dirname(exe), m[1]);
   return /\.exe$/i.test(target)

@@ -106,3 +106,15 @@ test('codex runs read-only on the ChatGPT account and gets HQ MCP servers as TOM
   assert.ok(!a.some((x) => x.includes('bad name')));
   assert.equal(a.at(-1), 'Do it');
 });
+
+test('npm shims resolve to the real script, not the optional local node.exe they name first', async () => {
+  const { resolveCommand } = await import('../engines.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-shim-'));
+  const shim = path.join(dir, 'codex.cmd');
+  const bs = String.fromCharCode(92);
+  fs.writeFileSync(shim, [`IF EXIST "%dp0%${bs}node.exe" (`, `  SET "_prog=%dp0%${bs}node.exe"`, ')', `"%_prog%"  "%dp0%${bs}node_modules${bs}@openai${bs}codex${bs}bin${bs}codex.js" %*`].join('\r\n'));
+  const r = resolveCommand(shim, ['exec']);
+  assert.equal(r.command, process.execPath);
+  assert.equal(r.args[0], path.join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js'));
+  assert.equal(r.args[1], 'exec');
+});
