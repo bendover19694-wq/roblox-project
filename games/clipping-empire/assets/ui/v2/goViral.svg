@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="200" viewBox="0 0 460 200">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C989FF"/>
+      <stop offset="1" stop-color="#7A2CF0"/>
+    </linearGradient>
+    <linearGradient id="lip" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B128C"/>
+      <stop offset="1" stop-color="#2D0E66"/>
+    </linearGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14071F" stop-opacity="0"/>
+      <stop offset="1" stop-color="#14071F" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="iconfill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E6DDFF"/>
+    </linearGradient>
+    <pattern id="stripes" width="51" height="51" patternUnits="userSpaceOnUse"
+             patternTransform="rotate(-35)">
+      <rect width="25.5" height="51" fill="#FFFFFF" fill-opacity="0.22"/>
+      <rect x="25.5" width="25.5" height="51" fill="#14071F" fill-opacity="0.08"/>
+    </pattern>
+    <clipPath id="bodyclip"><rect x="27" y="12" width="406" height="152" rx="36"/></clipPath>
+  </defs>
+  <g transform="translate(14.054 0) skewX(-8)">
+  <rect x="27" y="36" width="406" height="152" rx="36"
+        fill="url(#lip)" stroke="#14071F" stroke-width="12"/>
+  <rect x="27" y="12" width="406" height="152" rx="36" fill="url(#face)"/>
+  <g clip-path="url(#bodyclip)">
+    <rect x="27" y="12" width="406" height="152" fill="url(#stripes)"/>
+    <rect x="27" y="95.60000000000001" width="406" height="68.4" fill="url(#shade)"/>
+    <rect x="44" y="29" width="372" height="45.6"
+          rx="19" fill="#FFFFFF" fill-opacity="0.32"/>
+  </g>
+  <rect x="35.5" y="20.5" width="389" height="135"
+        rx="27.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="5"/>
+  <rect x="27" y="12" width="406" height="152" rx="36"
+        fill="none" stroke="#14071F" stroke-width="12"/>
+  </g>
+  <g transform="translate(34 36) scale(1.04)" fill="#14071F" stroke="#14071F"
+     stroke-width="7.6923076923076925" stroke-linejoin="round" stroke-linecap="round" opacity="0.35">
+    
+      <path d="M50 8 C62 28 82 38 80 62 C78 80 66 92 50 92 C34 92 22 80 20 62 C18 46 30 38 34 24
+               C40 34 42 40 46 42 C48 30 46 20 50 8 Z"/>
+      <path d="M50 54 C58 62 64 68 62 76 C60 84 56 88 50 88 C44 88 40 84 38 76 C37 68 44 62 50 54 Z"
+            fill="#FFC65C" stroke-width="5"/>
+  </g>
+  <g transform="translate(34 30) scale(1.04)" fill="url(#iconfill)" stroke="#14071F"
+     stroke-width="7.6923076923076925" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke">
+    
+      <path d="M50 8 C62 28 82 38 80 62 C78 80 66 92 50 92 C34 92 22 80 20 62 C18 46 30 38 34 24
+               C40 34 42 40 46 42 C48 30 46 20 50 8 Z"/>
+      <path d="M50 54 C58 62 64 68 62 76 C60 84 56 88 50 88 C44 88 40 84 38 76 C37 68 44 62 50 54 Z"
+            fill="#FFC65C" stroke-width="5"/>
+  </g>
+</svg>
