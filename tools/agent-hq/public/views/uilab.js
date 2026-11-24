@@ -10,6 +10,7 @@ let kitId = null;
 let q = '';
 const form = { ask: '', source: '', licence: '' };
 let queued = [];
+const find = { q: '', results: null, busy: false };
 let busy = '';
 
 async function load() {
@@ -80,6 +81,25 @@ function composer() {
     busy && !busy.startsWith('Tearing') ? h('p', { class: 'muted small', role: 'status' }, busy) : null);
 }
 
+async function searchGames() {
+  if (!find.q.trim()) return;
+  find.busy = true; notify();
+  try { find.results = (await api('GET', `/api/uilab/find?q=${encodeURIComponent(find.q)}`)).games; } catch { find.results = []; }
+  find.busy = false; notify();
+}
+
+function finder() {
+  return h('section', { class: 'card stack' },
+    h('h2', {}, 'Find a Roblox game'),
+    h('p', { class: 'muted small' }, "Type a game's name. HQ pulls its public UI art (icon, store screenshots, game-pass and badge icons) into a kit and an agent studies it. Study only: never ship another game's art."),
+    h('div', { class: 'row gap wrap' },
+      h('input', { class: 'input', type: 'search', placeholder: 'e.g. Grow a Garden', value: find.q, 'aria-label': 'Roblox game name', oninput: (e) => { find.q = e.target.value; }, onkeydown: (e) => { if (e.key === 'Enter') searchGames(); } }),
+      btn(find.busy ? 'Searching…' : 'Search Roblox', searchGames, { kind: 'primary', disabled: find.busy })),
+    find.results ? (find.results.length ? h('div', { class: 'stack' }, find.results.map((g) => h('div', { class: 'row gap wrap' },
+      h('strong', {}, g.name), h('span', { class: 'muted small' }, `${g.players.toLocaleString()} playing · place ${g.placeId}`),
+      btn('Import its UI', async () => { const k = await act(() => api('POST', '/api/uilab/game', { universeId: g.universeId, placeId: g.placeId, name: g.name, ask: form.ask }), `${g.name} added; an agent is studying it`); if (k?.id) location.hash = '#/uilab/' + k.id; })))) : empty('No games found.')) : null);
+}
+
 const cardFor = (k) => h('a', { class: 'card uil-card', href: '#/uilab/' + k.id, style: stripe(k.palette) },
   h('div', { class: 'uil-name' }, k.name),
   h('div', { class: 'uil-preview' }, k.preview.length ? k.preview.map((p) => h('img', { src: mediaUrl(p), alt: '', loading: 'lazy', class: k.kind === 'screenshot' ? 'wide' : null })) : h('span', { class: 'muted small' }, 'no previews')),
@@ -92,7 +112,7 @@ function library() {
   const s = lib.stats ?? {};
   return [
     pageHead('UI Lab', `${s.kits ?? 0} kits · ${s.icons ?? 0} icons · ${s.screens ?? 0} screenshots`, btn('Refresh', load)),
-    dropZone(), composer(),
+    dropZone(), composer(), finder(),
     h('div', { class: 'row gap' }, h('h2', {}, 'Library'),
       h('input', { class: 'input', type: 'search', placeholder: 'Search kits, shops, icons…', value: q, 'aria-label': 'Search the UI Lab', onchange: (e) => { q = e.target.value; load(); } })),
     lib.kits.length ? h('div', { class: 'uil-grid' }, lib.kits.map(cardFor)) : empty('No kits yet. Drop a .rbxm, an icon pack or a screenshot above.'),
@@ -108,6 +128,9 @@ function detail() {
     pageHead(k.name, `${k.kind} · ${k.file}${k.source ? ' · ' : ''}`, btn('Back to library', () => { location.hash = '#/uilab'; }),
       btn(k.notes?.state === 'studying' ? 'Study again' : 'Study', () => act(() => api('POST', `/api/uilab/${k.id}/study`, { ask: form.ask }), 'An agent is studying it').then(() => loadKit(k.id))),
       btn('Study with ChatGPT', () => act(() => api('POST', `/api/uilab/${k.id}/study`, { ask: form.ask, engine: 'codex' }), 'Codex is studying it').then(() => loadKit(k.id)), { kind: 'ghost', title: 'Runs on your ChatGPT account through the Codex CLI' })),
+    k.kind === 'game' ? h('section', { class: 'card stack' }, h('h3', {}, 'Join and capture'),
+      h('p', { class: 'muted small' }, 'Opens the game in your Roblox app (signed in as you), saves 3 screenshots of the in-game UI after it loads, closes Roblox, and studies them. Takes about a minute.'),
+      btn('Join and capture', () => act(() => api('POST', `/api/uilab/${k.id}/capture`, {}), 'Captured; an agent is studying the screenshots').then(() => loadKit(k.id)))) : null,
     k.source ? h('p', { class: 'small' }, 'Source: ', h('a', { href: k.source, target: '_blank', rel: 'noopener noreferrer' }, k.source), k.licence ? ` · Licence: ${k.licence}` : '') : null,
     h('section', { class: 'card stack' }, h('h3', {}, 'Palette'), swatches(k.palette), h('div', { class: 'muted small' }, (k.palette ?? []).slice(0, 12).map((c) => c.hex).join('  '))),
     section('Gradients', k.gradients, (g) => h('div', { class: 'stack' }, g.slice(0, 24).map((x) => h('div', { class: 'uil-grad', style: `background:linear-gradient(90deg, ${x.stops.join(', ')})` }, h('span', {}, x.stops.join(' → ')))))),

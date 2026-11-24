@@ -4,12 +4,21 @@
 import os from 'node:os';
 import path from 'node:path';
 
-export const LIMIT = /usage limit/i;
+// Out of usage (both CLIs' wording) or a login that no longer works: either way the next account takes the task.
+export const LIMIT = /usage limit|limit reached|hit your (?:usage )?limit|OAuth session expired|Failed to authenticate|not logged in|Invalid API key/i;
+/** Per engine: where its accounts and limits are kept, and the variable that points the CLI at one account's folder. */
+export const ENGINE_ACCOUNTS = {
+  codex: { accounts: 'codexAccounts', limits: 'codexLimits', envVar: 'CODEX_HOME', label: 'ChatGPT', add: 'scripts/codex-add-account.ps1' },
+  'claude-cli': { accounts: 'claudeAccounts', limits: 'claudeLimits', envVar: 'CLAUDE_CONFIG_DIR', label: 'Claude', add: 'scripts/claude-add-account.ps1' },
+};
 export const DEFAULT_HOME = 'default'; // ~/.codex, the account `codex login` set up first
 const FALLBACK_MS = 5 * 60 * 60 * 1000; // when the message has no readable date
 
 /** When the limit resets: "try again at Nov 29th, 2026 5:11 PM." -> epoch ms; otherwise now + 5 hours. */
 export function resetAt(message, now = Date.now()) {
+  const epoch = /\|(\d{10})(?!\d)/.exec(String(message)); // Claude: "Claude AI usage limit reached|1764000000"
+  if (epoch && Number(epoch[1]) * 1000 > now) return Number(epoch[1]) * 1000;
+  if (/OAuth session expired|Failed to authenticate|not logged in|Invalid API key/i.test(String(message))) return now + 6 * 3600e3; // a dead login: retry it after 6 hours
   const m = /try again (?:at|on|in) ([^.\n]+?)(?:\.|$)/i.exec(String(message));
   if (m) {
     const when = Date.parse(m[1].replace(/(\d+)(st|nd|rd|th)/, '$1').replace(/\s+at\s+/i, ' '));

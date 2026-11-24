@@ -94,17 +94,19 @@ function readLihfolk(dir) {
 }
 
 // One entry per pack folder, with each file's name searchable. The licence is read from the pack, never assumed.
-function readPacks(root) {
+function readPacks(root, extra = []) {
   const base = path.join(root, 'assets', 'packs');
   let packs = [];
-  try { packs = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory()); } catch { return []; }
+  try { packs = fs.readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => ({ name: e.name, dir: path.join(base, e.name) })); } catch { /* no packs folder */ }
+  // installed packs that live outside the repo (LihFolk skills, the FOLK icon pack): their licence is stated, not read
+  packs = [...packs, ...extra.filter((x) => { try { return fs.statSync(x.dir).isDirectory(); } catch { return false; } })];
   return packs.map((p) => {
-    const dir = path.join(base, p.name);
+    const dir = p.dir;
     const all = walk(dir);
     const files = all.filter((f) => PACK_FILES.test(f));
     const licenceFile = all.find((f) => /licen[sc]e/i.test(path.basename(f)));
-    let licence = 'Unknown: check before use';
-    try { if (licenceFile && /CC0|Creative Commons Zero|public domain/i.test(fs.readFileSync(licenceFile, 'utf8'))) licence = 'CC0'; } catch { /* stays unknown */ }
+    let licence = p.licence ?? 'Unknown: check before use';
+    try { if (!p.licence && licenceFile && /CC0|Creative Commons Zero|public domain/i.test(fs.readFileSync(licenceFile, 'utf8'))) licence = 'CC0'; } catch { /* stays unknown */ }
     const counts = {};
     for (const f of files) {
       const kind = PACK_KIND.find(([re]) => re.test(f))[1];
@@ -114,7 +116,7 @@ function readPacks(root) {
     const summary = Object.entries(counts).map(([k, n]) => `${n} ${k} files`).join(', ') || 'no usable files';
     return {
       id: `pack:${p.name}`, source: 'pack', type: 'pack', name: p.name.replace(/[-_]+/g, ' '), tags: words.slice(0, 200),
-      description: `Downloaded pack with ${summary}.`, licence, file: dir,
+      description: `${p.about ?? 'Downloaded pack'} with ${summary}.`, licence, file: dir,
     };
   });
 }
@@ -144,7 +146,7 @@ function mirrorFiles(dir, rel = '') {
   });
 }
 
-export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetch, addAsset, lihfolkPath, polyhavenLocal }) {
+export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetch, addAsset, lihfolkPath, polyhavenLocal, extraPacks = [], extra = () => [] }) {
   const cacheFile = path.join(stateDir, 'catalog', 'polyhaven.json');
   let base = null; // Poly Haven and LihFolk, built once per refresh
   let packs = [];
@@ -196,10 +198,11 @@ export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetc
       base = [...polyhaven(), ...(lf ? readLihfolk(lf) : [])].map(indexed);
     }
     if (Date.now() - packsAt > PACK_SCAN_MS) { // a pack dropped into assets/packs shows up within a minute
-      packs = readPacks(root).map(indexed);
+      packs = readPacks(root, extraPacks).map(indexed);
       packsAt = Date.now();
     }
-    return packs.length ? [...base, ...packs] : base;
+    const more = extra().map(indexed); // UI Lab kits: few, and they change as the owner drops files in
+    return [...base, ...packs, ...more];
   }
   const all = () => rows().map((r) => r.e);
 

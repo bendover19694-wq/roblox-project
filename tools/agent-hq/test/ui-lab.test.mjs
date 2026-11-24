@@ -124,3 +124,38 @@ test('a study whose task failed shows as failed, not studying', async () => {
   assert.equal(l.get(k.id).notes.state, 'failed');
   assert.equal(l.list().kits[0].notes, 'failed');
 });
+
+test('game finder: search, then a kit from public icons and CDN screenshots, capture adds window shots', async () => {
+  const { findGames, gameMedia } = await import('../game-finder.mjs');
+  const fetchImpl = async (url) => {
+    const ok = (o) => ({ ok: true, json: async () => o, arrayBuffer: async () => PNG });
+    if (url.includes('omni-search')) return ok({ searchResults: [{ contentGroupType: 'Game', contents: [{ universeId: 7436755782, rootPlaceId: 126884695634066, name: 'Grow a Garden', playerCount: 5 }, { universeId: 'x;', rootPlaceId: 1 }] }, { contentGroupType: 'User', contents: [{ universeId: 1 }] }] });
+    if (url.includes('/games/icons')) return ok({ data: [{ imageUrl: 'https://tr.rbxcdn.com/icon/512/512/Image/Png' }] });
+    if (url.includes('multiget')) return ok({ data: [{ thumbnails: [{ imageUrl: 'https://tr.rbxcdn.com/s1/768/432/Image/Png' }, { imageUrl: 'https://evil.example/s2.png' }] }] });
+    if (url.includes('game-passes')) return ok({ gamePasses: [{ displayName: 'Premium Seed Pack', displayIconImageAssetId: 87173607425704 }] });
+    if (url.includes('badges.roblox.com')) return ok({ data: [{ name: 'Welcome', iconImageId: 127679841776434 }] });
+    if (url.startsWith('https://thumbnails.roblox.com/v1/assets')) return ok({ data: [{ targetId: 87173607425704, state: 'Completed', imageUrl: 'https://tr.rbxcdn.com/p/420/420/Image/Png' }, { targetId: 127679841776434, state: 'Completed', imageUrl: 'https://tr.rbxcdn.com/b/420/420/Image/Png' }] });
+    return ok({});
+  };
+  const games = await findGames('grow a garden', fetchImpl);
+  assert.deepEqual(games, [{ universeId: '7436755782', placeId: '126884695634066', name: 'Grow a Garden', players: 5 }]);
+  const m = await gameMedia('7436755782', fetchImpl);
+  assert.equal(m.screens.length, 2); // the icon and one CDN screenshot; the non-Roblox URL is dropped
+  await assert.rejects(gameMedia('1;drop', fetchImpl), /universeId/);
+  const { l, tasks } = lab({ fetchImpl });
+  const kit = await l.importGame({ universeId: '7436755782', placeId: '126884695634066', name: 'Grow a Garden' });
+  assert.equal(kit.kind, 'game');
+  assert.equal(kit.counts.icons, 2);
+  assert.equal(kit.counts.screens, 2);
+  assert.match(kit.licence, /study only/);
+  assert.equal(kit.source, 'https://www.roblox.com/games/126884695634066');
+  assert.equal(tasks.at(-1).role, 'designer');
+  let asked = null;
+  const after = await l.capture(kit.id, async (placeId, out) => { asked = placeId; fs.writeFileSync(path.join(out, 'capture-0.png'), PNG); });
+  assert.equal(asked, '126884695634066');
+  assert.equal(after.counts.screens, 3);
+  const pack = await l.ingest({ name: 'Kit E', filename: 'e.zip', data: zip([['a.png', PNG]]) });
+  await assert.rejects(l.capture(pack.id, async () => {}), /only kits made from a Roblox game/);
+  const rows = l.catalogEntries();
+  assert.ok(rows.some((r) => r.id === `uilab:${kit.id}` && r.source === 'uilab' && r.type === 'ui-kit'));
+});

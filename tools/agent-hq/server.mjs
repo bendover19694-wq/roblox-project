@@ -22,7 +22,7 @@ import { createModelRefs } from './model-refs.mjs';
 import { createRoleOverrides } from './role-overrides.mjs';
 import { createSpendGuard } from './spend.mjs';
 import { loadPlaybook } from './briefs.mjs';
-import { createReadiness } from './readiness.mjs'; import { creativeStatus } from './creative-tools.mjs';
+import { createReadiness } from './readiness.mjs'; import { creativeStatus, installedPacks } from './creative-tools.mjs';
 import { createPlay } from './play.mjs';
 import { mountNotebook, NOTEBOOK_OWNER_ONLY } from './notebook.mjs';
 import { normalizePitch } from './pitches.mjs';
@@ -325,7 +325,7 @@ ${task.body}`;
   const refs = createModelRefs({ db, D, settingsAll, create: createQueued, postMessage: (m) => postMessage(m), roleOn: (id) => rolesMerged().find((x) => x.id === id)?.enabled !== false });
   const queueTask = ({ selected, ...f }) => { if (!f.game) f.game = inferGame({ parentGame: f.parentId && D.getTask(db, f.parentId)?.game, selected, text: `${f.title}
 ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued(f); }; // 3D model work waits for a reference sheet (model-refs.mjs)
-  const assetCatalog = createAssetCatalog({ root, stateDir, addAsset, fetchImpl: catalogFetch ?? globalThis.fetch, lihfolkPath: catalogLihfolk ?? process.env.HQ_LIHFOLK_ASSETS, polyhavenLocal: catalogMirror });
+  const assetCatalog = createAssetCatalog({ root, stateDir, addAsset, fetchImpl: catalogFetch ?? globalThis.fetch, lihfolkPath: catalogLihfolk ?? process.env.HQ_LIHFOLK_ASSETS, polyhavenLocal: catalogMirror, extraPacks: installedPacks(), extra: () => uilab.catalogEntries() });
   const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), roleIds: () => rolesMerged().map((x) => x.id), fetchImpl: linkFetch ?? globalThis.fetch }); const bridge = createBridge({ db, D, stateDir, root, roles: rolesMerged, port: () => boundPort, fetchImpl: linkFetch ?? globalThis.fetch, now }); listeners.add(bridge.onEvent); const coop = createCoop({ db, D, link, emit }); const updates = createUpdates({ root, db, D, link, emit }); const uilab = createUiLab({ stateDir, root, taskState: (id) => (id ? D.getTask(db, id)?.state : null), queueTask: (f) => queueTask({ ...f, engine: f.engine ?? (settingsAll().runMode === 'hourly' ? 'app' : 'claude-cli') }) }); // studies follow the run mode, never the designer's image lane
   const postMessage = (f) => { const m = D.addMessage(db, f); emit('message', m); return m; };
 

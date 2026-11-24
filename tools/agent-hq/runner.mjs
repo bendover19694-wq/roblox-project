@@ -64,8 +64,9 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     const llmKey = LLM_ENGINES.has(engine) ? providers()?.[engine]?.apiKey ?? null : null;
     const exe = LLM_ENGINES.has(engine) ? (llmKey ? llmAgentPath : null) : exes[engine] ?? null;
     if (engine === 'codex' && role?.mode === 'write') return fail(task.id, 'codex runs read-only: run roles that edit files on claude-cli');
-    const account = engine === 'codex' ? CA.pick(getSetting(db, 'codexAccounts', []), getSetting(db, 'codexLimits', {})) : null;
-    if (account && account.home === null) return fail(task.id, `every ChatGPT account is at its Codex usage limit; the first resets ${new Date(account.next).toLocaleString()}. Add one with scripts/codex-add-account.ps1.`);
+    const acc = CA.ENGINE_ACCOUNTS[engine];
+    const account = acc ? CA.pick(getSetting(db, acc.accounts, []), getSetting(db, acc.limits, {})) : null;
+    if (account && account.home === null) return fail(task.id, `every ${acc.label} account is at its usage limit or signed out; the first resets ${new Date(account.next).toLocaleString()}. Add one with ${acc.add}.`);
     if (engine !== 'echo' && !exe) return fail(task.id, LLM_ENGINES.has(engine) ? `no ${engine} API key: add one in Settings, Model providers` : 'engine not installed');
     const smart = engine === 'claude-cli' && !task.model && !pref.model ? pickModel({ task, roleModel: role?.model, smart: getSetting(db, 'smartModels', true) !== false }) : null;
     const codexModel = (m) => (m && /^(gpt|o\d|codex)/i.test(m) ? m : getSetting(db, 'codexModel', 'gpt-5.6-terra')); // a Claude model name means nothing to Codex
@@ -86,7 +87,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
       }), { mode: 0o600 }); // holds the HQ token; owner-only, deleted when the task ends
       const briefTask = { ...task, engine }; // the brief must describe the engine that really runs, not the role's default lane
       const brief = briefFor ? briefFor(briefTask, taskToken) : buildBrief({ task: briefTask, role: task.role, root, db, taskToken, memoryDir, references: listReferences(db) });
-      let env = creativeEnv({ ...process.env, ...(account?.env ? { CODEX_HOME: account.env } : {}), HQ_ECHO_MS: String(echoMs), HQ_BLENDER: blenderOn && task.createdBy !== 'partner' ? '1' : '0' }, blenderExe()); // scripts/creative_run.py refuses Blender when HQ_BLENDER is 0
+      let env = creativeEnv({ ...process.env, ...(account?.env ? { [acc.envVar]: account.env } : {}), HQ_ECHO_MS: String(echoMs), HQ_BLENDER: blenderOn && task.createdBy !== 'partner' ? '1' : '0' }, blenderExe()); // scripts/creative_run.py refuses Blender when HQ_BLENDER is 0
       if (llmKey) {
         // the brief can exceed the Windows command-line limit, so it goes in a file; the key only in this child's env
         briefPath = path.join(stateDir, `brief-${task.id}.txt`);
@@ -121,6 +122,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
         const text = (ev.message?.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
         if (text) lastText = text;
       } else if (ev.type === 'result') {
+        if (account && ev.is_error && CA.LIMIT.test(String(ev.result ?? ''))) limitHit = String(ev.result);
         if (typeof ev.result === 'string') resultText = ev.result;
         if (ev.is_error || ev.status === 'ERROR') resultError = true;
         const cost = ev.total_cost_usd ?? ev.usage?.total_cost_usd;
@@ -141,6 +143,7 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (d) => {
       stderrTail = (stderrTail + d).slice(-1000);
+      if (account && !limitHit && CA.LIMIT.test(d)) limitHit = String(d).slice(0, 500); // e.g. claude: "Failed to authenticate: OAuth session expired"
       onLine(JSON.stringify({ type: 'stderr', text: d }));
     });
 
@@ -156,9 +159,9 @@ export function createRunner({ db, root, emit = () => {}, port = 4317, token = '
       if (!entry.canceled) {
         const cur = getTask(db, task.id);
         if (cur?.state === 'working' && limitHit) { // this ChatGPT account ran out: mark it and let the next account take the task
-          setSetting(db, 'codexLimits', CA.mark(getSetting(db, 'codexLimits', {}), account.home, CA.resetAt(limitHit)));
+          setSetting(db, acc.limits, CA.mark(getSetting(db, acc.limits, {}), account.home, CA.resetAt(limitHit)));
           updateTask(db, task.id, { state: 'queued', error: null });
-          fs.appendFileSync(logFile, JSON.stringify({ type: 'hq', text: `ChatGPT account ${account.home} is at its limit; queued again for the next account` }) + '\n');
+          fs.appendFileSync(logFile, JSON.stringify({ type: 'hq', text: `${acc.label} account ${account.home} is at its limit or signed out; queued again for the next account` }) + '\n');
         } else if (cur?.state === 'working') { // not already completed through MCP
           if (code === 0 && !resultError) {
             updateTask(db, task.id, { state: 'review', summary: (lastText || resultText).slice(0, 500) || null });

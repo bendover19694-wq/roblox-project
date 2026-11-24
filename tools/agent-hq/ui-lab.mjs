@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { execFile } from 'node:child_process';
+import { findGames, gameMedia } from './game-finder.mjs';
 
 export const EXTS = { '.rbxm': 'roblox', '.rbxmx': 'roblox', '.rbxl': 'roblox', '.rbxlx': 'roblox', '.zip': 'pack', '.png': 'screenshot', '.jpg': 'screenshot', '.jpeg': 'screenshot', '.webp': 'screenshot' };
 export const MAX_BYTES = 60 * 1024 * 1024;
@@ -166,6 +167,55 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
     return read(id);
   }
 
+  // A kit from image asset ids and Roblox CDN screenshots (a found game, or an icon list such as WindUI's).
+  async function ingestAssets({ name, kind = 'game', items = [], screens = [], source = '', licence = '', ask = '', counts = {}, study: doStudy = true }) {
+    const id = `${slug(name)}-${crypto.randomBytes(2).toString('hex')}`;
+    const media = path.join(mediaDir, id);
+    const icons = path.join(media, 'icons');
+    const shots = path.join(media, 'screens');
+    fs.mkdirSync(icons, { recursive: true });
+    fs.mkdirSync(shots, { recursive: true });
+    const list = items.filter((i) => /^\d{1,20}$/.test(String(i.id))).slice(0, MAX_ICONS);
+    const files = await thumbnails(list.map((i) => String(i.id)), icons);
+    const kept = [];
+    for (const [n, url] of screens.filter((u) => CDN.test(u)).slice(0, 12).entries()) {
+      try {
+        const r = await fetchImpl(url, { signal: AbortSignal.timeout(15000) });
+        const b = Buffer.from(await r.arrayBuffer());
+        if (r.ok && b.length < 6 * 1024 * 1024 && b.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) { fs.writeFileSync(path.join(shots, `screen-${n}.png`), b); kept.push(`uilab/${id}/screens/screen-${n}.png`); }
+      } catch { /* skip one screenshot */ }
+    }
+    const kit = { id, name: String(name).slice(0, 80), kind, file: source || kind, source: String(source).slice(0, 500), licence: String(licence).slice(0, 300), createdAt: new Date(now()).toISOString(),
+      counts: { ...counts, icons: files.size, screens: kept.length }, tags: [kind], palette: [], gradients: [], fonts: [], strokes: [], corners: [], screens: kept, sheet: null, notes: { state: 'none' },
+      icons: list.map((i) => ({ id: String(i.id), name: i.name, class: i.class, file: files.has(String(i.id)) ? `uilab/${id}/icons/${files.get(String(i.id))}` : null })) };
+    try { const p = JSON.parse(await palette(media, path.join(media, 'sheet.png'))); kit.palette = arr(p.palette); if (p.sheet) kit.sheet = `uilab/${id}/sheet.png`; } catch (e) { kit.paletteError = e.message; }
+    write(kit);
+    if (doStudy) await study(kit, ask);
+    return read(id);
+  }
+
+  // Join and capture: the owner's Roblox app opens the game; screenshots of its window join the kit, then it is studied again.
+  async function capture(id, capturer = (placeId, out) => run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'scripts', 'uilab', 'capture_game.ps1'), '-PlaceId', placeId, '-OutDir', out], { timeout: 240000 })) {
+    const kit = read(id);
+    if (!kit) throw new Error('no such kit');
+    const placeId = /\/games\/(\d{1,20})/.exec(kit.source ?? '')?.[1];
+    if (!placeId) throw new Error('only kits made from a Roblox game can be captured');
+    const shots = path.join(mediaDir, id, 'screens');
+    fs.mkdirSync(shots, { recursive: true });
+    await capturer(placeId, shots);
+    kit.screens = fs.readdirSync(shots).filter((f) => IMG.test(f)).map((f) => `uilab/${id}/screens/${f}`);
+    kit.counts = { ...kit.counts, screens: kit.screens.length };
+    write(kit);
+    await study(kit, 'Study the in-game screenshots: HUD layout, buttons, windows, fonts and colours.');
+    return read(id);
+  }
+
+  async function importGame({ universeId, placeId, name, ask = '' }) {
+    const m = await gameMedia(universeId, fetchImpl);
+    return ingestAssets({ name, kind: 'game', items: m.items, screens: m.screens, counts: m.counts, ask,
+      source: /^\d+$/.test(String(placeId)) ? `https://www.roblox.com/games/${placeId}` : '', licence: "Another game's art: study only, never ship or copy it" });
+  }
+
   function saveNote(id, note, by, task = null) {
     const kit = read(id);
     if (!kit) throw new Error('no such kit');
@@ -195,13 +245,36 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
     return { stats: { kits: kits.length, icons: sum('icons'), screens: sum('screens') }, kits: kits.map(card) };
   }
 
-  return { ingest, study: async (id, ask, engine) => { const k = read(id); if (!k) throw new Error('no such kit'); return study(k, ask, engine); }, saveNote, list, get: (id) => { const k = read(id); return k ? { ...k, note: note(id) } : null; } };
+  // asset catalog rows: one per kit, so a catalog search for "shop" or "egg" finds UI kits too
+  const catalogEntries = () => all().map((k) => ({ id: `uilab:${k.id}`, source: 'uilab', type: 'ui-kit', name: k.name, tags: [...arr(k.tags), k.kind, 'ui'],
+    description: `UI Lab kit (${k.kind}): ${k.counts?.icons ?? 0} icons, ${k.counts?.screens ?? 0} screenshots, palette ${arr(k.palette).slice(0, 5).map((c) => c.hex).join(' ')}. Open #/uilab/${k.id}; read it with hq_uilab_kit.`,
+    licence: k.licence || 'see the kit source', file: null }));
+  return { catalogEntries, ingestAssets, importGame, capture, find: (q) => findGames(q, fetchImpl), ingest, study: async (id, ask, engine) => { const k = read(id); if (!k) throw new Error('no such kit'); return study(k, ask, engine); }, saveNote, list, get: (id) => { const k = read(id); return k ? { ...k, note: note(id) } : null; } };
 }
 
 export function mountUiLab(route, lab, { str, bad, isObj, agentTask, HttpError }) {
   const id = (s) => { if (!ID.test(s)) throw bad('bad kit id'); return s; };
   route('GET', /^\/api\/uilab$/, ({ query }) => lab.list(query?.get('q') ?? ''));
+  route('GET', /^\/api\/uilab\/find$/, async ({ query }) => {
+    try { return { games: await lab.find(query?.get('q') ?? '') }; } catch (e) { throw new HttpError(502, e.message); }
+  });
   route('GET', /^\/api\/uilab\/([a-z0-9-]+)$/, ({ m }) => lab.get(id(m[1])) ?? (() => { throw new HttpError(404, 'no such kit'); })());
+  route('POST', /^\/api\/uilab\/assets$/, async ({ body }) => {
+    if (!isObj(body) || !Array.isArray(body.items) || body.items.length > 2000) throw bad('items must be a list of up to 2000 {id, name}');
+    const items = body.items.filter((i) => isObj(i) && /^\d{1,20}$/.test(String(i.id))).map((i) => ({ id: String(i.id), name: String(i.name ?? '').slice(0, 80) }));
+    const source = str(body.source, 'source', { max: 500 }) ?? '';
+    if (source && !/^https:\/\//i.test(source)) throw bad('source must be an https link');
+    return lab.ingestAssets({ name: str(body.name, 'name', { max: 80, required: true }), kind: 'icons', items, source, licence: str(body.licence, 'licence', { max: 300 }) ?? '', ask: str(body.ask, 'ask', { max: 1000 }) ?? '' });
+  }, { maxBody: 2 * 1024 * 1024 });
+  route('POST', /^\/api\/uilab\/game$/, async ({ body }) => {
+    if (!isObj(body) || !/^\d{1,20}$/.test(String(body.universeId ?? ''))) throw bad('universeId must be a number');
+    try { return await lab.importGame({ universeId: String(body.universeId), placeId: String(body.placeId ?? ''), name: str(body.name, 'name', { max: 100 }) || `Game ${body.universeId}`, ask: str(body.ask, 'ask', { max: 1000 }) ?? '' }); }
+    catch (e) { throw new HttpError(502, e.message); }
+  });
+  route('POST', /^\/api\/uilab\/([a-z0-9-]+)\/capture$/, async ({ m }) => {
+    if (process.platform !== 'win32') throw bad('Join and capture needs the Roblox app on Windows');
+    try { return await lab.capture(id(m[1])); } catch (e) { throw bad(e.message); }
+  });
   route('POST', /^\/api\/uilab$/, async ({ body }) => {
     if (!isObj(body)) throw bad('body must be an object');
     const filename = str(body.filename, 'filename', { max: 200, required: true });
@@ -226,4 +299,4 @@ export function mountUiLab(route, lab, { str, bad, isObj, agentTask, HttpError }
 }
 
 export const STUDY_ENGINES = ['claude-cli', 'codex', 'app', 'antigravity']; // codex: the ChatGPT account, read-only
-export const UILAB_OWNER_ONLY = [['POST', /^\/api\/uilab(?:\/[a-z0-9-]+\/study)?$/]];
+export const UILAB_OWNER_ONLY = [['POST', /^\/api\/uilab(?:\/game|\/assets|\/[a-z0-9-]+\/(?:study|capture))?$/]];

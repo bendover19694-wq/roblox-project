@@ -68,3 +68,14 @@ out({ type: 'item.completed', item: { type: 'agent_message', text: 'studied on '
   assert.ok(getSetting(db, 'codexLimits', {})[DEFAULT_HOME] > Date.now()); // main stays marked until its reset
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('claude wording: a usage-limit epoch and an expired login both rotate to the next account', async () => {
+  const { ENGINE_ACCOUNTS } = await import('../codex-accounts.mjs');
+  assert.equal(ENGINE_ACCOUNTS['claude-cli'].envVar, 'CLAUDE_CONFIG_DIR');
+  const epoch = Math.floor(NOW / 1000) + 3600;
+  assert.ok(LIMIT.test(`Claude AI usage limit reached|${epoch}`));
+  assert.equal(resetAt(`Claude AI usage limit reached|${epoch}`, NOW), epoch * 1000);
+  assert.ok(LIMIT.test('Failed to authenticate: OAuth session expired and could not be refreshed'));
+  assert.equal(resetAt('Failed to authenticate: OAuth session expired', NOW), NOW + 6 * 3600e3);
+  assert.ok(!LIMIT.test('Read 3 files and wrote the HUD'));
+});

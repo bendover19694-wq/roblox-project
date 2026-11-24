@@ -281,3 +281,23 @@ Data lives in `.agent-hq/uilab/<id>/`, images in `.agent-hq/media/uilab/<id>/`. 
 ## Codex lane (ChatGPT account)
 
 Engine `codex` runs a task with the Codex CLI signed in to the owner's ChatGPT account (`codex exec --json`, model from Settings, Usage, "ChatGPT model (Codex)", default `gpt-5.6-terra`). It always runs in a read-only sandbox, so roles that edit files are refused on it: use it for planning, research, reviews and UI Lab studies to spread usage across both accounts. HQ's MCP servers are passed in with `-c mcp_servers.*`. Measured on this PC (2026-11-22): `gpt-6-sol` and `gpt-6-luna` are refused for ChatGPT-account Codex, and Codex image generation answers 403, so 3D reference sheets use Claude Design or Antigravity (layout in `standards/3d.md`). A free ChatGPT plan reaches its Codex usage limit fast (measured: after about two UI Lab studies, with a reset date in the error); a failed study shows "Study failed" on its kit.
+
+## Account rotation (free plans)
+
+Each free account has its own usage limit, so HQ can hold several and move on when one runs out.
+- **ChatGPT (codex engine):** `scripts/codex-add-account.ps1 -Name second` makes `~/.codex-accounts/second`, runs `codex login` there (you sign in yourself in the browser) and adds it to Settings, "ChatGPT accounts". Your first login (`~/.codex`) stays first.
+- **Claude (claude-cli engine):** `scripts/claude-add-account.ps1 -Name second` opens Claude Code with an empty `CLAUDE_CONFIG_DIR` (`~/.claude-accounts/second`); type `/login`, sign in, `/exit`. It is added to Settings, "Claude accounts".
+- HQ runs a task on the first account that is not marked. When the CLI says the usage limit is reached ("try again at ..." or Claude's "limit reached|<time>"), or the login expired, that account is marked until its reset (6 hours for a dead login), the task goes back to the queue, and the next account takes it. When every account is marked, the task fails with the earliest reset time. Code: `codex-accounts.mjs`.
+- **Antigravity:** it has no command line that reports its limit, so HQ cannot switch it by itself. `scripts/antigravity-profile.ps1 -Name second` opens Antigravity with a separate profile for a second Google account; switch by closing it and opening the other profile.
+
+## Sharing updates on Discord
+
+HQ Link page, Updates card: "Share this version on Discord" posts a readable change list (the commit subjects since the last share) in the linked channel, plus an HQ1 `update` message. The partner's HQ shows "<name> shared Agent HQ <hash>" with **Update now**, which runs their own `scripts/agent-hq-update.ps1` on their own branch (the message never chooses what runs). Settings, "Share updates automatically" posts each new version when HQ starts on it. Routes: `GET /api/version`; owner only `POST /api/version/share {notes?}`, `POST /api/version/apply`.
+
+## Asset catalog: packs and UI kits
+
+`hq_catalog_search` (Library page) also lists the installed packs outside the repo (`creative-tools.mjs` `installedPacks`): LihFolk stud voxel models, LihFolk map builder maps, the FOLK Icon Pack, Stud-UI-Clean screenshots, WindUI and script-hub UI library screenshots (look only). Every UI Lab kit is a `ui-kit` row (source `uilab`), so a search for "shop" or "egg" finds kits too.
+
+## UI Lab: find a Roblox game
+
+UI Lab, "Find a Roblox game": type a name, pick a result, **Import its UI**. HQ uses Roblox's public APIs (no login): omni search, the game icon, up to 10 store screenshots, game-pass icons and badge icons (`game-finder.mjs`), and makes a `game` kit marked "study only, never ship". A place's own GUI files cannot be downloaded, so the kit page has **Join and capture**: your Roblox app opens the game signed in as you, `scripts/uilab/capture_game.ps1` saves 3 screenshots of the window after it loads, closes Roblox, and the kit is studied again. Icon lists import too: `POST /api/uilab/assets {name, items: [{id, name}]}` (owner).

@@ -78,6 +78,7 @@ export const FIELDS = [
   f('artAutoRoute', 'Send art to Antigravity', 'bool', true, 'art', 'Icon, thumbnail, ad and key-art tasks go to the Antigravity lane when it is on.'),
   f('codexModel', 'ChatGPT model (Codex)', 'string', 'gpt-5.6-terra', 'usage', 'Model for tasks on the codex engine, run by the Codex CLI on your ChatGPT account. Read-only: planning, research, review and UI Lab studies. gpt-6-sol is refused by Codex on a ChatGPT account today; set it here when it is offered.', { max: 40 }),
   f('codexAccounts', 'ChatGPT accounts (Codex)', 'custom', [], 'usage', 'Codex tasks use the first account under its usage limit and switch to the next when one runs out. Add an account with scripts/codex-add-account.ps1 (you sign in yourself).'),
+  f('claudeAccounts', 'Claude accounts', 'custom', [], 'usage', 'Agents on claude-cli use the first account that is not at its usage limit or signed out, and switch to the next. Add one with scripts/claude-add-account.ps1 (you sign in yourself).'),
   f('useMeshy', 'Use Meshy', 'bool', false, 'art', 'Agents may generate 3D models with Meshy (needs MESHY_API_KEY). Every model spends Meshy credits: preview first, at most 2 refines per task.'),
   f('blenderFallback', 'Allow Blender', 'bool', true, 'art', 'Agents build 3D models and maps in Blender (the LihFolk headless skills or the Blender MCP add-on), after the catalog and a Claude Design sheet. Off: catalog and Claude Design only.'),
   f('modelRefFirst', 'Find references before 3D work', 'bool', true, 'art', 'A designer finds pictures from several angles before any 3D model is built.'),
@@ -209,7 +210,7 @@ function validateCustom(key, value, roleIds) {
       }
       return { enabled: v.enabled, autoRoles: [...new Set(v.autoRoles)], dailyLimit: intIn(v.dailyLimit, 'partnerAccess.dailyLimit', 0, 50) };
     }
-    case 'codexAccounts': return validAccounts(value, bad);
+    case 'codexAccounts': case 'claudeAccounts': return validAccounts(value, bad);
     case 'coop': {
       if (!isObj(value)) throw bad('coop must be an object');
       const v = { ...DEFAULT_COOP, ...value };

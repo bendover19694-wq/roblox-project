@@ -13,6 +13,20 @@ export const SFXMINT_URL = 'https://sfxmint.com/mcp';
 // Skills from the LihFolk packs and 4ghouls, installed in ~/.claude/skills after a security review (research/exemplars/creative-tools.md).
 export const PACK_SKILLS = ['roblox-map-builder', 'lihfolk-stud-voxel', 'folk-stud-ui', 'stud-ui-clean-roblox', '4ghouls-prompter', 'watch-video'];
 
+/** Installed packs outside the repo that the asset catalog lists (folder, name, licence as each pack states it). */
+export function installedPacks(home = os.homedir()) {
+  const sk = (s, sub) => path.join(home, '.claude', 'skills', s, sub);
+  const lf = 'LihFolk free drop: personal use, no redistribution';
+  return [
+    { name: 'lihfolk-stud-voxel-models', dir: sk('lihfolk-stud-voxel', 'examples'), licence: lf, about: 'LihFolk stud voxel models (critters, bosses, props, buildings) with concept sheets, .glb exports' },
+    { name: 'lihfolk-map-builder-maps', dir: sk('roblox-map-builder', 'examples'), licence: lf, about: 'LihFolk map builder worked maps (hubs, towns, caves, islands) with renders and prop kits' },
+    { name: 'folk-icon-pack', dir: path.join(home, 'Documents', 'LihFolk-Packs', 'FOLK Icon Pack'), licence: lf, about: 'FOLK Icon Pack: 4,000+ stud UI icons (currency, eggs, ranks, menus, keys)' },
+    { name: 'stud-ui-clean-roblox', dir: sk('stud-ui-clean-roblox', 'assets'), licence: 'MIT', about: 'Stud UI simulator kit reference screenshots' },
+    { name: 'windui-reference', dir: path.join(home, 'Documents', 'LihFolk-Packs', 'references', 'WindUI'), licence: 'MIT (reference only: a script-hub UI library)', about: 'WindUI screenshots' },
+    { name: 'exploit-ui-libraries-reference', dir: path.join(home, 'Documents', 'LihFolk-Packs', 'references', 'UI-Libraries'), licence: 'Unknown, mixed: look only, never copy', about: 'Screenshots of 60+ script-hub UI libraries (Orion, Kavo, Linoria...) for style study' },
+  ];
+}
+
 const ls = (d) => { try { return fs.readdirSync(d); } catch { return []; } };
 
 /** Newest blender.exe: BLENDER_EXE, else Program Files\Blender Foundation\<version>\blender.exe. Null when absent. */
