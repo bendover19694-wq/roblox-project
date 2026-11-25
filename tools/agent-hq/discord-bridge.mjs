@@ -2,6 +2,7 @@
 // through a webhook; the owner's replies come back by polling the threads over HTTPS (REST only, no gateway).
 // Trust: only ids in ownerIds can talk to agents. A friend's words only ever reach the Lead as data, never as a command.
 import fs from 'node:fs';
+import { classify, REPLY_RULE } from './ditto-orders.mjs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { redact, ROLE_ID } from './link.mjs';
@@ -215,6 +216,25 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     return { file: f };
   }
 
+  const toDitto = (c, text) => { if (c.dittoThreadId) enqueue({ threadId: c.dittoThreadId, username: 'Agent HQ', content: clip(`<@${c.dittoId}> ${redact(text)}`, 1900), mentions: { users: c.dittoId ? [c.dittoId] : [] } }); };
+  // Ditto's orders: safe ones run at once on a read-only role and get answered; risky ones wait for the owner's "send".
+  async function dittoOrder(c, text, attachments = []) {
+    const k = classify(text);
+    if (k.auto && !attachments.length) {
+      const r = await hq('POST', '/api/link/partner-task', { name: 'Ditto', role: k.role, text, reply: true }).then((x) => x.json()).catch(() => ({}));
+      if (r.auto) {
+        toDitto(c, `On it: the ${k.role} agent is working on that (task ${r.taskId}). I will answer here when it is done.`);
+        if (c.threads.lead) enqueue({ threadId: c.threads.lead, username: 'Agent HQ', content: clip(`Ditto's ask went straight to ${k.role} (task ${r.taskId}).`, 300) });
+        return;
+      }
+      dittoSays(c, text, attachments, k.role);
+      toDitto(c, "Got it. Today's quick-task allowance is used up or switched off, so I asked Voltage to OK it.");
+      return;
+    }
+    dittoSays(c, text, attachments);
+    toDitto(c, `Got it. That one waits for Voltage's OK because ${k.why ?? 'it has attachments'}. I will tell you when he answers.`);
+  }
+
   // a friend never reaches the agents directly: the owner sees it in the Lead thread and replies "send" to pass it on
   function dittoSays(c, text, attachments = [], role = '') {
     const flat = (s) => redact(String(s)).replace(/[`<>]/g, "'").replace(/\s+/g, ' ').trim(); // Ditto cannot close the quote or fake a section
@@ -227,10 +247,13 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
   async function handle(c, threadId, m) {
     const text = String(m.content ?? '').trim();
     const uid = m.author?.id;
-    if (threadId === c.dittoThreadId && uid === c.dittoId) { dittoSays(c, text, m.attachments); return; }
+    if (threadId === c.dittoThreadId && uid === c.dittoId) { await dittoOrder(c, text, m.attachments); return; }
     if (!c.ownerIds.includes(uid)) return;
     const askId = m.message_reference?.message_id && c.posts[m.message_reference.message_id];
-    if (askId?.startsWith('ditto:')) { if (/^send$/i.test(text)) await hq('POST', '/api/messages', { role: 'lead', text: askId.slice(6) }); return; }
+    if (askId?.startsWith('ditto:')) {
+      if (/^send$/i.test(text)) { await hq('POST', '/api/messages', { role: 'lead', text: `${askId.slice(6)} ${REPLY_RULE}` }); toDitto(c, 'Voltage gave the OK, the Lead is on it.'); }
+      return;
+    }
     if (askId) {
       const picked = /^[1-9]$/.test(text) ? c.picks?.[m.message_reference.message_id]?.[Number(text) - 1] : null; // "2" means the second listed option
       await hq('POST', `/api/asks/${askId}/answer`, { answer: picked ?? text });
@@ -390,10 +413,11 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
   }
   function disable() { save({ ...config(), enabled: false }); return view(); }
 
-  return { setup, onEvent, poll, view, disable, flush };
+  const replyDitto = (text) => { const c = config(); if (!c.enabled || !c.dittoThreadId) throw new Error('the Discord bridge has no #ditto-collab channel'); toDitto(c, text); return { ok: true }; };
+  return { setup, onEvent, poll, view, disable, flush, replyDitto };
 }
 
-export function mountBridge(route, bridge, { str, bad, isObj, HttpError }) {
+export function mountBridge(route, bridge, { str, bad, isObj, HttpError, agentTask }) {
   const run = async (fn) => {
     try { return await fn(); } catch (e) {
       if (e instanceof HttpError) throw e;
@@ -406,6 +430,13 @@ export function mountBridge(route, bridge, { str, bad, isObj, HttpError }) {
     return s || '';
   };
   route('GET', /^\/api\/bridge$/, () => bridge.view());
+  // an agent working on Ditto's ask (or the Lead) answers him in #ditto-collab
+  route('POST', /^\/api\/bridge\/ditto$/, ({ body, who, headers }) => {
+    if (!isObj(body)) throw bad('body must be an object');
+    const t = who === 'agent' ? agentTask(body, undefined, headers) : null;
+    if (t && t.createdBy !== 'partner' && t.role !== 'lead') throw new HttpError(403, 'only tasks from Ditto, or the Lead, answer Ditto');
+    return bridge.replyDitto(str(body.text, 'text', { max: 1500, required: true }));
+  });
   route('POST', /^\/api\/bridge\/setup$/, ({ body }) => {
     if (!isObj(body)) throw bad('body must be an object');
     const a = { guildId: id(body.guildId, 'guildId', true), ownerId: id(body.ownerId, 'ownerId', true), dittoId: id(body.dittoId, 'dittoId'),

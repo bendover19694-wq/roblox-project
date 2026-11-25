@@ -301,3 +301,10 @@ HQ Link page, Updates card: "Share this version on Discord" posts a readable cha
 ## UI Lab: find a Roblox game
 
 UI Lab, "Find a Roblox game": type a name, pick a result, **Import its UI**. HQ uses Roblox's public APIs (no login): omni search, the game icon, up to 10 store screenshots, game-pass icons and badge icons (`game-finder.mjs`), and makes a `game` kit marked "study only, never ship". A place's own GUI files cannot be downloaded, so the kit page has **Join and capture**: your Roblox app opens the game signed in as you, `scripts/uilab/capture_game.ps1` saves 3 screenshots of the window after it loads, closes Roblox, and the kit is studied again. Icon lists import too: `POST /api/uilab/assets {name, items: [{id, name}]}` (owner).
+
+## Ditto's orders from Discord
+
+Ditto (the owner's teammate) can give this HQ orders in #ditto-collab (`ditto-orders.mjs`, `discord-bridge.mjs`).
+- **Safe asks** (questions, research, ideas, UI and art looks, numbers) run at once on a read-only role (scout, designer or liveops) through partner access and its daily limit. He gets "On it", and the agent answers him in the channel with `hq_ditto_reply` when done.
+- **Risky asks** wait for the owner: anything that would publish, spend or price, delete or reset, touch git, secrets, settings, player data, run commands, or change code or files on this side. They land in the Lead thread with "Reply send"; Ditto is told why it waits and hears when the owner says send.
+- His text always reaches agents as quoted data, never as instructions that change their rules. Only tasks from Ditto, or the Lead, may answer him (`POST /api/bridge/ditto`).

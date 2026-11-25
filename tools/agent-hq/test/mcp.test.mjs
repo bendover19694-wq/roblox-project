@@ -106,7 +106,7 @@ test('initialize echoes protocol version', async () => {
 test('tools/list has the 33 tools', async () => {
   const r = await ide.rpc('tools/list', {});
   assert.deepEqual(r.result.tools.map((t) => t.name).sort(), [
-    'hq_add_media', 'hq_ask_owner', 'hq_asset_add', 'hq_catalog_fetch', 'hq_catalog_search', 'hq_claim_task', 'hq_complete', 'hq_coop', 'hq_create_task', 'hq_game_check', 'hq_game_create', 'hq_game_search', 'hq_idea_score', 'hq_knowledge_read', 'hq_knowledge_search', 'hq_lane_gate',
+    'hq_add_media', 'hq_ask_owner', 'hq_asset_add', 'hq_catalog_fetch', 'hq_catalog_search', 'hq_claim_task', 'hq_complete', 'hq_coop', 'hq_create_task', 'hq_ditto_reply', 'hq_game_check', 'hq_game_create', 'hq_game_search', 'hq_idea_score', 'hq_knowledge_read', 'hq_knowledge_search', 'hq_lane_gate',
     'hq_learn', 'hq_link_read', 'hq_link_say', 'hq_link_share', 'hq_list_tasks', 'hq_metric', 'hq_next_task', 'hq_note', 'hq_notebook_add', 'hq_notebook_mirror', 'hq_notebook_read', 'hq_open_studio', 'hq_pitch', 'hq_preferences_propose', 'hq_research_save', 'hq_stage_request', 'hq_task_move', 'hq_tools', 'hq_uilab_kit', 'hq_uilab_note', 'hq_uilab_search', 'hq_vault',
   ]);
 });
