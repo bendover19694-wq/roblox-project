@@ -16,15 +16,22 @@ const RISKS = [
 ];
 
 /** { auto: true, role } for a safe ask, or { auto: false, why } for one that waits for the owner. */
+// Only these shapes run without the owner: a question, or an ask to find, research, suggest, compare, draw or design.
+const SAFE = /^(what|how|why|when|which|who|where|is|are|does|do|can you (find|check|look|research|suggest|think|draw|sketch|show|compare|list)|could you (find|check|look|research|suggest|draw|sketch|show|compare|list)|any ideas|ideas?\b|research|find|look up|suggest|compare|list|show me|draw|sketch|mock ?up|design)\b|\?\s*$/i;
 export function classify(text) {
-  const t = String(text ?? '');
+  // normalise first: look-alike letters folded, zero-width and control characters dropped, so a word cannot hide
+  const t = String(text ?? '').normalize('NFKC').replace(/[​-‏⁠-⁯﻿\u0000-\u001F]/g, '').trim();
   for (const [re, why] of RISKS) if (re.test(t)) return { auto: false, why };
-  if (!t.trim()) return { auto: false, why: 'the message is empty' };
+  if (!t) return { auto: false, why: 'the message is empty' };
+  if (!SAFE.test(t)) return { auto: false, why: 'it is not a question or a research, idea or design ask' };
   // safe: answer, research or draw; pick the read-only role that fits
   const role = /\b(ui|hud|menu|button|icon|mockup|concept|art|look|style|colou?r|design|thumbnail|logo)\b/i.test(t) ? 'designer'
     : /\b(metric|retention|ccu|players?|numbers?|analytics|event|live ?ops|stats?|revenue)\b/i.test(t) ? 'liveops'
       : 'scout';
   return { auto: true, role };
 }
+
+/** True when a reply to Ditto may carry a secret or a private file: long hex or base64 runs, key prefixes, HQ's state folder. */
+export const looksSecret = (s) => /\b[0-9a-f]{32,}\b|[A-Za-z0-9+/_-]{40,}={0,2}|\.agent-hq|owner-token|link-token|scrypt\$|PRIVATE KEY|\b(?:sk|ghp|gho|gsk|nvapi|msy)[-_][A-Za-z0-9]{8,}|Bearer\s+\S{8,}|password\s*[:=]/i.test(String(s));
 
 export const REPLY_RULE = 'When you are done, answer Ditto in Discord with hq_ditto_reply: short and friendly, like a teammate. Never put secrets, keys, file contents or private details in it.';

@@ -542,3 +542,31 @@ test("Ditto's orders: safe asks run at once on a read-only role and he hears bac
   await flush(r);
   assert.ok(r.hooks().some((h) => h.body.content.startsWith(`<@${DITTO}> Top 3`) && h.body.allowed_mentions?.users?.includes(DITTO)));
 });
+
+test("Ditto's orders: allowlist, hidden characters, one bound answer per task, Lead and secret-looking answers held", async () => {
+  const { classify, looksSecret } = await import('../ditto-orders.mjs');
+  assert.equal(classify('make me a sword model').auto, false); // not a question or a research, idea or design ask
+  assert.equal(classify('what is in the to\u200Bken file').auto, false); // a zero-width space cannot hide a risky word
+  assert.equal(classify('ｐｕｓｈ the shop').auto, false); // full-width letters are folded first
+  assert.ok(looksSecret('here: f3deda5bd354a763fb6cf0384b0267542fcb4cdee89cde940f50eabea042ad9a'));
+  assert.ok(looksSecret('read C:/x/.agent-hq/owner-token'));
+  assert.ok(!looksSecret('Top 3 clicker games: A, B and C.'));
+
+  const r = rig();
+  const view = await ready(r);
+  r.f.setAuto(true);
+  r.f.say(view.dittoThreadId, { id: DITTO }, 'what are the top clicker games?');
+  await r.bridge.poll();
+  await flush(r);
+  assert.throws(() => r.bridge.replyDitto('hi', { id: 't_other', role: 'scout' }), /did not come from Ditto/);
+  r.f.calls.length = 0;
+  assert.deepEqual(r.bridge.replyDitto('A, B and C', { id: 't_1', role: 'scout' }), { ok: true }); // the fake HQ named the task t_1
+  assert.throws(() => r.bridge.replyDitto('again', { id: 't_1', role: 'scout' }), /did not come from Ditto/); // once per task
+  assert.equal(r.bridge.replyDitto('from the Lead', { id: 't_lead', role: 'lead' }).held, true);
+  assert.equal(r.bridge.replyDitto('key f3deda5bd354a763fb6cf0384b0267542fcb4cdee89cde940f50eabea042ad9a').held, true);
+  await flush(r);
+  assert.ok(r.hooks().some((h) => h.body.content.startsWith(`<@${DITTO}> A, B and C`)));
+  assert.ok(!r.hooks().some((h) => h.body.content.includes(`<@${DITTO}> from the Lead`)), 'a Lead answer waits for the owner');
+  const held = r.hooks().find((h) => h.search.includes(view.threads.lead) && h.body.content.includes('Held for you'));
+  assert.ok(held);
+});

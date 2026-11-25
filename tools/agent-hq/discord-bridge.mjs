@@ -2,7 +2,7 @@
 // through a webhook; the owner's replies come back by polling the threads over HTTPS (REST only, no gateway).
 // Trust: only ids in ownerIds can talk to agents. A friend's words only ever reach the Lead as data, never as a command.
 import fs from 'node:fs';
-import { classify, REPLY_RULE } from './ditto-orders.mjs';
+import { classify, REPLY_RULE, looksSecret } from './ditto-orders.mjs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { redact, ROLE_ID } from './link.mjs';
@@ -223,6 +223,7 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     if (k.auto && !attachments.length) {
       const r = await hq('POST', '/api/link/partner-task', { name: 'Ditto', role: k.role, text, reply: true }).then((x) => x.json()).catch(() => ({}));
       if (r.auto) {
+        save({ ...config(), dittoTasks: [...(config().dittoTasks ?? []), r.taskId].slice(-50) }); // only this task may answer him, once
         toDitto(c, `On it: the ${k.role} agent is working on that (task ${r.taskId}). I will answer here when it is done.`);
         if (c.threads.lead) enqueue({ threadId: c.threads.lead, username: 'Agent HQ', content: clip(`Ditto's ask went straight to ${k.role} (task ${r.taskId}).`, 300) });
         return;
@@ -254,6 +255,7 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
       if (/^send$/i.test(text)) { await hq('POST', '/api/messages', { role: 'lead', text: `${askId.slice(6)} ${REPLY_RULE}` }); toDitto(c, 'Voltage gave the OK, the Lead is on it.'); }
       return;
     }
+    if (askId?.startsWith('dittoreply:')) { if (/^send$/i.test(text)) toDitto(c, askId.slice(11)); return; } // the owner let a held reply go
     if (askId) {
       const picked = /^[1-9]$/.test(text) ? c.picks?.[m.message_reference.message_id]?.[Number(text) - 1] : null; // "2" means the second listed option
       await hq('POST', `/api/asks/${askId}/answer`, { answer: picked ?? text });
@@ -413,7 +415,26 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
   }
   function disable() { save({ ...config(), enabled: false }); return view(); }
 
-  const replyDitto = (text) => { const c = config(); if (!c.enabled || !c.dittoThreadId) throw new Error('the Discord bridge has no #ditto-collab channel'); toDitto(c, text); return { ok: true }; };
+  // An agent's answer to Ditto: known secret formats are stripped, and anything that still looks like a secret or a private
+  // file is held in the Lead thread for the owner's "send" instead of going out.
+  // task: the agent's task (null when the owner writes). Only a task Ditto's own ask started answers him directly, once;
+  // the Lead's answers, and any that may hold a secret or private file, wait in the Lead thread for the owner's "send".
+  const replyDitto = (text, task = null) => {
+    const c = config();
+    if (!c.enabled || !c.dittoThreadId) throw new Error('the Discord bridge has no #ditto-collab channel');
+    const clean = redact(String(text));
+    const mine = !task || (c.dittoTasks ?? []).includes(task.id);
+    if (task && !mine && task.role !== 'lead') throw new Error('this task did not come from Ditto');
+    if (task && mine) save({ ...config(), dittoTasks: (config().dittoTasks ?? []).filter((x) => x !== task.id) }); // one answer per task
+    if (!mine || looksSecret(clean)) {
+      if (!c.threads.lead) throw new Error('no Lead thread yet');
+      const why = mine ? 'it may contain a secret or a private file' : 'it comes from the Lead';
+      enqueue({ threadId: c.threads.lead, username: 'Agent HQ', content: clip(`Held for you because ${why}: a reply to Ditto. Reply "send" to this message to send it.\n\n${clean.slice(0, 1500)}`, 1900), askId: `dittoreply:${clean.slice(0, 1500)}` });
+      return { ok: true, held: true };
+    }
+    toDitto(c, clean);
+    return { ok: true };
+  };
   return { setup, onEvent, poll, view, disable, flush, replyDitto };
 }
 
@@ -433,9 +454,12 @@ export function mountBridge(route, bridge, { str, bad, isObj, HttpError, agentTa
   // an agent working on Ditto's ask (or the Lead) answers him in #ditto-collab
   route('POST', /^\/api\/bridge\/ditto$/, ({ body, who, headers }) => {
     if (!isObj(body)) throw bad('body must be an object');
-    const t = who === 'agent' ? agentTask(body, undefined, headers) : null;
-    if (t && t.createdBy !== 'partner' && t.role !== 'lead') throw new HttpError(403, 'only tasks from Ditto, or the Lead, answer Ditto');
-    return bridge.replyDitto(str(body.text, 'text', { max: 1500, required: true }));
+    let t = null;
+    if (who !== 'owner') { // fail closed: anyone but the owner needs the task token of a working task from Ditto, or the Lead's
+      t = agentTask(body, undefined, headers);
+      if (!t || (t.createdBy !== 'partner' && t.role !== 'lead')) throw new HttpError(403, 'only tasks from Ditto, or the Lead, answer Ditto');
+    }
+    try { return bridge.replyDitto(str(body.text, 'text', { max: 1500, required: true }), t); } catch (e) { throw new HttpError(403, e.message); }
   });
   route('POST', /^\/api\/bridge\/setup$/, ({ body }) => {
     if (!isObj(body)) throw bad('body must be an object');

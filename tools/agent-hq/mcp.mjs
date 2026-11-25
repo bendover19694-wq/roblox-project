@@ -88,7 +88,7 @@ export const TOOLS = [
   { name: 'hq_uilab_note', description: 'Designer or UI: save your study note for a UI Lab kit (Markdown, sections as the study task lists). HQ adds related kits and makes it searchable for every agent.',
     inputSchema: { type: 'object', properties: { id: str({ maxLength: 60 }), note: str({ maxLength: 20000 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['id', 'note'] } },
   { name: 'hq_ditto_reply', description: "Answer Ditto (the owner's teammate) in Discord #ditto-collab. Only for a task that came from Ditto, or the Lead. Short and friendly; never secrets, keys, file contents or private details.",
-    inputSchema: { type: 'object', properties: { text: str({ maxLength: 1500 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['text'] } },
+    inputSchema: { type: 'object', properties: { text: str({ maxLength: 1500 }), taskId: TASK_ID, taskToken: TASK_TOKEN }, required: ['text', 'taskId', 'taskToken'] } },
   { name: 'hq_tools', description: 'Which creative tools are ready on this PC: Blender (headless and MCP), Claude Design, Meshy, SFXMint, Penpot and the LihFolk skills, each with the one step that fixes it. Call before any 3D, map or world build.',
     inputSchema: { type: 'object', properties: {} } },
   { name: 'hq_coop', description: "Co-op game: which files are yours, which are your partner's, what their HQ is working on, and who should take the next task. Pass files (repo paths) to check them before you edit.",
