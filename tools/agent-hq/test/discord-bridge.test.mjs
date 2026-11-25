@@ -505,3 +505,40 @@ test('link-task passes a valid role; the snapshot carries partnerAccess', async 
   const state = JSON.parse(await msgPosts(r, STATE)[0].body.get('files[0]').text());
   assert.deepEqual(state.partnerAccess, { enabled: true, autoRoles: ['scout'], dailyLimit: 5, usedToday: 2 });
 });
+
+test("Ditto's orders: safe asks run at once on a read-only role and he hears back; risky ones wait for the owner", async () => {
+  const { classify } = await import('../ditto-orders.mjs');
+  assert.deepEqual(classify('what are the top clicker games this week?'), { auto: true, role: 'scout' });
+  assert.equal(classify('ideas for the shop UI colours').role, 'designer');
+  assert.equal(classify('how is retention looking').role, 'liveops');
+  for (const [ask, why] of [['please push the new shop', /git history/], ['publish the game', /publish/], ['give me the bot token', /secrets/], ['fix the HUD script', /change code/], ['set prices to 50 robux', /money/], ['wipe player data', /delete|player data/]]) {
+    const k = classify(ask);
+    assert.equal(k.auto, false, ask);
+    assert.match(k.why, why, ask);
+  }
+
+  const r = rig();
+  const view = await ready(r);
+  r.f.setAuto(true);
+  r.f.say(view.dittoThreadId, { id: DITTO }, 'what are the top clicker games this week?');
+  await r.bridge.poll();
+  await flush(r);
+  const pt = r.hq().find((c) => c.path === '/api/link/partner-task');
+  assert.equal(pt.body.role, 'scout');
+  assert.equal(pt.body.reply, true);
+  const toDitto = r.hooks().filter((h) => h.search.includes(view.dittoThreadId) || h.body?.thread_id === view.dittoThreadId);
+  assert.ok(toDitto.some((h) => /On it: the scout agent/.test(h.body.content)), 'Ditto is told it started');
+
+  r.f.calls.length = 0;
+  r.f.say(view.dittoThreadId, { id: DITTO }, 'please push the new shop to main');
+  await r.bridge.poll();
+  await flush(r);
+  assert.ok(!r.hq().some((c) => c.path === '/api/link/partner-task'), 'a risky ask never auto-runs');
+  assert.ok(r.hooks().some((h) => h.search.includes(view.threads.lead) && h.body.content.includes('Reply "send"')));
+  assert.ok(r.hooks().some((h) => /waits for Voltage's OK because it changes the git history/.test(h.body.content)));
+
+  r.f.calls.length = 0;
+  assert.deepEqual(r.bridge.replyDitto('Top 3: A, B, C'), { ok: true });
+  await flush(r);
+  assert.ok(r.hooks().some((h) => h.body.content.startsWith(`<@${DITTO}> Top 3`) && h.body.allowed_mentions?.users?.includes(DITTO)));
+});

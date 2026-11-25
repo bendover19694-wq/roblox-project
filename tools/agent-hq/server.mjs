@@ -378,7 +378,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   const route = (method, re, fn, opts = {}) => routes.push([method, re, fn, opts]);
 
   route('GET', /^\/api\/health$/, () => ({ ok: true }));
-  mountLink(route, link, { str, bad, isObj, agentTask, HttpError }); mountCoop(route, coop, { str, bad, isObj }); mountUiLab(route, uilab, { str, bad, isObj, agentTask, HttpError }); mountUpdates(route, updates, { str, bad, isObj, HttpError }); mountBridge(route, bridge, { str, bad, isObj, HttpError }); mountGameContext(route, { db }); mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError });
+  mountLink(route, link, { str, bad, isObj, agentTask, HttpError }); mountCoop(route, coop, { str, bad, isObj }); mountUiLab(route, uilab, { str, bad, isObj, agentTask, HttpError }); mountUpdates(route, updates, { str, bad, isObj, HttpError }); mountBridge(route, bridge, { str, bad, isObj, HttpError, agentTask }); mountGameContext(route, { db }); mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError });
 
   route('GET', /^\/api\/state$/, () => {
     const asks = D.listAsks(db);
