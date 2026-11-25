@@ -35,6 +35,15 @@ return {
 		label = LAUNCHER_LABEL,
 		mask = LAUNCHER_MASK,
 	},
+	index = {
+		id = "rbxassetid://118520398128443",
+		aspect = 2.3,
+		label = LAUNCHER_LABEL,
+		mask = LAUNCHER_MASK,
+	},
+	-- Folk Stud UI essentials (references/asset-ids.md): stud tile (2 x 2 studs) and light rays.
+	studs = { id = "rbxassetid://3014551673", aspect = 1 },
+	rays = { id = "rbxassetid://101267161684975", aspect = 1 },
 	coin = { id = "rbxassetid://99607466522493", aspect = 0.949 },
 	followers = { id = "rbxassetid://82147027167811", aspect = 0.949 },
 	clout = { id = "rbxassetid://110646073067698", aspect = 0.961 },

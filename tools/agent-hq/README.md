@@ -288,7 +288,7 @@ Each free account has its own usage limit, so HQ can hold several and move on wh
 - **ChatGPT (codex engine):** `scripts/codex-add-account.ps1 -Name second` makes `~/.codex-accounts/second`, runs `codex login` there (you sign in yourself in the browser) and adds it to Settings, "ChatGPT accounts". Your first login (`~/.codex`) stays first.
 - **Claude (claude-cli engine):** `scripts/claude-add-account.ps1 -Name second` opens Claude Code with an empty `CLAUDE_CONFIG_DIR` (`~/.claude-accounts/second`); type `/login`, sign in, `/exit`. It is added to Settings, "Claude accounts".
 - HQ runs a task on the first account that is not marked. When the CLI says the usage limit is reached ("try again at ..." or Claude's "limit reached|<time>"), or the login expired, that account is marked until its reset (6 hours for a dead login), the task goes back to the queue, and the next account takes it. When every account is marked, the task fails with the earliest reset time. Code: `codex-accounts.mjs`.
-- **Antigravity:** it has no command line that reports its limit, so HQ cannot switch it by itself. `scripts/antigravity-profile.ps1 -Name second` opens Antigravity with a separate profile for a second Google account; switch by closing it and opening the other profile.
+- **Antigravity:** it keeps its sign-in in Windows Credential Manager (`gemini:antigravity`), so HQ cannot switch it by itself and a separate profile folder does not help. Switch inside Antigravity: account menu, Sign out, then Sign in and pick the other Google account. Signing out only removes the login from this PC.
 
 ## Sharing updates on Discord
 

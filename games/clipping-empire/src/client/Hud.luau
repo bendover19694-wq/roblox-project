@@ -5,6 +5,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Format = require(ReplicatedStorage.Shared.Format)
@@ -158,7 +159,8 @@ function Hud.build(actions: Actions)
 	})
 
 	-- Menus come from the LihFolk UI kit (Panels.luau); these image launchers open them.
-	local left = group("Menu", Vector2.new(0, 0.5), UDim2.new(0, 10, 0.44, 0), Vector2.new(264, 361)) -- clear of the phone thumbstick
+	-- Four launchers, clear of the top pills and the phone thumbstick.
+	local left = group("Menu", Vector2.new(0, 0.5), UDim2.new(0, 10, 0.5, 0), Vector2.new(202, 376))
 	Kit.make(
 		"UIListLayout",
 		{ Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = left }
@@ -167,12 +169,13 @@ function Hud.build(actions: Actions)
 	local LAUNCHERS = {
 		{ name = "Upgrades", art = Art.upgrades, label = "UPGRADES" },
 		{ name = "Rebirth", art = Art.goViral, label = "GO VIRAL" },
+		{ name = "Index", art = Art.index, label = "INDEX" },
 		{ name = "Settings", art = Art.settings, label = "SETTINGS" },
 	}
 	for i, spec in LAUNCHERS do
 		launchers[spec.name] = Kit.imageButton({
 			Name = "Open" .. spec.name,
-			Size = UDim2.fromOffset(264, 115), -- 68 px tall on the smallest phone; label fits at 12 px
+			Size = UDim2.fromOffset(202, 88), -- 52 px tall on the smallest phone; label fits at 12 px
 			Label = spec.label,
 			LabelMax = 30,
 			LayoutOrder = i,
@@ -290,9 +293,14 @@ function Hud.build(actions: Actions)
 		Kit.tween(fill, 0.15, { Size = UDim2.fromScale(ratio, 1) })
 		local full = s.clips >= s.capacity
 		postBtn:SetAttribute("Pulse", full) -- a full drive makes POST breathe
+		local rare = 0
+		for i = 3, #(s.drive or {}) do
+			rare += s.drive[i]
+		end
+		local rareText = if rare >= 1 then `   {Format.short(rare)} RARE+` else ""
 		barText.Text = if full
 			then `DRIVE FULL {Format.short(s.clips)} / {Format.short(s.capacity)}: POST!`
-			else `CLIPS {Format.short(s.clips)} / {Format.short(s.capacity)}`
+			else `CLIPS {Format.short(s.clips)} / {Format.short(s.capacity)}{rareText}`
 		fill.BackgroundColor3 = if full then C.gold else C.pink
 	end
 
@@ -320,7 +328,7 @@ function Hud.build(actions: Actions)
 		info.Text =
 			`+{Format.short(s.tapPower)}/tap   {string.format("%.1f", s.autoRate)}/s   {per}/clip   {math.floor(
 				s.viralChance * 1000
-			) / 10}% viral`
+			) / 10}% viral   x{string.format("%.1f", s.luck)} luck`
 		-- "!" when an upgrade is affordable; never during the tutorial (first-session rule).
 		badge.Visible = panelUi.update(s) and s.tutorialDone == true
 	end
@@ -394,6 +402,147 @@ function Hud.build(actions: Actions)
 		Kit.tween(t, 1.1, { Position = UDim2.fromOffset(0, 20) })
 		task.delay(1.2, function()
 			t:Destroy()
+		end)
+	end
+
+	-- Rarity reveal, scaled to the tier (docs/rng-and-loop.md): float, callout, banner, or a card with rays.
+	local reveal = group("Reveal", Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.4), Vector2.new(520, 300))
+	local revealToken = 0
+	function api.reveal(tier: number, isNew: boolean)
+		local r = Config.RARITIES[tier]
+		if not r then
+			return
+		end
+		local title = r.titles[math.random(#r.titles)]
+		local tag = if isNew then "  NEW!" else ""
+		if r.reveal == "float" then
+			api.float(`{string.upper(r.name)} CLIP{tag}`, r.color, 34)
+			return
+		elseif r.reveal == "callout" then
+			api.float(`{string.upper(r.name)}! {title}{tag}`, r.color, 44)
+			return
+		end
+		if openName then
+			api.toast(`{string.upper(r.name)} CLIP: {title}`, "hype") -- waits for the panel to close
+			return
+		end
+		Kit.big()
+		revealToken += 1
+		local token = revealToken
+		reveal:ClearAllChildren()
+		local isCard = r.reveal == "card"
+		local w, h = if isCard then 440 else 400, if isCard then 170 else 104
+		local pop = Kit.make("UIScale", { Scale = if Kit.reduced() then 1 else 0.6 })
+		local holder = Kit.make("Frame", {
+			Name = "Holder",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(w, h),
+			BackgroundTransparency = 1,
+			Parent = reveal,
+		}, { pop })
+		if isCard then
+			-- Light rays spin behind the top tiers (still under Reduced Motion).
+			local rays = Kit.make("ImageLabel", {
+				Name = "Rays",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(520, 520),
+				BackgroundTransparency = 1,
+				Image = Art.rays.id,
+				ImageColor3 = r.color,
+				ImageTransparency = 0.15,
+				ZIndex = 0,
+				Parent = holder,
+			})
+			if not Kit.reduced() then
+				task.spawn(function()
+					while rays.Parent and token == revealToken do
+						rays.Rotation += 1.5
+						task.wait(1 / 30)
+					end
+				end)
+			end
+		end
+		-- Hard shadow, then the sticker card: burning tier face, ink outline, studs.
+		Kit.make("Frame", {
+			Name = "Shadow",
+			Position = UDim2.fromOffset(6, 8),
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = C.stroke,
+			BackgroundTransparency = 0.35,
+			Parent = holder,
+		}, { Kit.corner(22) })
+		local card = Kit.make("Frame", {
+			Name = "Card",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = r.color,
+			Parent = holder,
+		}, { Kit.corner(22), Kit.stroke(C.stroke, 4) })
+		Kit.make("UIGradient", {
+			Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(205, 205, 205)),
+			Rotation = 90,
+			Parent = card,
+		})
+		Kit.make("ImageLabel", {
+			Name = "Studs",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Image = Art.studs.id,
+			ScaleType = Enum.ScaleType.Tile,
+			TileSize = UDim2.fromOffset(48, 48),
+			ImageTransparency = 0.7,
+			Parent = card,
+		}, { Kit.corner(22) })
+		local lines: { { any } } = if isCard
+			then {
+				{ `{string.upper(r.name)} CLIP!`, 58, 8 },
+				{ title, 30, 74 },
+				{ `Pays x{r.pays} when posted`, 24, 116 },
+			}
+			else { { `{string.upper(r.name)}! {title}`, 36, 10 }, { `Pays x{r.pays}`, 24, 60 } }
+		for _, line in lines do
+			local t = Kit.text({
+				Text = line[1],
+				Size = UDim2.new(1, -28, 0, line[2]),
+				Position = UDim2.fromOffset(14, line[3]),
+				max = line[2],
+				strokeSize = 3.7,
+				ZIndex = 3,
+				Parent = card,
+			})
+			local stroke = t:FindFirstChildOfClass("UIStroke")
+			if stroke then
+				stroke.LineJoinMode = Enum.LineJoinMode.Bevel -- keeps the holes in O and 0 open
+			end
+		end
+		if isNew then
+			local newTag = Kit.make("Frame", {
+				Name = "New",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(1, -18, 0, 4),
+				Size = UDim2.fromOffset(96, 42),
+				Rotation = 10,
+				BackgroundColor3 = C.red,
+				ZIndex = 4,
+				Parent = holder,
+			}, { Kit.corner(12), Kit.stroke(C.stroke, 3) })
+			Kit.text({
+				Text = "NEW!",
+				Size = UDim2.new(1, -8, 1, -6),
+				Position = UDim2.fromOffset(4, 3),
+				max = 28,
+				ZIndex = 5,
+				Parent = newTag,
+			})
+		end
+		if not Kit.reduced() then
+			TweenService:Create(pop, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+		end
+		task.delay(if isCard then 2.6 else 1.8, function()
+			if token == revealToken then
+				reveal:ClearAllChildren()
+			end
 		end)
 	end
 

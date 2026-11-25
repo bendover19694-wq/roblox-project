@@ -7,12 +7,21 @@ local function simulate(seconds: number)
 	local p = Economy.default()
 	local marks = {}
 	local rng = 0.5 -- never viral, so the numbers are a floor
+	local seed = 12345
+	local function uniform(): number -- seeded LCG, so rarity rolls repeat run to run
+		seed = (seed * 16807) % 2147483647 -- Park-Miller: stays exact in a double
+		return seed / 2147483647
+	end
 	for t = 1, seconds do
 		local zone = Economy.unlockedZone(p.followers)
 		if not marks[zone] then
 			marks[zone] = t
 		end
-		Economy.addClips(p, 5 * Economy.tapPower(p) + Economy.autoRate(p))
+		local luck = Economy.luck(p, false)
+		for _ = 1, 5 do
+			Economy.take(p, Economy.tapPower(p), Economy.rollTier(luck, uniform()))
+		end
+		Economy.take(p, Economy.autoRate(p), Economy.rollTier(luck, uniform()))
 		if p.clips >= Economy.capacity(p) then
 			Economy.post(p, zone, false, rng)
 		end

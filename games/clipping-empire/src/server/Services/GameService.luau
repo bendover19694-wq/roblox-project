@@ -89,6 +89,11 @@ local function view(player: Player, p: Economy.Profile)
 		tapPower = Economy.tapPower(p),
 		autoRate = Economy.autoRate(p),
 		viralChance = Economy.viralChance(p),
+		luck = Economy.luck(p, hypeOn),
+		odds = Economy.odds(Economy.luck(p, hypeOn)),
+		drive = p.drive,
+		found = p.found,
+		best = p.best,
 		clipValue = Economy.clipValue(p, zone, hypeOn),
 		zone = zone,
 		unlocked = Economy.unlockedZone(p.followers),
@@ -134,6 +139,39 @@ function GameService.post(player: Player, p: Economy.Profile): (boolean, string?
 	funnel(player, "first_post")
 	markDirty(player)
 	return true, nil
+end
+
+-- Rolls `takes` takes of `per` clips each. One reveal per call: the rarest tier stored, and whether a
+-- tier was found for the first time. Returns clips added.
+local function record(
+	player: Player,
+	p: Economy.Profile,
+	takes: number,
+	per: number,
+	minReveal: number
+): number
+	local luck = Economy.luck(p, (Economy.hype(os.time())))
+	local added, best, newTier = 0, 0, 0
+	for _ = 1, takes do
+		local tier = Economy.rollTier(luck, rng:NextNumber())
+		local n, isNew = Economy.take(p, per, tier)
+		if n <= 0 then
+			break -- drive full
+		end
+		added += n
+		best = math.max(best, tier)
+		if isNew then
+			newTier = math.max(newTier, tier)
+		end
+	end
+	if best >= minReveal or newTier > 1 then
+		Remotes.Celebrate:FireClient(player, "clip", { tier = best, isNew = newTier == best })
+	end
+	if best >= Config.ANNOUNCE_TIER then
+		local name = Config.RARITIES[best].name
+		Remotes.Toast:FireAllClients(`{player.DisplayName} found a {string.upper(name)} clip!`, "hype")
+	end
+	return added
 end
 
 local handlers: { [string]: (Player, Economy.Profile, any) -> (boolean, string?) } = {
@@ -220,7 +258,7 @@ local function onTap(player: Player, count: any)
 		return
 	end
 	s.tapBudget -= taps
-	if Economy.addClips(p, taps * Economy.tapPower(p)) > 0 then
+	if record(player, p, taps, Economy.tapPower(p), 2) > 0 then
 		funnel(player, "first_tap")
 		markDirty(player)
 	end
@@ -274,7 +312,8 @@ function GameService.start()
 						s.dirty = true
 					end
 					local rate = Economy.autoRate(p)
-					if rate > 0 and Economy.addClips(p, rate * dt) > 0 then
+					-- One take per tick; auto clips only reveal Rare and up, so the screen stays calm.
+					if rate > 0 and record(player, p, 1, rate * dt, 3) > 0 then
 						s.dirty = true
 					end
 					if (p.levels.autoPost or 0) > 0 and p.clips >= Economy.capacity(p) then

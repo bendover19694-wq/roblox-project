@@ -49,7 +49,8 @@ export function decode(content) {
   }
   if (o.type === 'board') return decodeBoard(o);
   if (o.type === 'update' && /^[0-9a-f]{7,40}$/.test(o.commit ?? '') && /^[\w./-]{1,100}$/.test(o.branch ?? '')) {
-    return { type: 'update', id: o.id, commit: o.commit, branch: o.branch, notes: fence(clip(o.notes, 1200), 1200) };
+    const repo = /^https:\/\/github\.com\/[\w.-]{1,40}\/[\w.-]{1,100}$/.test(o.repo ?? '') ? o.repo : '';
+    return { type: 'update', id: o.id, commit: o.commit, branch: o.branch, repo, notes: fence(clip(o.notes, 1200), 1200) };
   }
   return null;
 }
@@ -315,14 +316,14 @@ ${redact(t.summary).slice(0, 3000)}`,
 
   const board = (o) => post(o); // coop.mjs builds and sizes it
   // A version announcement: one readable line for people in the channel, then the HQ1 update message the other HQ acts on.
-  async function announce({ commit, branch, notes }) {
+  async function announce({ commit, branch, notes, repo = '' }) {
     const c = config();
     if (!c.enabled || !c.peers.length) throw new Error('HQ Link is not paired yet');
     const text = redact(`**Agent HQ update** \`${commit.slice(0, 7)}\` on \`${branch}\`
 ${notes}
 To update: Agent HQ, HQ Link, Update now (or run scripts/agent-hq-update.ps1).`).slice(0, 1900);
     await discord('POST', `/channels/${c.channelId}/messages`, { content: text, allowed_mentions: { parse: [] } });
-    await post({ type: 'update', id: newRef(), commit, branch, notes: redact(notes).slice(0, 1200) });
+    await post({ type: 'update', id: newRef(), commit, branch, ...(repo ? { repo } : {}), notes: redact(notes).slice(0, 1200) });
     addLog({ dir: 'out', kind: 'update', from: 'owner', text: `shared Agent HQ ${commit.slice(0, 7)} (${branch})` });
     return { ok: true };
   }

@@ -70,3 +70,9 @@ test('share on Discord: a readable line plus the update message, then the partne
   assert.match(vb.partner.notes, /New UI Lab/);
   assert.equal((await b.call('POST', '/api/version/apply', {}, 'wrong')).status >= 401, true);
 });
+
+test('an update message may carry a GitHub repo, and nothing else as a repo', () => {
+  assert.equal(decode(encode({ type: 'update', id: 'u4', commit: 'abc1234', branch: 'coop/x', repo: 'https://github.com/ditto/roblox-project' })).repo, 'https://github.com/ditto/roblox-project');
+  assert.equal(decode(encode({ type: 'update', id: 'u5', commit: 'abc1234', branch: 'coop/x', repo: 'https://evil.example/x' })).repo, '');
+  assert.equal(decode(encode({ type: 'update', id: 'u6', commit: 'abc1234', branch: 'coop/x', repo: 'https://github.com/a/b; rm -rf /' })).repo, '');
+});

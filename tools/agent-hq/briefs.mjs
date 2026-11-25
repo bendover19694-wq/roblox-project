@@ -196,6 +196,7 @@ export const LIBRARY = {
   'pattern-cards': ['research/pattern-cards/', 'one card per studied hit game'],
   monetization: ['research/monetization-policy.md', 'Roblox monetization rules this game follows'],
   airline: ['research/run-an-airline-study.md', 'hands-on study of the reference game'],
+  github: ['research/exemplars/roblox-github.md', 'reviewed GitHub libraries, skills and world tools: what is safe to use, what is look-only'],
   world: ['research/exemplars/world-building.md', 'LihFolk notes, Creator Hub showcase builds and games to study, per world-building job'],
 };
 function librarySection(r) {

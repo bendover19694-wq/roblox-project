@@ -24,6 +24,7 @@ PALETTE = {
     "violet": ("#C989FF", "#7A2CF0", "#3B128C", 0.22),
     "night": ("#5B48A8", "#2B1D66", "#140B38", 0.18),
     "red": ("#FF7A7A", "#E5203A", "#86101F", 0.12),
+    "lime": ("#C4FF4D", "#3FCF1F", "#1C6E0A", 0.22),
 }
 
 # Icons drawn in a 100x100 box, white fill + ink stroke. Symmetric where the shape is symmetric.
@@ -43,6 +44,8 @@ ICONS = {
                C40 34 42 40 46 42 C48 30 46 20 50 8 Z"/>
       <path d="M50 54 C58 62 64 68 62 76 C60 84 56 88 50 88 C44 88 40 84 38 76 C37 68 44 62 50 54 Z"
             fill="#FFC65C" stroke-width="5"/>""",
+    "star": """
+      <path d="M50.0 10.0 L61.2 38.6 L91.8 40.4 L68.1 59.9 L75.9 89.6 L50.0 73.0 L24.1 89.6 L31.9 59.9 L8.2 40.4 L38.8 38.6 Z" stroke-linejoin="round"/>""",
     "gear": """
       {teeth}
       <circle cx="50" cy="50" r="27"/>
@@ -160,6 +163,7 @@ BUTTONS = {
     "upgrades": (460, 200, "orange", "up", (34, 30, 104), 36),
     "goViral": (460, 200, "violet", "flame", (34, 30, 104), 36),
     "settings": (460, 200, "night", "gear", (34, 30, 104), 36),
+    "index": (460, 200, "lime", "star", (34, 30, 104), 36),
 }
 
 

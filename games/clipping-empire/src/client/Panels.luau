@@ -28,6 +28,8 @@ local function effectNow(id: string, s: any): string
 		return Format.short(s.capacity)
 	elseif id == "editing" then
 		return `x{1 + lv * Config.EDIT_PER_LEVEL}`
+	elseif id == "luck" then
+		return `x{1 + lv * Config.LUCK_PER_LEVEL}`
 	elseif id == "viral" then
 		return `{math.floor(s.viralChance * 1000) / 10}%`
 	end
@@ -232,6 +234,75 @@ function Panels.build(actions: any)
 	setWindow.defaultSelection = motionRow.hit
 	Controller.register(setWindow)
 
+	-- Clip Index: every rarity, its odds at the player's luck, what it pays, and how many were found.
+	local ixWindow = C.Window({
+		name = "Index",
+		title = "Clip Index",
+		theme = "codes",
+		icon = "star",
+		size = Vector2.new(720, 430),
+	})
+	local luckText = C.Text("body", "", {
+		color = Theme.Palette.textMid,
+		size = UDim2.new(1, -16, 0, 28),
+		layoutOrder = 0,
+		parent = ixWindow.body,
+	})
+	type TierRow = { swatch: Frame, name: TextLabel, odds: TextLabel, found: TextLabel }
+	local tierRows: { TierRow } = {}
+	for i, r in Config.RARITIES do
+		local card = C.Card({
+			size = UDim2.new(1, -16, 0, 84),
+			layout = "none",
+			layoutOrder = i,
+			parent = ixWindow.body,
+		})
+		-- A rarity swatch: burning tier colour, ink outline, faint studs (Folk Stud rules).
+		local swatch = Instance.new("Frame")
+		swatch.Name = "Swatch"
+		swatch.Size = UDim2.fromOffset(64, 64)
+		swatch.Position = UDim2.fromOffset(0, 2)
+		swatch.BackgroundColor3 = r.color
+		swatch.Parent = card.content
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 14)
+		corner.Parent = swatch
+		local ink = Instance.new("UIStroke")
+		ink.Thickness = 3
+		ink.Color = Color3.fromHex("160F2B")
+		ink.Parent = swatch
+		local studs = Instance.new("ImageLabel")
+		studs.Name = "Studs"
+		studs.BackgroundTransparency = 1
+		studs.Size = UDim2.fromScale(1, 1)
+		studs.Image = "rbxassetid://3014551673"
+		studs.ScaleType = Enum.ScaleType.Tile
+		studs.TileSize = UDim2.fromOffset(48, 48)
+		studs.ImageTransparency = 0.7
+		studs.Parent = swatch
+		local name = C.Text("title", r.name, {
+			align = Enum.TextXAlignment.Left,
+			size = UDim2.new(0.5, -80, 0, 32),
+			position = UDim2.fromOffset(80, 4),
+			parent = card.content,
+		})
+		local odds = C.Text("body", "", {
+			align = Enum.TextXAlignment.Left,
+			color = Theme.Palette.textMid,
+			size = UDim2.new(0.6, -80, 0, 26),
+			position = UDim2.fromOffset(80, 38),
+			parent = card.content,
+		})
+		local found = C.Text("body", "", {
+			align = Enum.TextXAlignment.Right,
+			size = UDim2.new(0.4, 0, 0, 56),
+			position = UDim2.new(0.6, 0, 0, 6),
+			parent = card.content,
+		})
+		tierRows[i] = { swatch = swatch, name = name, odds = odds, found = found }
+	end
+	Controller.register(ixWindow)
+
 	-- Launchers live in Hud.luau (Antigravity image buttons) and open these windows via bindOpener.
 
 	local api = {}
@@ -259,6 +330,24 @@ function Panels.build(actions: any)
 				row.buy.setText(`NEED {Format.money(cost)}`)
 				row.buy.setEnabled(false)
 			end
+		end
+
+		local drop = if s.hypeOn then " (Trailer Drop x2!)" else ""
+		luckText.Text = `Your luck: x{string.format("%.2f", s.luck)}{drop}`
+		for i, row in tierRows do
+			local r = Config.RARITIES[i]
+			local seen = (s.found[i] or 0) > 0
+			-- Unfound tiers stay a black ??? silhouette, but their odds and payout always show.
+			row.swatch.BackgroundColor3 = if seen then r.color else Color3.fromHex("160F2B")
+			row.name.Text = if seen then r.name else "???"
+			local chance = s.odds[i] or 0
+			local oneIn = if chance > 0 then 1 / chance else math.huge
+			local oddsText = if i == 1
+				then `{math.floor(chance * 100)}% of takes`
+				elseif oneIn < 10 then `1 in {string.format("%.1f", oneIn)}`
+				else `1 in {Format.short(math.floor(oneIn + 0.5))}`
+			row.odds.Text = `{oddsText}   pays x{r.pays}`
+			row.found.Text = if seen then `Found {Format.short(s.found[i])}` else "Not found yet"
 		end
 
 		local function mult(c: number): string

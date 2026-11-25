@@ -20,7 +20,10 @@ export async function versionInfo(root, since) {
   const branch = appBranch() || (await git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])) || 'unknown';
   const range = since && /^[0-9a-f]{7,40}$/.test(since) ? [`${since}..HEAD`] : ['-8'];
   const subjects = (await git(root, ['log', '--format=%s', '--no-merges', ...range])).split('\n').filter(Boolean).slice(0, 8);
-  return { commit, branch, subjects };
+  // where this person's own commits live: their fork (remote "mine") if they have one, else origin
+  const url = (await git(root, ['remote', 'get-url', 'mine'])) || (await git(root, ['remote', 'get-url', 'origin']));
+  const m = /github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/.exec(url);
+  return { commit, branch, subjects, repo: m ? `https://github.com/${m[1]}/${m[2]}` : '' };
 }
 
 export function createUpdates({ root, db, D, link, emit = () => {}, run = (script, args) => spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], { detached: true, stdio: 'ignore', windowsHide: true }).unref() }) {
@@ -35,7 +38,7 @@ export function createUpdates({ root, db, D, link, emit = () => {}, run = (scrip
     if (!/^[0-9a-f]{40}$/.test(v.commit)) throw new Error('this copy of Agent HQ is not a git checkout');
     if (get('lastShared', null)?.commit === v.commit && !extra) return { ok: true, already: true, short: v.commit.slice(0, 7) };
     const notes = [extra.trim(), ...v.subjects.map((s) => `- ${s}`)].filter(Boolean).join('\n').slice(0, 1200) || '- small fixes';
-    await link.announce({ commit: v.commit, branch: v.branch, notes });
+    await link.announce({ commit: v.commit, branch: v.branch, notes, repo: v.repo });
     D.setSetting(db, 'lastShared', { commit: v.commit, at: new Date().toISOString() });
     emit('settings', { key: 'lastShared' });
     return { ok: true, short: v.commit.slice(0, 7) };
