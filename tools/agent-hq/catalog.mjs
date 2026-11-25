@@ -16,6 +16,7 @@ const FILE_OK = /\.(fbx|jpe?g|png|hdr)$/i;
 const MAX_BYTES = 300 * 1024 * 1024;
 const REFRESH_MS = 7 * 86400000;
 const PACK_SCAN_MS = 60000;
+const EXTRA_SCAN_MS = 30 * 60000;
 const PACK_FILES = /\.(png|jpe?g|svg|fbx|obj|glb|gltf|wav|ogg|mp3)$/i;
 const PACK_KIND = [[/\.(wav|ogg|mp3)$/i, 'sound'], [/\.(fbx|obj|glb|gltf)$/i, 'model'], [/./, 'image']];
 
@@ -151,6 +152,8 @@ export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetc
   let base = null; // Poly Haven and LihFolk, built once per refresh
   let packs = [];
   let packsAt = 0;
+  let extraRows = [];
+  let extraAt = 0;
   let localAt = 0; // which Poly Haven assets are in the mirror, rescanned each minute because a mirror can still be filling
   let local = new Set();
 
@@ -198,11 +201,15 @@ export function createAssetCatalog({ root, stateDir, fetchImpl = globalThis.fetc
       base = [...polyhaven(), ...(lf ? readLihfolk(lf) : [])].map(indexed);
     }
     if (Date.now() - packsAt > PACK_SCAN_MS) { // a pack dropped into assets/packs shows up within a minute
-      packs = readPacks(root, extraPacks).map(indexed);
+      packs = readPacks(root).map(indexed);
       packsAt = Date.now();
     }
+    if (extraPacks.length && Date.now() - extraAt > EXTRA_SCAN_MS) { // installed packs are large (one holds 14,000 files): every 30 minutes
+      extraRows = readPacks(path.join(root, '.no-repo-packs'), extraPacks).map(indexed);
+      extraAt = Date.now();
+    }
     const more = extra().map(indexed); // UI Lab kits: few, and they change as the owner drops files in
-    return [...base, ...packs, ...more];
+    return [...base, ...packs, ...extraRows, ...more];
   }
   const all = () => rows().map((r) => r.e);
 

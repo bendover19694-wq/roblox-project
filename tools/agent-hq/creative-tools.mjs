@@ -22,6 +22,7 @@ export function installedPacks(home = os.homedir()) {
     { name: 'lihfolk-map-builder-maps', dir: sk('roblox-map-builder', 'examples'), licence: lf, about: 'LihFolk map builder worked maps (hubs, towns, caves, islands) with renders and prop kits' },
     { name: 'folk-icon-pack', dir: path.join(home, 'Documents', 'LihFolk-Packs', 'FOLK Icon Pack'), licence: lf, about: 'FOLK Icon Pack: 4,000+ stud UI icons (currency, eggs, ranks, menus, keys)' },
     { name: 'stud-ui-clean-roblox', dir: sk('stud-ui-clean-roblox', 'assets'), licence: 'MIT', about: 'Stud UI simulator kit reference screenshots' },
+    { name: 'roblox-ai-media-library', dir: path.join(home, 'Documents', 'LihFolk-Packs', 'references', 'github', 'izzyfrm_roblox-ai'), licence: 'No licence: look only, never upload or ship (other creators\' media)', about: 'roblox-ai media library: game references, UI previews, logos, animations, cutscene and SFX references' },
     { name: 'windui-reference', dir: path.join(home, 'Documents', 'LihFolk-Packs', 'references', 'WindUI'), licence: 'MIT (reference only: a script-hub UI library)', about: 'WindUI screenshots' },
     { name: 'exploit-ui-libraries-reference', dir: path.join(home, 'Documents', 'LihFolk-Packs', 'references', 'UI-Libraries'), licence: 'Unknown, mixed: look only, never copy', about: 'Screenshots of 60+ script-hub UI libraries (Orion, Kavo, Linoria...) for style study' },
   ];
