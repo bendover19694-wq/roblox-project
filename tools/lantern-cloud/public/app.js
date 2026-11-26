@@ -329,7 +329,13 @@ $('taskForm').addEventListener('submit', async (e) => {
   if (b) b.disabled = true;
   const cmd = { type: 'task', role: $('taskRole').value, title: $('taskTitle').value.trim(), body: $('taskBody').value.trim() };
   if ($('taskGame').value) cmd.game = $('taskGame').value;
-  if (await send(cmd, 'Task queued.')) {
+  const where = $('taskWhere').value;
+  let ok = false;
+  if (where === 'pc') ok = await send(cmd, 'Task queued.');
+  else {
+    try { const r = await api('/api/cloud-tasks', { role: cmd.role, title: cmd.title, body: cmd.body, cloud: where }); toast(`Sent to ${where === 'ditto' ? "Ditto's" : "Voltage's"} Claude cloud (request #${r.number}).`); ok = true; loadCloud(); } catch (err) { toast(err.message, true); }
+  }
+  if (ok) {
     $('taskTitle').value = '';
     $('taskBody').value = '';
   }
@@ -356,7 +362,9 @@ $('mqForm').addEventListener('submit', async (e) => {
 
 // Cloud requests (issues in the private hq-collab repo) and whether a cloud worker finished them.
 async function loadCloud() {
-  const ul = $('cloudList');
+  for (const id of ['cloudList', 'cloudListDesk']) await fillCloud($(id));
+}
+async function fillCloud(ul) {
   try {
     const r = await api('/api/cloud-tasks');
     ul.replaceChildren(...(r.configured ? (r.tasks.length ? r.tasks.map((t) => {
