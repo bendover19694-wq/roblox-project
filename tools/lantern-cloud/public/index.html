@@ -149,8 +149,16 @@
           <input id="taskTitle" maxlength="200" placeholder="Fix the Shop text size on phones" required>
           <label for="taskBody">Details</label>
           <textarea id="taskBody" maxlength="1500" rows="6" placeholder="What done looks like"></textarea>
+          <label for="taskWhere">Run on</label>
+          <select id="taskWhere">
+            <option value="pc">Voltage's PC (waits while it is off)</option>
+            <option value="voltage">Voltage's Claude cloud (runs with PCs off)</option>
+            <option value="ditto">Ditto's Claude cloud (runs with PCs off)</option>
+          </select>
           <button type="submit" class="primary">Queue task</button>
         </form>
+        <h3 class="cloud-head">Cloud work</h3>
+        <ul id="cloudListDesk" class="cloud-list" aria-live="polite"></ul>
       </div>
     </aside>
   </div>

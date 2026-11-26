@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent HQ</title>
+<link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="static/hub/hub.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="brand-mark"><svg viewBox="0 0 32 32"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c9b6ff"/><stop offset="1" stop-color="#6d4dff"/></linearGradient></defs><path d="M16 3 29 27H21l-5-9-5 9H3z" fill="url(#bm)"/><path d="M16 12l3.2 6h-6.4z" fill="#0d0b12"/></svg></div>
+      <div><div class="brand-name">Agent HQ</div><div class="brand-sub">your studio</div></div>
+    </div>
+    <button class="search" data-cmdk><span class="i" data-i="search"></span><span>Search or jump t…</span><kbd>Ctrl K</kbd></button>
+
+    <div class="nav-h">Workspace</div>
+    <nav class="nav" id="nav-work"></nav>
+    <div class="nav-h">Studio</div>
+    <nav class="nav" id="nav-studio"></nav>
+    <div class="nav-h">Legacy</div>
+    <nav class="nav nav-legacy" id="nav-legacy"></nav>
+
+    <div class="side-foot">
+      <button class="usage" data-go="settings" id="sideStatus"></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <div class="crumbs">
+        <button class="game-pick" id="gamePick"><span class="gp-ic"><span class="i" data-i="grid"></span></span><span id="gameName">All games</span><span class="i sm" data-i="chev"></span></button>
+        <span class="slash">/</span>
+        <span class="crumb-page" id="crumbPage">Home</span>
+      </div>
+      <div class="top-r">
+        <span class="pill live"><i class="dot"></i>Live · updated <span id="updated">…</span></span>
+        <button class="pill" id="refresh"><span class="i" data-i="refresh"></span>Refresh numbers</button>
+        <button class="pill solid" data-go="review"><span class="i" data-i="bell"></span>Inbox</button>
+      </div>
+    </header>
+    <div class="view" id="view"></div>
+  </main>
+</div>
+
+<div class="menu" id="gameMenu" hidden></div>
+<div class="cmdk" id="cmdk" hidden>
+  <div class="cmdk-box">
+    <div class="cmdk-in"><span class="i" data-i="search"></span><input id="cmdkInput" placeholder="Jump to a page, role, task or game…" autocomplete="off"><kbd>Esc</kbd></div>
+    <div class="cmdk-list" id="cmdkList"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="static/hub/hub.js"></script>
+</body>
+</html>
