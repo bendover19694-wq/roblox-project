@@ -307,14 +307,14 @@ pages.tasks = () => {
           <span class="state ${k}">${STATE_LBL[t.state] || cap(t.state)}</span>
           ${ic('chev','chev')}
         </div>
-        <div class="task-body">
+        ${state.openTask !== t.id ? '' : `<div class="task-body">
           <p style="white-space:pre-wrap">${esc((t.error ? 'Error: ' + t.error + '\n\n' : '') + (t.summary || t.body || 'No details yet.')).slice(0, 1600)}</p>
           <div class="row" style="display:flex;gap:8px;margin-top:8px">
             ${['queued', 'working'].includes(t.state) ? `<button class="btn btn-ghost" data-cancel="${t.id}">${ic('x','sm')}Cancel</button>` : ''}
             ${t.state === 'failed' ? `<button class="btn btn-ghost" data-retry="${t.id}">${ic('refresh','sm')}Retry</button>` : ''}
             <a class="btn btn-ghost" href="${legacyHref('tasks')}">${ic('legacy','sm')}Full log</a>
           </div>
-        </div>
+        </div>`}
       </div>`).join('')}</div>`;
   }).join('')}`;
 };
@@ -534,8 +534,12 @@ function starfield(cv, big) {
     return { a, r, s: .35 + Math.random() * (r < .12 ? 2 : 1.2), sp: .0004 + (.0025 * (.05 / (r + .05))), hue: h < .3 ? 315 : h < .7 ? 265 : 225, tw: Math.random() * 6 };
   });
   const dust = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random(), s: Math.random() * 1.1 }));
-  let t = 0, id;
-  const draw = () => {
+  let t = 0, id, last = -1e9, seen = true; // -1e9: the very first call always draws (reduced motion draws only once)
+  // only draw while the canvas is on screen and the tab is visible, at most 30 times a second (it used to take ~40% of a CPU core)
+  const io = new IntersectionObserver(([e]) => { seen = e.isIntersecting; }); io.observe(cv); rafs.push(() => io.disconnect());
+  const draw = (now = 0) => {
+    if (!seen || document.hidden || now - last < 33) { id = requestAnimationFrame(draw); return; }
+    last = now;
     t++;
     ctx.clearRect(0, 0, W, H);
     for (const d of dust) { ctx.fillStyle = `rgba(255,255,255,${.15 + .25 * Math.sin(t * .02 + d.x * 20) ** 2})`; ctx.fillRect(d.x * W, d.y * H, d.s, d.s); }
@@ -548,14 +552,16 @@ function starfield(cv, big) {
       ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
     }
     ctx.lineWidth = .55;
-    const L = Math.min(N, 260), D = big ? 2600 : 1800;
+    const L = Math.min(N, 150), D = big ? 2600 : 1800;
+    const paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D()]; // four alpha bands: four strokes a frame, not hundreds
     for (let i = 0; i < L; i++) {
       const [x1, y1] = pos[i];
       for (let j = i + 1; j < L; j++) {
         const [x2, y2] = pos[j], dx = x1 - x2, dy = y1 - y2, d2 = dx * dx + dy * dy;
-        if (d2 < D) { ctx.strokeStyle = `rgba(185,165,255,${(1 - d2 / D) * .28})`; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+        if (d2 < D) { const b = Math.min(3, Math.floor((1 - d2 / D) * 4)); paths[b].moveTo(x1, y1); paths[b].lineTo(x2, y2); }
       }
     }
+    paths.forEach((pth, b) => { ctx.strokeStyle = `rgba(185,165,255,${((b + .5) / 4) * .28})`; ctx.stroke(pth); });
     for (let i = 0; i < N; i++) {
       const p = pts[i], [x, y] = pos[i], a = .45 + .55 * Math.abs(Math.sin(t * .03 + p.tw));
       ctx.fillStyle = `hsla(${p.hue},90%,${80}%,${a})`;
@@ -810,6 +816,28 @@ async function iconPicker() {
   };
   el.querySelector('button')?.focus();
 }
+
+// Latest-copy check (freshness.mjs): a quiet bar when HQ is behind its branch, an active Claude session lacks newer Agent HQ work,
+// or a game has a newer copy on another branch. Checked a few seconds after opening and every 10 minutes, never blocking the page.
+async function freshBar() {
+  let f; try { f = await api('GET', '/api/copies'); } catch { return; }
+  let bar = $('#freshBar');
+  if (f.ok) { if (bar) bar.hidden = true; return; }
+  bar ||= document.body.appendChild(Object.assign(document.createElement('div'), { id: 'freshBar', className: 'fresh-bar' }));
+  bar.setAttribute('role', 'status');
+  const lines = [];
+  if (f.hq.behind) lines.push(`Agent HQ is ${f.hq.behind} commit${f.hq.behind > 1 ? 's' : ''} behind ${esc(f.hq.branch)}. <button class="btn pill solid" data-freshup="1">Update now</button>`);
+  for (const x of f.sessions.filter(x => x.active && x.missing)) lines.push(`Claude session <b>${esc(x.branch)}</b> is missing ${x.missing} newer Agent HQ commit${x.missing > 1 ? 's' : ''}: pull ${esc(f.hq.branch)} into it before it changes Agent HQ.`);
+  for (const g of f.games.filter(g => g.stale)) lines.push(`${esc(gameName(g.slug))} has a newer copy (${esc(g.newest.commit)}${g.newest.branches.length ? ` on ${g.newest.branches.map(esc).join(', ')}` : ''}) than the one HQ builds in (${esc(g.hqCommit || 'none')}).`);
+  bar.hidden = false;
+  bar.innerHTML = `<div>${lines.join('<br>')}</div><button class="btn btn-ghost" data-freshx="1" aria-label="Hide until the next check">${ic('x','sm')}</button>`;
+  bar.onclick = async (ev) => {
+    if (ev.target.closest('[data-freshx]')) bar.hidden = true;
+    if (ev.target.closest('[data-freshup]')) await act(() => api('POST', '/api/version/apply', {}), 'Updating: Agent HQ restarts in a moment');
+  };
+}
+setTimeout(freshBar, 4000);
+setInterval(freshBar, 10 * 60000);
 
 hydrate();
 window.addEventListener('hashchange', () => route());

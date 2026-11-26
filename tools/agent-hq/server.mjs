@@ -1,5 +1,5 @@
 // Agent HQ server: HTTP API, SSE, static files. Zero dependencies.
-import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { createCoop, mountCoop, COOP_OWNER_ONLY } from './coop.mjs'; import { createUiLab, mountUiLab, UILAB_OWNER_ONLY } from './ui-lab.mjs'; import { createUpdates, mountUpdates, UPDATES_OWNER_ONLY, versionInfo, gitChanged } from './updates.mjs'; import { createBridge, mountBridge, BRIDGE_OWNER_ONLY } from './discord-bridge.mjs'; import { mountGamesAdmin, mountOpenStudio } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs'; import { createDiscordChat, mountDiscordChat, DISCORD_CHAT_OWNER_ONLY } from './discord-chat.mjs';
+import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { createCoop, mountCoop, COOP_OWNER_ONLY } from './coop.mjs'; import { createUiLab, mountUiLab, UILAB_OWNER_ONLY } from './ui-lab.mjs'; import { createUpdates, mountUpdates, UPDATES_OWNER_ONLY, versionInfo, gitChanged, appBranch } from './updates.mjs'; import { createBridge, mountBridge, BRIDGE_OWNER_ONLY } from './discord-bridge.mjs'; import { mountGamesAdmin, mountOpenStudio } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs'; import { createDiscordChat, mountDiscordChat, DISCORD_CHAT_OWNER_ONLY } from './discord-chat.mjs'; import { createFreshness, mountFreshness, FRESHNESS_OWNER_ONLY } from './freshness.mjs';
 import { createAssetCatalog, mountCatalog, CATALOG_OWNER_ONLY } from './catalog.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -353,7 +353,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     ['GET', /^\/api\/games\/[^/]+\/gate$/], ['POST', /^\/api\/games\/[^/]+\/(?:gate\/(?:start|confirm|checklist)|ad-note)$/],
     ['POST', /^\/api\/pitches\/ideas$/], ['POST', /^\/api\/pitches\/[^/]+\/decide$/], ['POST', /^\/api\/stage-requests\/[^/]+\/decide$/],
     ['POST', /^\/api\/games$/], ['PATCH', /^\/api\/games\/[^/]+$/], ['POST', /^\/api\/games\/[^/]+\/mark-live$/],
-    ...LINK_OWNER_ONLY, ...DISCORD_CHAT_OWNER_ONLY, ...COOP_OWNER_ONLY, ...UILAB_OWNER_ONLY, ...UPDATES_OWNER_ONLY, ...BRIDGE_OWNER_ONLY, ...GAME_CONTEXT_OWNER_ONLY, ...LEARNING_OWNER_ONLY, ...CATALOG_OWNER_ONLY, ...NOTEBOOK_OWNER_ONLY, ['POST', /^\/api\/games\/[^/]+\/play$/], ...IDEAS_OWNER_ONLY, ['POST', /^\/api\/settings$/], ['POST', /^\/api\/roles\/[^/]+$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
+    ...LINK_OWNER_ONLY, ...DISCORD_CHAT_OWNER_ONLY, ...FRESHNESS_OWNER_ONLY, ...COOP_OWNER_ONLY, ...UILAB_OWNER_ONLY, ...UPDATES_OWNER_ONLY, ...BRIDGE_OWNER_ONLY, ...GAME_CONTEXT_OWNER_ONLY, ...LEARNING_OWNER_ONLY, ...CATALOG_OWNER_ONLY, ...NOTEBOOK_OWNER_ONLY, ['POST', /^\/api\/games\/[^/]+\/play$/], ...IDEAS_OWNER_ONLY, ['POST', /^\/api\/settings$/], ['POST', /^\/api\/roles\/[^/]+$/], ['POST', /^\/api\/models\/(?:refresh|test)$/], ['POST', /^\/api\/(?:pause|resume)$/], ['POST', /^\/api\/tasks\/[^/]+\/(?:cancel|retry)$/],
     ['POST', /^\/api\/messages\/[^/]+\/reset$/], ['POST', /^\/api\/memory\/[^/]+\/corrections$/], ['DELETE', /^\/api\/memory\/[^/]+\/corrections\/[^/]+$/], ['POST', /^\/api\/threads\/[^/]+\/read$/],
     ['POST', /^\/api\/market\/corpus$/], ['DELETE', /^\/api\/market\/corpus\/\d+$/], ['POST', /^\/api\/uploads$/],
   ];
@@ -377,7 +377,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   const routes = [];
   const route = (method, re, fn, opts = {}) => routes.push([method, re, fn, opts]);
 
-  route('GET', /^\/api\/health$/, () => ({ ok: true })); mountDiscordChat(route, createDiscordChat({ db, D, stateDir, fetchImpl: linkFetch ?? globalThis.fetch, now }), { HttpError });
+  route('GET', /^\/api\/health$/, () => ({ ok: true })); mountFreshness(route, createFreshness({ root, branch: () => appBranch(), skipGames: () => D.listGames(db).filter((g) => g.archivedAt).map((g) => g.slug) }), { HttpError }); mountDiscordChat(route, createDiscordChat({ db, D, stateDir, fetchImpl: linkFetch ?? globalThis.fetch, now }), { HttpError });
   mountLink(route, link, { str, bad, isObj, agentTask, HttpError }); mountCoop(route, coop, { str, bad, isObj }); mountUiLab(route, uilab, { str, bad, isObj, agentTask, HttpError }); mountUpdates(route, updates, { str, bad, isObj, HttpError }); mountBridge(route, bridge, { str, bad, isObj, HttpError, agentTask }); mountGameContext(route, { db }); mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError });
 
   route('GET', /^\/api\/state$/, () => {

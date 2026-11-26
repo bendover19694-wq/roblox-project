@@ -18,7 +18,7 @@ export async function gitChanged(root) {
 }
 
 export function appBranch({ home = os.homedir() } = {}) {
-  try { return JSON.parse(fs.readFileSync(path.join(home, 'Documents', 'Agent-HQ-App.json'), 'utf8')).branch || null; } catch { return null; }
+  try { return JSON.parse(fs.readFileSync(path.join(home, 'Documents', 'Agent-HQ-App.json'), 'utf8').replace(/^﻿/, '')).branch || null; } catch { return null; } // PowerShell writes a BOM
 }
 
 /** Notes for an announcement: the commit subjects since the last shared version, newest first, at most 8. */

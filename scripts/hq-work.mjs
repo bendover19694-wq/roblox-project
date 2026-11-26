@@ -10,8 +10,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-const [state, ...rest] = process.argv.slice(2);
+const args = process.argv.slice(2).filter((a) => a !== '--force');
+const force = process.argv.includes('--force');
+const [state, ...rest] = args;
 const topic = rest.join(' ').trim();
+
+// Latest-copy guard: a Claude session must not start Agent HQ work on an old checkout. It compares this checkout with
+// the branch the HQ app runs (Documents/Agent-HQ-App.json, else claude/agent-hq-parity-continue-a937bb) on origin.
+if (state === 'start' && !force) {
+  let target = 'claude/agent-hq-parity-continue-a937bb';
+  try { target = JSON.parse(fs.readFileSync(path.join(os.homedir(), 'Documents', 'Agent-HQ-App.json'), 'utf8').replace(/^﻿/, '')).branch || target; } catch { /* default branch */ }
+  const g = (...a) => { try { return execFileSync('git', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60000 }).trim(); } catch { return ''; } };
+  g('fetch', '--quiet', 'origin', target);
+  const missing = Number(g('rev-list', '--count', `HEAD..origin/${target}`, '--', 'tools/agent-hq', 'scripts')) || 0;
+  if (missing > 0) {
+    console.error(`This checkout is missing ${missing} newer Agent HQ commit${missing > 1 ? 's' : ''} from origin/${target}.\nBring them in first (git merge origin/${target}), then ping again. Use --force only if you mean to work on an old copy.`);
+    process.exit(3);
+  }
+}
 if (!['start', 'done'].includes(state) || !topic) {
   console.error('usage: node scripts/hq-work.mjs start|done "<topic>"');
   process.exit(2);

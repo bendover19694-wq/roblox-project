@@ -441,3 +441,6 @@ button.pill.solid:hover{background:#fff}
 .ip-opt:hover,.ip-opt:focus-visible{border-color:#46e08a;outline:none}
 .ip-opt img{width:100%;height:100%;object-fit:cover;display:block}
 .gp-ic img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.fresh-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:70;display:flex;gap:12px;align-items:flex-start;max-width:min(860px,calc(100vw - 32px));padding:12px 14px;border-radius:14px;background:#1f1a12;border:1px solid rgba(255,197,61,.55);color:#ffe2a0;box-shadow:0 18px 50px rgba(0,0,0,.5);line-height:1.5;font-size:14px}
+.fresh-bar[hidden]{display:none}
+.fresh-bar .btn{margin-left:6px}
