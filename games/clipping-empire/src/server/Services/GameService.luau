@@ -18,12 +18,14 @@ local rng = Random.new()
 local tapLimit, forgetTap = Net.limiter(4, 6) -- tap batches per second (client sends ~2/s)
 local actLimit, forgetAct = Net.limiter(6, 10)
 local SETTINGS = { reducedMotion = true, sound = true }
-local ACTIONS = { post = true, buy = true, rebirth = true, setting = true, tutorialDone = true }
+local ACTIONS = { post = true, buy = true, rebirth = true, setting = true, tutorialDone = true, seen = true }
+local SEEN = { index = true }
 
 -- Per-player session state that is never saved.
 type Session = {
 	tapBudget: number,
 	budgetAt: number,
+	autoBank: number, -- auto clips made but not yet stored; a take happens per whole clip batch
 	dirty: boolean,
 	zone: number,
 	funnel: { [string]: boolean },
@@ -100,6 +102,7 @@ local function view(player: Player, p: Economy.Profile)
 		hypeOn = hypeOn,
 		hypeLeft = hypeLeft,
 		tutorialDone = p.tutorialDone,
+		indexSeen = p.indexSeen,
 		canSave = player:GetAttribute("CanSave") == true,
 		settings = p.settings,
 	}
@@ -209,6 +212,16 @@ local handlers: { [string]: (Player, Economy.Profile, any) -> (boolean, string?)
 		markDirty(player)
 		return true, nil
 	end,
+	seen = function(player, p, what)
+		if not Net.isEnum(what, SEEN) then
+			return false, "Bad tip"
+		end
+		if not p.indexSeen then
+			p.indexSeen = true
+			markDirty(player)
+		end
+		return true, nil
+	end,
 	tutorialDone = function(player, p, how)
 		if how == "skip" and not p.tutorialDone then
 			funnel(player, "tutorial_skipped")
@@ -269,7 +282,8 @@ function GameService.start()
 	Remotes.Tap.OnServerEvent:Connect(onTap)
 
 	Players.PlayerAdded:Connect(function(player)
-		sessions[player] = { tapBudget = 0, budgetAt = os.clock(), dirty = true, zone = 1, funnel = {} }
+		sessions[player] =
+			{ tapBudget = 0, budgetAt = os.clock(), autoBank = 0, dirty = true, zone = 1, funnel = {} }
 		funnel(player, "joined")
 		task.spawn(function()
 			DataService.get(player) -- waits for load
@@ -277,7 +291,8 @@ function GameService.start()
 		end)
 	end)
 	for _, player in Players:GetPlayers() do
-		sessions[player] = { tapBudget = 0, budgetAt = os.clock(), dirty = true, zone = 1, funnel = {} }
+		sessions[player] =
+			{ tapBudget = 0, budgetAt = os.clock(), autoBank = 0, dirty = true, zone = 1, funnel = {} }
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		sessions[player] = nil
@@ -312,9 +327,15 @@ function GameService.start()
 						s.dirty = true
 					end
 					local rate = Economy.autoRate(p)
-					-- One take per tick; auto clips only reveal Rare and up, so the screen stays calm.
-					if rate > 0 and record(player, p, 1, rate * dt, 3) > 0 then
-						s.dirty = true
+					-- Auto clips bank up, then become one take of whole clips, so every take (and every
+					-- reveal or Mythic shout) holds at least one clip. Auto takes reveal Rare and up only.
+					s.autoBank += rate * dt
+					local whole = math.floor(s.autoBank)
+					if whole >= 1 then
+						s.autoBank -= whole
+						if record(player, p, 1, whole, 3) > 0 then
+							s.dirty = true
+						end
 					end
 					if (p.levels.autoPost or 0) > 0 and p.clips >= Economy.capacity(p) then
 						GameService.post(player, p)

@@ -5,7 +5,7 @@
 --       clip {tier, isNew} (rarest clip of a batch, server-rolled)
 --   C to S: Tap(count)   [RemoteEvent, batched taps; capped in GameService]
 --   C to S: Act(action, arg) returns (ok, message)   [RemoteFunction; validated in GameService]
---     actions: "post", "buy" (upgrade id), "rebirth", "setting" ("reducedMotion" | "sound"), "tutorialDone"
+--     actions: "post", "buy" (upgrade id), "rebirth", "setting" ("reducedMotion" | "sound"), "tutorialDone", "seen" ("index")
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")

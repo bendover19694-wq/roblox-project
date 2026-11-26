@@ -66,6 +66,7 @@ local function tap()
 end
 
 local tutorial: () -> () -- defined below; the skip action calls it
+local indexSeen = false -- set when the Index opens; the server keeps it (state.indexSeen) across sessions
 
 hud = Hud.build({
 	tap = tap,
@@ -95,6 +96,15 @@ hud = Hud.build({
 -- Tutorial: three steps, each one verb and one target. Ends after the first upgrade.
 function tutorial()
 	if not state or state.tutorialDone or tutorialSent then
+		-- Just-in-time tip (vault: teach the rest as contextual tips): after the first Rare+ finds.
+		local rareFinds = 0
+		for i = 3, #(state and state.found or {}) do
+			rareFinds += state.found[i]
+		end
+		if state and not indexSeen and not state.indexSeen and rareFinds >= 1 then
+			hud.objective("Open INDEX to see your odds", "Index")
+			return
+		end
 		local nextZone = Config.ZONES[(state and state.unlocked or 1) + 1]
 		if nextZone and state then
 			hud.objective(
@@ -156,6 +166,16 @@ Remotes.State.OnClientEvent:Connect(function(view)
 	gates()
 	if first then
 		hud.toast(`Clip the {Config.HYPE_GAME} hype!`, "info")
+	end
+end)
+
+KitController.onChanged(function()
+	if KitController.getCurrent() == "Index" and not indexSeen then
+		indexSeen = true
+		if state and not state.indexSeen then
+			act("seen", "index")
+		end
+		tutorial()
 	end
 end)
 

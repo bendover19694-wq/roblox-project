@@ -19,10 +19,11 @@ Sources: [NPR via Michigan Public: the clipping economy](https://www.michiganpub
 1. **CLIP** (tap, or E / gamepad R2): adds `Tap Power` clips to the drive. Clip Speed adds clips by itself.
 2. The **drive** fills up to `Hard Drive` capacity. When full, the bar turns gold and says POST.
 3. **POST** (or Q / gamepad X): sells every stored clip for cash and followers. Each post has a `Viral Hooks` chance to go viral (x5).
-4. **Upgrades** spend cash. **Followers** unlock new setups down the street (never spent). **Go Viral** resets cash, clips and upgrades for +1 Clout (+50% cash forever).
-5. **Trailer Drop**: every 10 minutes, on a fixed server clock, all clips pay x3 for 90 seconds. The countdown is always true.
+4. **Upgrades** spend cash. **Followers** unlock new setups down the street (never spent). **Go Viral** resets cash, clips and upgrades for +1 Clout (cash x2.25 per Clout, stacking, and +10% luck forever).
+5. **Trailer Drop**: every 10 minutes, on a fixed server clock, all clips pay x3 and luck doubles for 90 seconds. The countdown is always true.
+6. **Clip rarity**: the server rolls every take from Common to Mythic (1 in 50,000). Rarer clips pay up to x250. Lucky Lens, Clout and Trailer Drops raise the odds of Rare and up. The INDEX shows the live odds. Full detail: `docs/game-overview.md` and `docs/rng-and-loop.md`.
 
-Cash per clip = Editing × setup × Trailer Drop × follower bonus (1 + 0.25·log10(1+followers)) × Clout (1 + 0.5·clout).
+Cash per clip = Editing × setup × Trailer Drop × follower bonus (1 + 0.25·log10(1+followers)) × Clout (2.25^clout), and each clip also pays its rarity multiplier.
 
 | Upgrade | Gives | Base cost | Growth | Max |
 |---|---|---|---|---|
@@ -30,6 +31,7 @@ Cash per clip = Editing × setup × Trailer Drop × follower bonus (1 + 0.25·lo
 | Clip Speed | +0.6 auto clips/s | $25 | 1.32 | 60 |
 | Hard Drive | capacity 25 × 1.35^level | $40 | 1.38 | 50 |
 | Editing Skill | +0.25× cash per clip | $60 | 1.42 | 50 |
+| Lucky Lens | +10% luck (Rare and up) | $200 | 1.50 | 40 |
 | Viral Hooks | 3% + 0.5% viral chance | $150 | 1.60 | 26 |
 | Auto Poster | posts when the drive is full | $2,500 | one-off | 1 |
 
@@ -37,13 +39,13 @@ Cash per clip = Editing × setup × Trailer Drop × follower bonus (1 + 0.25·lo
 |---|---|---|
 | Bedroom Setup | 0 | x1 |
 | Gamer Cafe | 300 | x2 |
-| Clip Studio | 4,000 | x4 |
-| Hype Plaza | 40,000 | x8 |
-| Trailer Tower | 400,000 | x16 |
+| Clip Studio | 5,000 | x4 |
+| Hype Plaza | 60,000 | x8 |
+| Trailer Tower | 600,000 | x16 |
 
-Rebirth cost: $150K × 4^rebirths. All numbers live in `src/shared/Config.luau`.
+Rebirth cost: $1M × 3^rebirths. All numbers live in `src/shared/Config.luau`.
 
-**Pacing** (`tests/Pacing.spec.luau`, a bot tapping 5/s that buys the cheapest upgrade, never viral): Gamer Cafe at 50 s, Clip Studio at 4 min, Hype Plaza and first rebirth at about 23 min.
+**Pacing** (`tests/Pacing.spec.luau`, a 3-hour bot tapping 5/s, never viral): Gamer Cafe at 39 s, Clip Studio at 3.4 min, first rebirth at 14 min, then rebirths about 15 to 20 minutes apart.
 
 ## First session (measured in Studio)
 Objective texts are 8 words or fewer, with a pulsing pointer on the target: *Tap CLIP to record clips* → *Tap POST to sell your clips* → *Buy Tap Power in Upgrades* → then a follower goal for the next setup. In the automated playtest: first tap at 10 s, first post at about 17 s, first upgrade at about 25 s. Funnel steps logged with `AnalyticsService:LogOnboardingFunnelStepEvent`: joined, first_tap, first_post, first_upgrade, zone_2, first_rebirth.

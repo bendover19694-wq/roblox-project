@@ -56,6 +56,7 @@ function Hud.build(actions: Actions)
 		toastArea.Position = UDim2.new(0.5, 0, 0, 146 * s)
 		toastLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 	end
+	local revealGroup: Frame? = nil
 	local function rescale()
 		local v = gui.AbsoluteSize
 		local s = math.clamp(math.min(v.X / 1000, v.Y / 560), 0.5, 1.1)
@@ -63,6 +64,9 @@ function Hud.build(actions: Actions)
 			sc.Scale = s
 		end
 		gui:SetAttribute("UiScale", s)
+		if revealGroup then
+			revealGroup.Position = UDim2.new(0.5, 0, 1, -(10 + 236 + 8) * s) -- bottom bar is 236 tall, 10 up
+		end
 		placeToasts()
 	end
 
@@ -76,7 +80,9 @@ function Hud.build(actions: Actions)
 		followers = Art.followers.id,
 		star = Art.clout.id,
 		timer = Art.reel.id,
+		motion = Art.reel.id, -- Reduced Motion row: the film reel reads as "motion"
 	})
+	Icons.registerMany(Art.folkIcons)
 	local function pill(
 		name: string,
 		x: number,
@@ -160,7 +166,7 @@ function Hud.build(actions: Actions)
 
 	-- Menus come from the LihFolk UI kit (Panels.luau); these image launchers open them.
 	-- Four launchers, clear of the top pills and the phone thumbstick.
-	local left = group("Menu", Vector2.new(0, 0.5), UDim2.new(0, 10, 0.5, 0), Vector2.new(202, 376))
+	local left = group("Menu", Vector2.new(0, 0.5), UDim2.new(0, 10, 0.44, 0), Vector2.new(202, 376))
 	Kit.make(
 		"UIListLayout",
 		{ Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = left }
@@ -308,7 +314,7 @@ function Hud.build(actions: Actions)
 		last = s
 		cashText.Text = Format.money(s.cash)
 		followersText.Text = Format.short(s.followers)
-		cloutText.Text = `{s.clout}  (x{1 + Config.CLOUT_MULT * s.clout})`
+		cloutText.Text = `{s.clout}  ({Format.mult(Config.CLOUT_BASE ^ s.clout)})`
 		local zone = Config.ZONES[s.zone]
 		zoneText.Text = `{zone.name}: clips pay x{zone.mult}`
 		zoneText.TextColor3 = zone.color
@@ -325,10 +331,12 @@ function Hud.build(actions: Actions)
 		local per = if s.clipValue < 100
 			then string.format("$%.2f", s.clipValue):gsub("%.?0+$", "")
 			else Format.money(s.clipValue)
+		-- Two spaces between stats, so the line fits the 560 design px on the smallest phone.
+		local viral = math.floor(s.viralChance * 1000) / 10
 		info.Text =
-			`+{Format.short(s.tapPower)}/tap   {string.format("%.1f", s.autoRate)}/s   {per}/clip   {math.floor(
-				s.viralChance * 1000
-			) / 10}% viral   x{string.format("%.1f", s.luck)} luck`
+			`+{Format.short(s.tapPower)}/tap  {string.format("%.1f", s.autoRate)}/s  {per}/clip  {viral}% viral  {Format.mult(
+				s.luck
+			)} luck`
 		-- "!" when an upgrade is affordable; never during the tutorial (first-session rule).
 		badge.Visible = panelUi.update(s) and s.tutorialDone == true
 	end
@@ -386,28 +394,41 @@ function Hud.build(actions: Actions)
 	end
 
 	-- Floating text that rises and fades. Skipped motion keeps the text, without the rise.
-	function api.float(text: string, color: Color3, size: number)
+	-- `startY` lifts a float above the tap floats (rarity callouts use it so the two never stack).
+	function api.float(text: string, color: Color3, size: number, startY: number?)
 		if openName then
 			return -- effects never sit on top of a panel
 		end
+		local y = startY or 100
 		local t = Kit.text({
 			Text = text,
 			Size = UDim2.fromOffset(700, size),
-			Position = UDim2.fromOffset(0, 100),
+			Position = UDim2.fromOffset(0, y),
 			TextColor3 = color,
 			max = size,
 			strokeSize = 3,
 			Parent = fx,
 		})
-		Kit.tween(t, 1.1, { Position = UDim2.fromOffset(0, 20) })
+		Kit.tween(t, 1.1, { Position = UDim2.fromOffset(0, y - 80) })
 		task.delay(1.2, function()
 			t:Destroy()
 		end)
 	end
 
 	-- Rarity reveal, scaled to the tier (docs/rng-and-loop.md): float, callout, banner, or a card with rays.
-	local reveal = group("Reveal", Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.4), Vector2.new(520, 300))
+	-- Sits on top of the bottom bar, so the card never covers the objective on any screen shape
+	-- (rescale() keeps it 8 design px above the objective pill).
+	local reveal = group("Reveal", Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -260), Vector2.new(520, 180))
+	revealGroup = reveal
 	local revealToken = 0
+	-- Removes the shown card only: the group's own UIScale (screen fit) must survive.
+	local function clearReveal()
+		for _, c in reveal:GetChildren() do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
+		end
+	end
 	function api.reveal(tier: number, isNew: boolean)
 		local r = Config.RARITIES[tier]
 		if not r then
@@ -416,10 +437,10 @@ function Hud.build(actions: Actions)
 		local title = r.titles[math.random(#r.titles)]
 		local tag = if isNew then "  NEW!" else ""
 		if r.reveal == "float" then
-			api.float(`{string.upper(r.name)} CLIP{tag}`, r.color, 34)
+			api.float(`{string.upper(r.name)} CLIP{tag}`, r.color, 34, 30)
 			return
 		elseif r.reveal == "callout" then
-			api.float(`{string.upper(r.name)}! {title}{tag}`, r.color, 44)
+			api.float(`{string.upper(r.name)}! {title}{tag}`, r.color, 44, 20)
 			return
 		end
 		if openName then
@@ -429,9 +450,9 @@ function Hud.build(actions: Actions)
 		Kit.big()
 		revealToken += 1
 		local token = revealToken
-		reveal:ClearAllChildren()
+		clearReveal()
 		local isCard = r.reveal == "card"
-		local w, h = if isCard then 440 else 400, if isCard then 170 else 104
+		local w, h = if isCard then 440 else 400, if isCard then 160 else 104
 		local pop = Kit.make("UIScale", { Scale = if Kit.reduced() then 1 else 0.6 })
 		local holder = Kit.make("Frame", {
 			Name = "Holder",
@@ -447,7 +468,7 @@ function Hud.build(actions: Actions)
 				Name = "Rays",
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.fromOffset(520, 520),
+				Size = UDim2.fromOffset(380, 380), -- stays clear of the top pills
 				BackgroundTransparency = 1,
 				Image = Art.rays.id,
 				ImageColor3 = r.color,
@@ -541,7 +562,7 @@ function Hud.build(actions: Actions)
 		end
 		task.delay(if isCard then 2.6 else 1.8, function()
 			if token == revealToken then
-				reveal:ClearAllChildren()
+				clearReveal()
 			end
 		end)
 	end

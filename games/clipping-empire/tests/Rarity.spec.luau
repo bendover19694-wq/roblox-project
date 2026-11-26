@@ -19,17 +19,57 @@ test("odds sum to 1 at any luck and match base odds at luck 1", function()
 		end
 	end
 	local base = Economy.odds(1)
-	assert(math.abs(base[N] - 1 / Config.RARITIES[N].oneIn) < 1e-12, "top tier is exactly 1 in N at luck 1")
+	for i = 2, N do
+		assert(
+			math.abs(base[i] - 1 / Config.RARITIES[i].oneIn) < 1e-12,
+			`tier {i} is exactly 1 in N at luck 1`
+		)
+	end
 end)
 
-test("luck raises every non-Common tier and lowers Common", function()
+test("luck raises Rare and up, and never wipes out a tier", function()
 	local a, b = Economy.odds(1), Economy.odds(2)
-	assert(b[1] < a[1], "common drops")
-	for i = 3, N do -- Uncommon can dip at huge luck as rarer tiers take its share; Rare+ always rise here
+	assert(b[1] < a[1] and b[2] < a[2], "Common and Uncommon shrink")
+	for i = Config.LUCK_FROM_TIER, N do
 		assert(b[i] > a[i], `tier {i} rises`)
 	end
-	local huge = Economy.odds(1e9)
-	assert(huge[N] == 1 and huge[1] == 0, "luck beyond every oneIn always rolls the top tier")
+	local top = Economy.odds(Config.LUCK_CAP)
+	for i = 1, N do
+		assert(top[i] > 0, `tier {i} still possible at the luck cap`)
+	end
+	assert(top[1] > 0.25, `Common stays common at the cap: {top[1]}`)
+end)
+
+test("stacked luck is capped", function()
+	local p = Economy.default()
+	p.levels.luck = Config.UPGRADES.luck.max
+	p.clout = 1000
+	assert(Economy.luck(p, true) == Config.LUCK_CAP, "capped")
+end)
+
+test("rarity waits: median and p90 minutes at a steady 7 takes a second", function()
+	-- Vault (Rarity Ladders and Drop Pacing Math): pace on the median and p90, not the mean.
+	local perMin = 7 * 60
+	local function minutes(p: number, q: number): number -- takes until P(found) = q, in minutes
+		return math.log(1 - q) / math.log(1 - p) / perMin
+	end
+	local odds = Economy.odds(1)
+	local line = {}
+	for i = 2, N do
+		table.insert(
+			line,
+			`{Config.RARITIES[i].name} {string.format("%.1f", minutes(odds[i], 0.5))}/{string.format(
+				"%.1f",
+				minutes(odds[i], 0.9)
+			)}`
+		)
+	end
+	print("rarity waits (median/p90 min, luck 1): " .. table.concat(line, "  "))
+	assert(minutes(odds[N - 1], 0.5) <= 10, "a first Legendary in the first session (median)")
+	assert(minutes(odds[N], 0.5) >= 30, "Mythic is a long goal, not a first-session drop")
+	assert(minutes(odds[N], 0.5) <= 180, "but its median wait stays within a few sessions")
+	local lucky = Economy.odds(10) -- a mid-game player: some Lens, a few Clout, a Trailer Drop
+	assert(minutes(lucky[N], 0.9) <= 60, "with mid-game luck, p90 Mythic is within an hour")
 end)
 
 test("rollTier maps the roll rarest first", function()

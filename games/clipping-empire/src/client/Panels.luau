@@ -351,7 +351,7 @@ function Panels.build(actions: any)
 		end
 
 		local function mult(c: number): string
-			return "x" .. tostring(1 + Config.CLOUT_MULT * c)
+			return Format.mult(Config.CLOUT_BASE ^ c)
 		end
 		compare.setTiers(
 			{ title = `Clout {s.clout} cash`, value = mult(s.clout) },
