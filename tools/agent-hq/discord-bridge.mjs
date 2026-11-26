@@ -17,6 +17,7 @@ const SNAP_MAX = 300000;
 const CMD_ID = /^c_[0-9a-f]{12}$/;
 const SAFE_ID = /^[\w-]{1,40}$/;
 const SHARE_DIRS = ['assets', 'research', 'docs'];
+const LIMIT_ERR = /usage limit|rate.?limit|limit (?:reached|hit)|out of (?:extra )?usage|quota|\b429\b|hit your limit/i;
 const DEFAULTS = { enabled: false, guildId: '', channelId: '', ownerIds: [], dittoId: '', threads: {}, dittoThreadId: '', cursors: {}, posts: {}, picks: {}, seen: [],
   stateChannelId: '', commandsChannelId: '', dittoChannelId: '', avatarBase: '', botId: '', snapMsgId: '', snapHash: '', snapAt: 0, ran: [] };
 
@@ -50,6 +51,7 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     return process.env.DISCORD_BOT_TOKEN || '';
   };
   const dittoHookFile = path.join(stateDir, 'bridge-webhook-ditto');
+  const dittoAiIds = () => (D.getSetting(db, 'link', {}).peers ?? []).map((p) => p.id); // Ditto's AI posts as his HQ's bot, the one HQ Link is paired with
   const hook = (file = hookFile) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
 
   class Slow extends Error {}
@@ -217,6 +219,17 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
   }
 
   const toDitto = (c, text) => { if (c.dittoThreadId) enqueue({ threadId: c.dittoThreadId, username: 'Agent HQ', content: clip(`<@${c.dittoId}> ${redact(text)}`, 1900), mentions: { users: c.dittoId ? [c.dittoId] : [] } }); };
+  // Is Voltage's AI able to work right now? A failed task in the last 2 hours that names a usage limit, or the pause switch.
+  function availability() {
+    const since = new Date(now() - 2 * 3600e3).toISOString();
+    let limited = false;
+    try { limited = db.prepare("SELECT error FROM tasks WHERE state='failed' AND COALESCE(endedAt, createdAt) > ? ORDER BY rowid DESC LIMIT 20").all(since).some((r) => LIMIT_ERR.test(r.error ?? '')); } catch { /* old schema: treat as available */ }
+    if (limited) return "Heads up: Voltage's AI is at its usage limit right now, so new work waits until it resets. Your message is saved, nothing is lost.";
+    if (D.getSetting(db, 'paused', false) === true) return "Heads up: Voltage's AI is unavailable right now (paused). Your message is saved and runs when he turns it back on.";
+    return '';
+  }
+  const withStatus = (text) => [availability(), text].filter(Boolean).join('\n');
+
   // Ditto's orders: safe ones run at once on a read-only role and get answered; risky ones wait for the owner's "send".
   async function dittoOrder(c, text, attachments = []) {
     const k = classify(text);
@@ -224,16 +237,33 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
       const r = await hq('POST', '/api/link/partner-task', { name: 'Ditto', role: k.role, text, reply: true }).then((x) => x.json()).catch(() => ({}));
       if (r.auto) {
         save({ ...config(), dittoTasks: [...(config().dittoTasks ?? []), r.taskId].slice(-50) }); // only this task may answer him, once
-        toDitto(c, `On it: the ${k.role} agent is working on that (task ${r.taskId}). I will answer here when it is done.`);
+        toDitto(c, withStatus(`On it. Voltage's ${k.role} agent is looking into that now (task ${r.taskId}). Voltage reads every answer before it goes out, so the reply lands here a bit after the agent finishes.`));
         if (c.threads.lead) enqueue({ threadId: c.threads.lead, username: 'Agent HQ', content: clip(`Ditto's ask went straight to ${k.role} (task ${r.taskId}).`, 300) });
         return;
       }
       dittoSays(c, text, attachments, k.role);
-      toDitto(c, "Got it. Today's quick-task allowance is used up or switched off, so I asked Voltage to OK it.");
+      toDitto(c, withStatus("Saved for Voltage. Today's quick-task allowance is used up (or switched off), so he decides this one. I'll post here when he does."));
       return;
     }
     dittoSays(c, text, attachments);
-    toDitto(c, `Got it. That one waits for Voltage's OK because ${k.why ?? 'it has attachments'}. I will tell you when he answers.`);
+    toDitto(c, withStatus(`Saved for Voltage: this one needs his OK because ${k.why ?? 'it has attachments'}. He sees it in his Lead thread, and I'll post here when he decides.`));
+  }
+
+  // Ditto's AI (his HQ's bot) answered in #ditto-collab: give it the next step from research/agent-hq/DITTO-NEXT.md, one per reply,
+  // at most one every 3 minutes, and stop when the list runs out, so two AIs never loop. A changed list starts again from step 1.
+  function dittoAi(c, text) {
+    let steps = [];
+    try { steps = fs.readFileSync(path.join(root, 'research', 'agent-hq', 'DITTO-NEXT.md'), 'utf8').split('\n').map((l) => /^\d+\.\s+(.+)/.exec(l)?.[1]).filter(Boolean); } catch { return; }
+    const hash = createHash('sha1').update(steps.join('\n')).digest('hex').slice(0, 12);
+    const st = c.dittoAi?.hash === hash ? c.dittoAi : { hash, next: 0, at: 0, done: false };
+    if (!steps.length || st.done || now() - st.at < 3 * 60000) return;
+    const i = st.next;
+    const msg = i < steps.length
+      ? `For Ditto's Claude, step ${i + 1} of ${steps.length}: ${steps[i]}`
+      : "For Ditto's Claude: that is every step for now, thanks. Before you change Agent HQ, ping with node scripts/hq-work.mjs start \"<topic>\"; Voltage's HQ answers with its version.";
+    save({ ...config(), dittoAi: { hash, next: i + 1, at: now(), done: i >= steps.length } });
+    enqueue({ threadId: c.dittoThreadId, username: 'Agent HQ', content: clip(redact(withStatus(msg)), 1900) });
+    if (c.threads.lead) enqueue({ threadId: c.threads.lead, username: 'Agent HQ', content: clip(`Ditto's AI said: ${redact(text).replace(/\s+/g, ' ').slice(0, 400)}\nI sent it ${i < steps.length ? `step ${i + 1}` : 'the closing note'}.`, 900) });
   }
 
   // a friend never reaches the agents directly: the owner sees it in the Lead thread and replies "send" to pass it on
@@ -249,6 +279,7 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     const text = String(m.content ?? '').trim();
     const uid = m.author?.id;
     if (threadId === c.dittoThreadId && uid === c.dittoId) { await dittoOrder(c, text, m.attachments); return; }
+    if (threadId === c.dittoThreadId && uid && uid !== c.botId && dittoAiIds().includes(uid) && !text.startsWith('HQ1 ')) { dittoAi(c, text); return; }
     if (!c.ownerIds.includes(uid)) return;
     const askId = m.message_reference?.message_id && c.posts[m.message_reference.message_id];
     if (askId?.startsWith('ditto:')) {

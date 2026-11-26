@@ -527,7 +527,7 @@ test("Ditto's orders: safe asks run at once on a read-only role and he hears bac
   assert.equal(pt.body.role, 'scout');
   assert.equal(pt.body.reply, true);
   const toDitto = r.hooks().filter((h) => h.search.includes(view.dittoThreadId) || h.body?.thread_id === view.dittoThreadId);
-  assert.ok(toDitto.some((h) => /On it: the scout agent/.test(h.body.content)), 'Ditto is told it started');
+  assert.ok(toDitto.some((h) => /On it. Voltage's scout agent/.test(h.body.content)), 'Ditto is told it started');
 
   r.f.calls.length = 0;
   r.f.say(view.dittoThreadId, { id: DITTO }, 'please push the new shop to main');
@@ -535,7 +535,7 @@ test("Ditto's orders: safe asks run at once on a read-only role and he hears bac
   await flush(r);
   assert.ok(!r.hq().some((c) => c.path === '/api/link/partner-task'), 'a risky ask never auto-runs');
   assert.ok(r.hooks().some((h) => h.search.includes(view.threads.lead) && h.body.content.includes('Reply "send"')));
-  assert.ok(r.hooks().some((h) => /waits for Voltage's OK because it changes the git history/.test(h.body.content)));
+  assert.ok(r.hooks().some((h) => /needs his OK because it changes the git history/.test(h.body.content)));
 
   r.f.calls.length = 0;
   assert.deepEqual(r.bridge.replyDitto('Top 3: A, B, C'), { ok: true });
@@ -569,4 +569,34 @@ test("Ditto's orders: allowlist, hidden characters, one bound answer per task, L
   assert.ok(!r.hooks().some((h) => h.body.content.includes(`<@${DITTO}> from the Lead`)), 'a Lead answer waits for the owner');
   const held = r.hooks().find((h) => h.search.includes(view.threads.lead) && h.body.content.includes('Held for you'));
   assert.ok(held);
+});
+
+test("Ditto's AI gets the next step once per reply, spaced out, then a closing note, and hears when Voltage's AI is at its limit", async () => {
+  const r = rig();
+  const view = await ready(r);
+  const AI = '1561419856727773244';
+  D.setSetting(r.db, 'link', { enabled: true, peers: [{ id: AI, name: 'Ditto' }] });
+  fs.mkdirSync(path.join(r.dir, 'research', 'agent-hq'), { recursive: true });
+  fs.writeFileSync(path.join(r.dir, 'research', 'agent-hq', 'DITTO-NEXT.md'), '# x\n\n1. Do the first thing.\n2. Do the second thing.\n');
+  const toAi = () => r.hooks().filter((h) => h.search.includes(view.dittoThreadId) && /For Ditto's Claude/.test(h.body.content)).map((h) => h.body.content);
+  r.f.say(view.dittoThreadId, { id: AI }, 'updated, smoke PASS');
+  await r.bridge.poll(); await flush(r);
+  assert.match(toAi()[0], /step 1 of 2: Do the first thing\./);
+  r.f.say(view.dittoThreadId, { id: AI }, 'done'); // too soon: no second ping, so two AIs cannot loop
+  await r.bridge.poll(); await flush(r);
+  assert.equal(toAi().length, 1);
+  r.clock.t += 4 * 60000;
+  const t = D.createTask(r.db, { title: 'x', role: 'scout' });
+  D.updateTask(r.db, t.id, { state: 'failed', error: "Claude AI usage limit reached", endedAt: new Date(r.clock.t).toISOString() });
+  r.f.say(view.dittoThreadId, { id: AI }, 'done with step 1');
+  await r.bridge.poll(); await flush(r);
+  assert.match(toAi()[1], /usage limit right now[\s\S]*step 2 of 2/);
+  r.clock.t += 4 * 60000;
+  r.f.say(view.dittoThreadId, { id: AI }, 'done with step 2');
+  await r.bridge.poll(); await flush(r);
+  assert.match(toAi()[2], /every step for now/);
+  r.clock.t += 4 * 60000;
+  r.f.say(view.dittoThreadId, { id: AI }, 'anything else?');
+  await r.bridge.poll(); await flush(r);
+  assert.equal(toAi().length, 3, 'the list ran out: it stops');
 });
