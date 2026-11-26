@@ -129,6 +129,7 @@ const needsYou = () => S.asks.filter(a => a.state === 'open' && !a.superseded &&
 const NAV_WORK = [
   { id:'home', label:'Home', icon:'home' },
   { id:'lead', label:'Lead', icon:'lead' },
+  { id:'chat', label:'Chat', icon:'msg' },
   { id:'team', label:'Team', icon:'team', badge:() => S.tasks.filter(t => t.state === 'working').length, g:1 },
   { id:'tasks', label:'Tasks', icon:'tasks', badge:() => S.tasks.filter(OPEN).length, g:1 },
   { id:'review', label:'Review', icon:'review', badge:() => needsYou().length },
@@ -167,7 +168,7 @@ function renderNav(cur) {
 }
 
 // ---------------------------------------------------------------- helpers
-const state = { game: 'all', libQ: '', libKind: 'all', vaultQ: '', createTab: 'assets', createGame: '', reviewSel: 0, openTask: null, chatRole: 'lead' };
+const state = { chatChannel: '', chatFull: {}, chatSync: false, game: 'all', libQ: '', libKind: 'all', vaultQ: '', createTab: 'assets', createGame: '', reviewSel: 0, openTask: null, chatRole: 'lead' };
 const gameOk = slug => state.game === 'all' || state.game === slug;
 const gameBySlug = s => S.games.find(g => g.slug === s);
 const gameName = s => (gameBySlug(s) || {}).name || (s ? s : 'No game');
@@ -188,10 +189,12 @@ async function loadPage(id, quiet) {
     if (id === 'lead') X.msgs = await api('GET', `/api/messages?role=${encodeURIComponent(state.chatRole)}`);
     if (id === 'library') { X.assets = await api('GET', '/api/assets'); X.catalog = await api('GET', `/api/catalog?q=${encodeURIComponent(state.libQ)}&limit=40`); }
     if (id === 'vault') { X.vault = X.vault || await api('GET', '/api/vault'); X.vaultHits = state.vaultQ ? await api('GET', `/api/knowledge/search?q=${encodeURIComponent(state.vaultQ)}`) : null; }
+    if (id === 'chat') X.chat = await api('GET', `/api/discord/chat${state.chatChannel ? '?channel=' + state.chatChannel : ''}`);
     if (id === 'market') X.market = await api('GET', '/api/market');
     if (id === 'packs') X.packs = await api('GET', '/api/catalog?type=pack&limit=100').then(async p => ({ packs: p.results, kits: (await api('GET', '/api/catalog?type=ui-kit&limit=100')).results, total: p.total, sources: p.sources }));
     if (id === 'create' || id === 'home') X.library = await api('GET', '/api/library');
-  } catch (e) { if (!quiet) toast(e.message); }
+    if (id === 'chat') X.chatErr = '';
+  } catch (e) { if (id === 'chat') X.chatErr = e.message; if (!quiet) toast(e.message); }
   if (curPage() === id) rerender();
 }
 const curPage = () => { const id = (location.hash.match(/^#\/([\w-]+)/) || [])[1] || 'home'; return pages[id] ? id : 'home'; };
@@ -335,6 +338,23 @@ pages.lead = () => {
     </div>
     <label class="ask"><span class="ask-ic"></span><input id="leadIn" placeholder="Message ${esc(r.label)}…"><button class="btn-glow ready" id="leadGo">Send ${ic('right','sm')}</button></label>
   </div>`;
+};
+
+// Discord, simplified: the HQ Link server's channels read by your own bot (owner only, read only).
+pages.chat = () => {
+  const C = X.chat;
+  const head = `<div class="page-h"><div><h1 class="h1">Chat</h1><p class="sub">Your Discord server, simplified: names instead of ids, long posts shortened, HQ sync posts folded.${C ? ` Updated ${ago(C.fetchedAt)} ago.` : ''}</p></div>
+    <div class="acts"><button class="btn" data-act="chatsync">${ic(state.chatSync ? 'eye' : 'min')}${state.chatSync ? 'Hide' : 'Show'} HQ sync</button><button class="btn" data-act="chatrefresh">${ic('refresh')}Refresh</button></div></div>`;
+  if (!C) return head + (X.chatErr ? `<div class="card empty">${ic('x')}<p>${esc(X.chatErr)}</p></div>` : loading());
+  const items = C.items.filter(i => state.chatSync || i.kind !== 'sync');
+  const people = [...new Set(C.items.filter(i => i.kind !== 'sync').map(i => i.author))];
+  return head + `
+  <div class="chips">${C.channels.slice(0, 12).map(ch => `<button class="chip ${C.channel.id === ch.id ? 'on' : ''}" data-chan="${ch.id}">#${esc(ch.name)}${ch.link ? ' <b>HQ Link</b>' : ''}</button>`).join('')}</div>
+  <p class="lib-note">#${esc(C.channel.name)} · ${C.items.reduce((n, i) => n + (i.kind === 'sync' ? 0 : i.lines.length), 0)} messages from ${people.length} ${people.length === 1 ? 'sender' : 'senders'}: ${people.map(esc).join(', ')}</p>
+  <div class="chat"><div class="msgs" id="dmsgs" style="max-height:none">${items.length ? items.map(i => i.kind === 'sync'
+    ? `<div class="msg" style="opacity:.55;justify-content:center"><div class="meta">${ic('refresh','sm')} ${i.count} HQ sync message${i.count > 1 ? 's' : ''} · ${ago(i.at)} ago</div></div>`
+    : `<div class="msg ${(C.me || []).includes(i.authorId) ? 'me' : ''}">${(C.me || []).includes(i.authorId) ? '' : `<span class="role-ic sm" style="--c:${i.bot ? '#8ab4ff' : '#ffd27a'}">${ic(i.bot ? 'spark' : 'kid')}</span>`}<div><div class="meta">${esc(i.author)}${i.bot ? ' · bot' : ''} · ${ago(i.at)} ago</div>${i.lines.map(l => `<div class="bub" style="margin-top:4px">${l.replyTo ? `<small style="opacity:.6">↪ ${esc(l.replyTo)}</small><br>` : ''}${l.kind === 'update' ? ic('refresh','sm') + ' ' : ''}${esc(state.chatFull[l.id] && l.full ? l.full : l.text)}${l.n > 1 ? ` <b style="opacity:.7">×${l.n}</b>` : ''}${l.full ? ` <button class="chip" data-full="${l.id}" style="padding:1px 8px;font-size:11px">${state.chatFull[l.id] ? 'less' : 'more'}</button>` : ''}</div>`).join('')}</div></div>`).join('')
+    : '<div class="empty">No messages in this channel yet.</div>'}</div></div>`;
 };
 
 pages.review = () => {
@@ -559,7 +579,7 @@ function starfield(cv, big) {
 }
 
 // ---------------------------------------------------------------- router
-const NEEDS_DATA = { lead: 'msgs', library: 'catalog', vault: 'vault', market: 'market', packs: 'packs', create: 'library', home: 'library' };
+const NEEDS_DATA = { chat: 'chat', lead: 'msgs', library: 'catalog', vault: 'vault', market: 'market', packs: 'packs', create: 'library', home: 'library' };
 function route(anim = true) {
   rafs.forEach(f => f()); rafs = [];
   const m = location.hash.match(/^#\/([\w-]+)(?:\/([\w-]+))?/) || [];
@@ -609,6 +629,7 @@ function bindPage(id) {
   }
   const lq = $('#libQ');
   if (lq) { let t; lq.addEventListener('input', () => { state.libQ = lq.value; clearTimeout(t); t = setTimeout(() => loadPage('library', true), 300); }); }
+  if (id === 'chat' && X.chat && state.chatScrolled !== X.chat.channel.id) { state.chatScrolled = X.chat.channel.id; $('#view').scrollTop = 1e7; const dm = $('#dmsgs'); if (dm) dm.scrollTop = 1e7; }
   const vq = $('#vaultQ');
   if (vq) vq.addEventListener('keydown', e => { if (e.key === 'Enter') { state.vaultQ = vq.value.trim(); loadPage('vault'); } });
 }
@@ -623,9 +644,11 @@ async function newTask() {
   if (text && text.trim() && await sendTo('lead', text.trim())) { state.chatRole = 'lead'; X.msgs = null; location.hash = '#/lead'; }
 }
 document.addEventListener('click', e => {
-  const el = e.target.closest('[data-go],[data-set] button,[data-task],[data-open],[data-rv],[data-rvgo],[data-dec],[data-opt],[data-dismiss],[data-kind],[data-ctab],[data-cgame],[data-act],[data-pick],[data-cmdk],[data-chat],[data-cancel],[data-retry],[data-pitch]');
+  const el = e.target.closest('[data-chan],[data-full],[data-go],[data-set] button,[data-task],[data-open],[data-rv],[data-rvgo],[data-dec],[data-opt],[data-dismiss],[data-kind],[data-ctab],[data-cgame],[data-act],[data-pick],[data-cmdk],[data-chat],[data-cancel],[data-retry],[data-pitch]');
   if (!el) { if (!e.target.closest('#gameMenu,#gamePick')) $('#gameMenu').hidden = true; return; }
   const d = el.dataset;
+  if (d.chan) { state.chatChannel = d.chan; X.chat = null; rerender(); return loadPage('chat'); }
+  if (d.full) { state.chatFull[d.full] = !state.chatFull[d.full]; return rerender(); }
   if (d.cmdk !== undefined) return openCmdk();
   if (d.go) return location.hash = '#/' + d.go;
   if (el.parentElement && el.parentElement.dataset.set) return setSetting(el.parentElement.dataset.set, d.v);
@@ -648,6 +671,8 @@ document.addEventListener('click', e => {
     switch (d.act) {
       case 'pause': return act(() => api('POST', S.settings.paused ? '/api/resume' : '/api/pause'), S.settings.paused ? 'Agents are back to work' : 'Paused: nothing new starts').then(load);
       case 'newtask': return newTask();
+      case 'chatsync': state.chatSync = !state.chatSync; return rerender();
+      case 'chatrefresh': return loadPage('chat');
       case 'gamemenu': return openGameMenu(el);
       case 'findgame': return sendTo('scout', 'Find my next game: pitch 3 to 4 ideas with chart evidence.').then(ok => ok && load());
       case 'mrefresh': return act(() => api('POST', '/api/market/refresh'), 'Market refresh started').then(() => setTimeout(() => loadPage('market', true), 4000));
@@ -728,7 +753,8 @@ document.addEventListener('keydown', e => {
 $('#refresh').addEventListener('click', async () => { const b = $('#refresh'); b.classList.add('spin'); await load(); if (NEEDS_DATA[curPage()]) await loadPage(curPage(), true); b.classList.remove('spin'); toast('Numbers refreshed'); });
 setInterval(() => { const s = Math.round((Date.now() - lastRefresh) / 1000); $('#updated').textContent = !lastRefresh ? '…' : s < 20 ? 'just now' : s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`; }, 5000);
 setInterval(() => { vaultIdx++; const el = $('#vaultLine'); const w = S.tasks.filter(t => t.state === 'working'); if (!el || w.length < 2) return; const t = w[vaultIdx % w.length]; el.style.transition = 'opacity .3s'; el.style.opacity = 0; setTimeout(() => { el.innerHTML = `<b>${esc(role(t.role).label)}</b> is working on ${esc(t.title)}`; el.style.opacity = 1; }, 300); }, 4500);
-setInterval(load, 60000); // safety net if the event stream drops
+setInterval(load, 60000);
+setInterval(() => { if (curPage() === 'chat') loadPage('chat', true); }, 20000); // safety net if the event stream drops
 
 hydrate();
 window.addEventListener('hashchange', () => route());
