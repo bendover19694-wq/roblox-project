@@ -377,8 +377,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
   const routes = [];
   const route = (method, re, fn, opts = {}) => routes.push([method, re, fn, opts]);
 
-  route('GET', /^\/api\/health$/, () => ({ ok: true }));
-  mountDiscordChat(route, createDiscordChat({ db, D, stateDir, fetchImpl: linkFetch ?? globalThis.fetch, now }), { HttpError });
+  route('GET', /^\/api\/health$/, () => ({ ok: true })); mountDiscordChat(route, createDiscordChat({ db, D, stateDir, fetchImpl: linkFetch ?? globalThis.fetch, now }), { HttpError });
   mountLink(route, link, { str, bad, isObj, agentTask, HttpError }); mountCoop(route, coop, { str, bad, isObj }); mountUiLab(route, uilab, { str, bad, isObj, agentTask, HttpError }); mountUpdates(route, updates, { str, bad, isObj, HttpError }); mountBridge(route, bridge, { str, bad, isObj, HttpError, agentTask }); mountGameContext(route, { db }); mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, SLUG, str, bad, isObj, agentTask, needTask, HttpError });
 
   route('GET', /^\/api\/state$/, () => {
@@ -1287,8 +1286,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     res.end(data);
   }
 
-  // "/" is the hub (public/hub); the previous dashboard stays at "/legacy" for the pages the hub does not have yet.
-  function serveIndex(res, rel = fs.existsSync(path.join(publicDir, 'hub', 'index.html')) ? 'hub/index.html' : 'index.html') {
+  function serveIndex(res, rel = fs.existsSync(path.join(publicDir, 'hub', 'index.html')) ? 'hub/index.html' : 'index.html') { // "/" is the hub (public/hub); the old dashboard stays at "/legacy"
     const file = path.join(publicDir, rel);
     let html;
     try { html = fs.readFileSync(file, 'utf8'); } catch { throw new HttpError(404, 'index.html missing'); }
@@ -1357,8 +1355,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
       }
 
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
-      if (pathname === '/' || pathname === '/index.html') return serveIndex(res);
-      if (pathname === '/legacy') return serveIndex(res, 'index.html');
+      if (pathname === '/' || pathname === '/index.html') return serveIndex(res); if (pathname === '/legacy') return serveIndex(res, 'index.html');
       if (pathname.startsWith('/static/')) {
         const f = readFileIn(publicDir, pathname.slice(8));
         if (!f) throw new HttpError(404, 'not found');
