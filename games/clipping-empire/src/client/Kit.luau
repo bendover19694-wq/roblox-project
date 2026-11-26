@@ -213,6 +213,7 @@ function Kit.imageButton(
 		while size > 21 do
 			local bounds =
 				TextService:GetTextSize(props.Label, size, Enum.Font.LuckiestGuy, Vector2.new(1e4, 1e4))
+
 			if bounds.X <= w * 0.96 then
 				break
 			end
@@ -222,6 +223,12 @@ function Kit.imageButton(
 			t.TextScaled = false
 			t.TextWrapped = false
 			t.TextSize = size
+			-- The fit above is done in design px. Kit.text's MinTextSize (21) clamps in screen px after the
+			-- UIScale, which blew launcher labels up 1.7x on phones and over their icons.
+			local constraint = t:FindFirstChildOfClass("UITextSizeConstraint")
+			if constraint then
+				constraint:Destroy()
+			end
 		end
 	end
 	-- Shine: a soft white band sweeps across the face, drawn through a white mask of the plate so

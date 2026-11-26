@@ -73,7 +73,7 @@ const MIGRATIONS = [
   ['tasks', 'gateFor', 'TEXT'], ['tasks', 'attempt', 'INTEGER NOT NULL DEFAULT 1'], ['tasks', 'threadMessageId', 'TEXT'],
   ['tasks', 'attachPaths', 'TEXT'], ['tasks', 'taskToken', 'TEXT'], ['messages', 'attachPaths', 'TEXT'], ['asks', 'verdict', 'TEXT'],
   ['asks', 'verdictNote', 'TEXT'], ['tasks', 'reworkCount', 'INTEGER NOT NULL DEFAULT 0'], ['messages', 'archive', 'TEXT'],
-  ['games', 'reworkCount', 'INTEGER NOT NULL DEFAULT 0'], ['games', 'isPublic', 'INTEGER NOT NULL DEFAULT 0'], ['games', 'publicSinceUtc', 'TEXT'], ['games', 'gateData', 'TEXT'], ['games', 'archivedAt', 'TEXT'],
+  ['games', 'reworkCount', 'INTEGER NOT NULL DEFAULT 0'], ['games', 'isPublic', 'INTEGER NOT NULL DEFAULT 0'], ['games', 'publicSinceUtc', 'TEXT'], ['games', 'gateData', 'TEXT'], ['games', 'archivedAt', 'TEXT'], ['games', 'icon', 'TEXT'],
   ['stage_requests', 'reason', 'TEXT'], ['stage_requests', 'criteriaFailed', 'TEXT'],
   ['pitches', 'origin', "TEXT NOT NULL DEFAULT 'scout'"], ['pitches', 'data', 'TEXT'], ['pitches', 'decidedAt', 'TEXT'], ['pitches', 'note', 'TEXT'],
 ];
@@ -383,7 +383,7 @@ export function createGame(db, { slug, name }) {
   db.prepare('INSERT INTO games (slug,name,stage,version,updatedAt) VALUES (?,?,?,?,?)').run(slug, name, 'pitched', 1, now());
   return getGame(db, slug);
 }
-const GAME_COLS = ['name', 'stage', 'version', 'versionType', 'note', 'nextStep', 'universeId', 'changelog', 'archivedAt'];
+const GAME_COLS = ['name', 'stage', 'version', 'versionType', 'note', 'nextStep', 'universeId', 'changelog', 'archivedAt', 'icon'];
 export function updateGame(db, slug, patch) {
   const p = { ...patch };
   if ('changelog' in p) p.changelog = p.changelog == null ? null : JSON.stringify(p.changelog);

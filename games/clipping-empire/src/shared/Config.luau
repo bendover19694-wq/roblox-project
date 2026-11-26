@@ -124,9 +124,11 @@ Config.ZONE_WIDTH = 90 -- studs along X per zone; zone 1 starts at X = 0
 Config.ZONE_DEPTH = 70 -- studs along Z, centred on Z = 0
 
 -- Rebirth: "Go Viral" resets cash, clips and upgrades for permanent Clout.
-Config.REBIRTH_BASE = 250000
-Config.REBIRTH_GROWTH = 4
-Config.CLOUT_MULT = 0.5 -- cash multiplier per Clout: 1 + CLOUT_MULT * clout
+Config.REBIRTH_BASE = 1000000
+Config.REBIRTH_GROWTH = 3
+-- Cash multiplier = CLOUT_BASE ^ clout: geometric and a bit slower than the cost growth (vault:
+-- Progression and Pacing Design, section 5), so each rebirth takes gently longer, never hours longer.
+Config.CLOUT_BASE = 2.25
 
 -- Trailer Drop: a server-wide hype window on a fixed clock, so its timer is always true.
 Config.HYPE_PERIOD = 600 -- seconds between drops
@@ -135,7 +137,9 @@ Config.HYPE_MULT = 3
 
 Config.HYPE_LUCK = 2 -- luck multiplier during a Trailer Drop
 
--- Clip rarity. The server rolls one tier per take (a counted tap, or an auto tick); see docs/rng-and-loop.md.
+-- Clip rarity. The server rolls one tier per take (a counted tap, or an auto take); see docs/rng-and-loop.md.
+-- Players make about 7 takes a second, so odds are set for that rate: Epic in under a minute,
+-- Legendary in the first session, Mythic as the long goal (tests/Rarity.spec.luau prints the waits).
 -- oneIn = base odds (Common takes the remainder). pays = cash and follower weight per clip.
 -- reveal: "float" (coloured +N), "callout", "banner", "card" (full reveal with a burst).
 export type Rarity = {
@@ -157,7 +161,7 @@ Config.RARITIES = {
 	},
 	{
 		name = "Uncommon",
-		oneIn = 5,
+		oneIn = 4,
 		pays = 1.5,
 		color = Color3.fromRGB(90, 230, 120),
 		reveal = "float",
@@ -165,7 +169,7 @@ Config.RARITIES = {
 	},
 	{
 		name = "Rare",
-		oneIn = 20,
+		oneIn = 25,
 		pays = 3,
 		color = Color3.fromRGB(70, 170, 255),
 		reveal = "callout",
@@ -173,29 +177,31 @@ Config.RARITIES = {
 	},
 	{
 		name = "Epic",
-		oneIn = 100,
-		pays = 8,
+		oneIn = 250,
+		pays = 10,
 		color = Color3.fromRGB(185, 100, 255),
 		reveal = "banner",
 		titles = { "Dev stream highlight", "Wild stunt fail", "Full map comparison", "Boss chase supercut" },
 	},
 	{
 		name = "Legendary",
-		oneIn = 500,
-		pays = 25,
+		oneIn = 2500,
+		pays = 40,
 		color = Color3.fromRGB(255, 190, 50),
 		reveal = "card",
 		titles = { "Launch day countdown", "Trailer 3 first look", "Studio tour exclusive" },
 	},
 	{
 		name = "Mythic",
-		oneIn = 5000,
-		pays = 100,
+		oneIn = 50000,
+		pays = 250,
 		color = Color3.fromRGB(255, 70, 160),
 		reveal = "card",
 		titles = { "The release date reveal", "Gameplay premiere", "Secret ending found" },
 	},
 } :: { Rarity }
+Config.LUCK_FROM_TIER = 3 -- luck multiplies the weight of this tier and rarer (Rare+); Common and Uncommon never vanish
+Config.LUCK_CAP = 25 -- stacked luck never goes above this (tested at the cap)
 Config.LUCK_PER_LEVEL = 0.1 -- Lucky Lens: luck multiplier per level
 Config.CLOUT_LUCK = 0.1 -- luck multiplier per Clout
 Config.ANNOUNCE_TIER = 6 -- this tier and up is announced to the whole server

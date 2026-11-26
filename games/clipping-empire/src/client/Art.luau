@@ -44,8 +44,18 @@ return {
 	-- Folk Stud UI essentials (references/asset-ids.md): stud tile (2 x 2 studs) and light rays.
 	studs = { id = "rbxassetid://3014551673", aspect = 1 },
 	rays = { id = "rbxassetid://101267161684975", aspect = 1 },
+	-- FOLK Icon Pack (owner's licence; PNGs are not in the repo, only these uploaded ids).
+	-- They replace the LihFolk kit's drawn letter placeholders in window headers, buttons and settings.
+	folkIcons = {
+		rebirth = "rbxassetid://74412467362060",
+		lock = "rbxassetid://115522510281196",
+		settings = "rbxassetid://97295404433539",
+		sound = "rbxassetid://93869528812785",
+		boost = "rbxassetid://103759891364340",
+		check = "rbxassetid://140595453150938",
+	},
 	coin = { id = "rbxassetid://99607466522493", aspect = 0.949 },
 	followers = { id = "rbxassetid://82147027167811", aspect = 0.949 },
 	clout = { id = "rbxassetid://110646073067698", aspect = 0.961 },
 	reel = { id = "rbxassetid://120147774122892", aspect = 0.949 },
-} :: { [string]: ArtItem }
+} :: any -- ArtItem entries plus the folkIcons id table

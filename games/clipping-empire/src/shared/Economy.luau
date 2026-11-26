@@ -17,6 +17,7 @@ export type Profile = {
 	found: { number }, -- takes found per rarity tier, ever
 	best: number, -- rarest tier ever found (0 = none yet)
 	tutorialDone: boolean,
+	indexSeen: boolean, -- opened the Clip Index once (ends the just-in-time Index tip)
 	settings: { reducedMotion: boolean, sound: boolean },
 }
 
@@ -45,6 +46,7 @@ function Economy.default(): Profile
 		found = zeros(),
 		best = 0,
 		tutorialDone = false,
+		indexSeen = false,
 		settings = { reducedMotion = false, sound = true },
 	}
 end
@@ -70,6 +72,7 @@ function Economy.migrate(old: any): Profile
 	p.totalClips = num(old.totalClips, 0)
 	p.totalPosts = math.floor(num(old.totalPosts, 0))
 	p.tutorialDone = old.tutorialDone == true
+	p.indexSeen = old.indexSeen == true
 	if type(old.levels) == "table" then
 		for id, up in Config.UPGRADES do
 			p.levels[id] = math.clamp(math.floor(num(old.levels[id], 0)), 0, up.max)
@@ -136,21 +139,32 @@ end
 function Economy.luck(p: Profile, hypeActive: boolean): number
 	local lens = 1 + (p.levels.luck or 0) * Config.LUCK_PER_LEVEL
 	local clout = 1 + p.clout * Config.CLOUT_LUCK
-	return lens * clout * (if hypeActive then Config.HYPE_LUCK else 1)
+	return math.min(Config.LUCK_CAP, lens * clout * (if hypeActive then Config.HYPE_LUCK else 1))
 end
 
--- Chance of each tier at this luck. From the top tier down, tier i takes min(1, luck / oneIn) of
--- what is left; Common gets the remainder. Always sums to 1.
+-- Chance of each tier at this luck (vault: RNG playbook, implementation A). Base weight of tier i is
+-- 1 / oneIn (Common takes the rest of 1), luck multiplies the weights of LUCK_FROM_TIER and up, then
+-- everything is renormalised. At luck 1 every label is exact; at any luck every tier stays possible.
+-- The Index shows these numbers, and rollTier rolls from them: one table for both.
 function Economy.odds(luck: number): { number }
-	local odds = zeros()
-	local left = 1
-	for i = TIERS, 2, -1 do
-		local p = left * math.min(1, luck / Config.RARITIES[i].oneIn)
-		odds[i] = p
-		left -= p
+	local w = zeros()
+	local rest = 1
+	for i = 2, TIERS do
+		w[i] = 1 / Config.RARITIES[i].oneIn
+		rest -= w[i]
 	end
-	odds[1] = left
-	return odds
+	w[1] = rest
+	local total = 0
+	for i = 1, TIERS do
+		if i >= Config.LUCK_FROM_TIER then
+			w[i] *= luck
+		end
+		total += w[i]
+	end
+	for i = 1, TIERS do
+		w[i] /= total
+	end
+	return w
 end
 
 -- Maps a uniform roll u in [0, 1) to a tier, rarest first.
@@ -180,7 +194,7 @@ function Economy.followerBonus(followers: number): number
 end
 
 function Economy.cloutMult(clout: number): number
-	return 1 + Config.CLOUT_MULT * clout
+	return Config.CLOUT_BASE ^ clout
 end
 
 -- Highest zone index the player's followers unlock.

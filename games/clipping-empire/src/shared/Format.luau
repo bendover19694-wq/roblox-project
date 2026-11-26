@@ -23,6 +23,16 @@ function Format.money(n: number): string
 	return if n < 0 then "-$" .. s:sub(2) else "$" .. s
 end
 
+-- A multiplier label: "x2.25", "x11.4", "x1.2K". Rounds down like every other label.
+function Format.mult(n: number): string
+	if n >= 1000 then
+		return "x" .. Format.short(n)
+	end
+	local v = if n < 10 then math.floor(n * 100) / 100 else math.floor(n * 10) / 10
+	local text = string.format("%.2f", v):gsub("0+$", ""):gsub("%.$", "")
+	return "x" .. text
+end
+
 function Format.duration(sec: number): string
 	sec = math.max(0, math.floor(sec))
 	if sec < 60 then
