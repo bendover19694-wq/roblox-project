@@ -49,6 +49,9 @@ export function decode(content) {
     return { type: 'status', id: o.id, ref: o.ref, state: clip(o.state, 20), summary: clip(o.summary, 1200) };
   }
   if (o.type === 'board') return decodeBoard(o);
+  // co-op: "I am starting / finished Agent HQ work on <topic>"; the other HQ answers with its own version, so the two AIs never overlap
+  if (o.type === 'work' && ['start', 'done'].includes(o.state)) return { type: 'work', id: o.id, state: o.state, topic: fence(clip(o.topic, 200), 200), commit: /^[0-9a-f]{7,40}$/.test(o.commit ?? '') ? o.commit : '' };
+  if (o.type === 'version' && /^[0-9a-f]{7,40}$/.test(o.commit ?? '')) return { type: 'version', id: o.id, commit: o.commit, branch: /^[\w./-]{1,100}$/.test(o.branch ?? '') ? o.branch : '', busy: fence(clip(o.busy, 200), 200) };
   if (o.type === 'update' && /^[0-9a-f]{7,40}$/.test(o.commit ?? '') && /^[\w./-]{1,100}$/.test(o.branch ?? '')) {
     const repo = /^https:\/\/github\.com\/[\w.-]{1,40}\/[\w.-]{1,100}$/.test(o.repo ?? '') ? o.repo : '';
     return { type: 'update', id: o.id, commit: o.commit, branch: o.branch, repo, notes: fence(clip(o.notes, 1200), 1200) };
@@ -82,7 +85,7 @@ export function readInvite(code) {
   return null;
 }
 
-export function createLink({ db, D, stateDir, emit, queueTask, roleIds = () => [], fetchImpl = globalThis.fetch }) {
+export function createLink({ db, D, stateDir, emit, queueTask, roleIds = () => [], fetchImpl = globalThis.fetch, version = async () => ({ commit: '', branch: '' }) }) {
   const tokenFile = path.join(stateDir, 'link-token');
   const status = { lastPoll: null, error: null };
   let sent = [];
@@ -165,6 +168,19 @@ export function createLink({ db, D, stateDir, emit, queueTask, roleIds = () => [
   function receive(peer, m) {
     if (m.type === 'update') { set('linkUpdate', { ...m, from: peer.name, at: new Date().toISOString() }); addLog({ dir: 'in', kind: 'update', from: peer.name, text: `shared Agent HQ ${m.commit.slice(0, 7)} (${m.branch})` }); emit('settings', { key: 'linkUpdate' }); return; }
     if (m.type === 'board') { set('coopPeer', { ...m, from: peer.name, at: new Date().toISOString() }); emit('settings', { key: 'coopPeer' }); return; }
+    if (m.type === 'work') {
+      set('peerWork', m.state === 'start' ? { from: peer.name, topic: m.topic, commit: m.commit, at: new Date().toISOString() } : null);
+      addLog({ dir: 'in', kind: 'work', from: peer.name, text: `${m.state === 'start' ? 'started' : 'finished'} Agent HQ work: ${m.topic}${m.commit ? ` @ ${m.commit.slice(0, 7)}` : ''}` });
+      emit('settings', { key: 'peerWork' });
+      if (m.state === 'start') version().then((v) => /^[0-9a-f]{7,40}$/.test(v.commit ?? '') && report({ type: 'version', id: newRef(), commit: v.commit, branch: v.branch, busy: get('myWork', null)?.topic ?? '' })).catch(() => {});
+      return;
+    }
+    if (m.type === 'version') {
+      set('peerVersion', { from: peer.name, commit: m.commit, branch: m.branch, busy: m.busy, at: new Date().toISOString() });
+      addLog({ dir: 'in', kind: 'version', from: peer.name, text: `is on Agent HQ ${m.commit.slice(0, 7)}${m.branch ? ` (${m.branch})` : ''}${m.busy ? `; also working on: ${m.busy}` : ''}` });
+      emit('settings', { key: 'peerVersion' });
+      return;
+    }
     if (m.type === 'chat') addLog({ dir: 'in', kind: 'chat', from: peer.name, text: m.text });
     else if (m.type === 'status') {
       addLog({ dir: 'in', kind: 'status', from: peer.name, ref: m.ref, text: `${m.state}${m.summary ? `: ${m.summary}` : ''}` });
@@ -311,11 +327,20 @@ ${redact(t.summary).slice(0, 3000)}`,
     return {
       enabled: c.enabled, name: c.name, channelId: c.channelId, peers: c.peers, hasToken: !!token(), ...status,
       invite: c.botId && c.channelId ? makeInvite({ channelId: c.channelId, botId: c.botId, name: c.name }) : '',
-      log: get('linkLog', []), note: DATA_NOTE, partnerUsedToday: usedToday(),
+      log: get('linkLog', []), note: DATA_NOTE, partnerUsedToday: usedToday(), peerWork: get('peerWork', null), peerVersion: get('peerVersion', null), myWork: get('myWork', null),
     };
   }
 
   const board = (o) => post(o); // coop.mjs builds and sizes it
+  // This HQ's AI starts or finishes Agent HQ source work: the partner's HQ logs it and answers with its version.
+  async function work({ state, topic }) {
+    const v = await version();
+    const t = fence(topic, 200);
+    set('myWork', state === 'start' ? { topic: t, at: new Date().toISOString() } : null);
+    await post({ type: 'work', id: newRef(), state, topic: t, ...(/^[0-9a-f]{7,40}$/.test(v.commit ?? '') ? { commit: v.commit } : {}) });
+    addLog({ dir: 'out', kind: 'work', from: 'owner', text: `${state === 'start' ? 'started' : 'finished'} Agent HQ work: ${t}${v.commit ? ` @ ${v.commit.slice(0, 7)}` : ''}` });
+    return { ok: true, commit: v.commit ?? '' };
+  }
   // A version announcement: one readable line for people in the channel, then the HQ1 update message the other HQ acts on.
   async function announce({ commit, branch, notes, repo = '' }) {
     const c = config();
@@ -329,7 +354,7 @@ To update: Agent HQ, HQ Link, Update now (or run scripts/agent-hq-update.ps1).`)
     return { ok: true };
   }
 
-  return { poll, say, share, board, announce, setup, join, unpair, view, answered, taskChanged, partnerRun };
+  return { poll, say, share, board, work, announce, setup, join, unpair, view, answered, taskChanged, partnerRun };
 }
 
 // Routes. The owner sets the link up; a task-bound agent can talk, and the Lead can share work.
@@ -372,6 +397,11 @@ export function mountLink(route, link, { str, bad, isObj, agentTask, HttpError }
     if (role && !ROLE_ID.test(role)) throw bad('role must be a role id like scout');
     return run(() => link.share(title, text, by, role));
   });
+  route('POST', /^\/api\/link\/work$/, ({ body }) => {
+    if (!isObj(body) || !['start', 'done'].includes(body.state)) throw bad('state must be start or done');
+    const topic = str(body.topic, 'topic', { max: 200, required: true });
+    return run(() => link.work({ state: body.state, topic }));
+  });
   // The bridge asks here for a website proposal: {auto:true} means a low-risk role took it, else it waits for the owner's "send".
   route('POST', /^\/api\/link\/partner-task$/, ({ body }) => {
     if (!isObj(body)) throw bad('body must be an object');
@@ -382,4 +412,4 @@ export function mountLink(route, link, { str, bad, isObj, agentTask, HttpError }
 }
 
 // Owner-only paths, added to the server's OWNER_ONLY list.
-export const LINK_OWNER_ONLY = [['POST', /^\/api\/link\/(?:setup|join|unpair|poll|partner-task)$/]];
+export const LINK_OWNER_ONLY = [['POST', /^\/api\/link\/(?:setup|join|unpair|poll|partner-task|work)$/]];

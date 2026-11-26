@@ -40,6 +40,16 @@ export function mountGamesAdmin(route, { db, D, pubGame, pubTask, postMessage, S
     return out;
   });
 
+  // Owner only: move a game to the archive (hidden from the Games tabs, nothing deleted) or back.
+  route('POST', /^\/api\/games\/([^/]+)\/archive$/, ({ m, body, who }) => {
+    if (who !== 'owner') throw new HttpError(403, 'owner only');
+    const g = D.getGame(db, m[1]);
+    if (!g) throw new HttpError(404, 'unknown game');
+    const out = pubGame(D.updateGame(db, g.slug, { archivedAt: isObj(body) && body.archived === false ? null : new Date().toISOString() }));
+    postMessage({ role: 'lead', from: 'system', text: `${g.name} was ${out.archivedAt ? 'moved to the archive' : 'restored from the archive'}.` });
+    return out;
+  });
+
   // Owner, or the Lead with its task token. game is a known slug or null.
   route('POST', /^\/api\/tasks\/([^/]+)\/game$/, ({ m, body, who, headers }) => {
     if (!isObj(body)) throw bad('body must be an object');

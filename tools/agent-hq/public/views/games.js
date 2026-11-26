@@ -31,6 +31,10 @@ const reqCache = { rows: null, at: 0 };
 let slug = '';
 let tab = 'overview';
 let chartTab = 'trends';
+let showArchive = false;
+// Last activity of a game: its newest task event, or its own last change.
+const activeAt = (g) => [g.lastActivity, g.updatedAt].filter(Boolean).sort().pop() ?? '';
+const bucket = (g) => (g.openTasks || g.working?.length ? 'Working now' : Date.now() - Date.parse(activeAt(g) || 0) < 7 * 864e5 ? 'This week' : 'Quiet');
 
 async function loadGames(force) {
   if (loadingGames || (!force && gamesList && Date.now() - gamesAt < 15000)) return;
@@ -242,17 +246,24 @@ export function render(param) {
   param = first;
   loadGames();
   if (!reqCache.rows) loadRequests();
-  const list = gamesList || (store.games || []).map((g) => ({ ...g, stage: 'built', version: 1 }));
+  const every = gamesList || (store.games || []).map((g) => ({ ...g, stage: 'built', version: 1 }));
+  const archived = every.filter((g) => g.archivedAt);
+  const list = every.filter((g) => !g.archivedAt === !showArchive).sort((a, b) => activeAt(b).localeCompare(activeAt(a))); // most active first
   if (param && list.some((g) => g.slug === param)) slug = param;
   if (!list.some((g) => g.slug === slug)) slug = list[0]?.slug || '';
   const g = list.find((x) => x.slug === slug);
-  const head = pageHead('Games', 'Where each game is, how it is doing, and what stands between it and the next stage.', btn('Add game', addGame, { icon: 'plus' }));
-  if (!g) return h('div', { class: 'page' }, head, empty(gamesList ? 'No games yet.' : 'Loading'));
+  const toggle = archived.length || showArchive ? btn(showArchive ? 'Back to games' : `Archive (${archived.length})`, () => { showArchive = !showArchive; slug = ''; notify(); }, { kind: 'ghost' }) : null;
+  const head = pageHead('Games', showArchive ? 'Archived games: nothing is deleted. Restore one to work on it again.' : 'Where each game is, how it is doing, and what stands between it and the next stage. Most active first.', toggle, btn('Add game', addGame, { icon: 'plus' }));
+  if (!g) return h('div', { class: 'page' }, head, empty(gamesList ? (showArchive ? 'The archive is empty.' : 'No games yet.') : 'Loading'));
+  const archiveBtn = btn(g.archivedAt ? 'Restore' : 'Archive', () => act(() => api('POST', `/api/games/${g.slug}/archive`, { archived: !g.archivedAt }), g.archivedAt ? 'Restored' : 'Archived').then(() => { slug = ''; loadGames(true); }), { kind: 'ghost', title: g.archivedAt ? 'Back to the Games tabs' : 'Hide it from the Games tabs; nothing is deleted' });
+  const groups = showArchive ? ['Archive'] : ['Working now', 'This week', 'Quiet'].filter((b) => list.some((x) => bucket(x) === b));
   const items = [['overview', 'Overview'], ['live', 'Live numbers'], ['pipeline', 'Pipeline']];
   const open = store.tasks.filter((t) => t.game === g.slug && ['queued', 'working', 'review'].includes(t.state)).length;
   return h('div', { class: 'page' }, head,
-    list.length > 1 ? h('div', { class: 'pg-gametabs', role: 'tablist', 'aria-label': 'Games' }, list.map((x) => h('button', { type: 'button', role: 'tab', class: 'pg-gametab', 'aria-selected': String(x.slug === slug),
-      onclick: () => { slug = x.slug; location.hash = '#/games/' + x.slug; notify(); } }, x.name))) : h('h2', {}, g.name),
+    list.length > 1 ? h('div', { class: 'pg-gametabs', role: 'tablist', 'aria-label': 'Games by activity' }, groups.map((grp) => [groups.length > 1 && !showArchive ? h('span', { class: 'muted small', 'aria-hidden': 'true' }, grp) : null,
+      list.filter((x) => showArchive || bucket(x) === grp).map((x) => h('button', { type: 'button', role: 'tab', class: 'pg-gametab', 'aria-selected': String(x.slug === slug), title: activeAt(x) ? `Last activity ${ago(activeAt(x))}` : null,
+        onclick: () => { slug = x.slug; location.hash = '#/games/' + x.slug; notify(); } }, x.name))])) : h('h2', {}, g.name),
+    h('div', { class: 'row gap' }, archiveBtn),
     h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Game view' }, items.map(([id, label]) => h('button', { type: 'button', role: 'tab', class: 'tab', 'aria-selected': String(id === tab), onclick: () => { tab = id; notify(); } },
       label, id === 'overview' && open ? h('span', { class: 'count', 'data-tone': 'violet' }, open) : null))),
     tab === 'overview' ? overview(g) : tab === 'live' ? liveTab(g) : pipeline(g));
