@@ -9,3 +9,6 @@ FogbellHarbor.rbxlx
 captures/
 SpaceAgency.rbxlx
 .agent-hq/
+
+# Agent HQ writes this at run time (and the smoke test does too); never commit it
+tools/agent-hq/memory/mistakes.json
