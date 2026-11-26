@@ -17,6 +17,7 @@ const SNAP_MAX = 300000;
 const CMD_ID = /^c_[0-9a-f]{12}$/;
 const SAFE_ID = /^[\w-]{1,40}$/;
 const SHARE_DIRS = ['assets', 'research', 'docs'];
+const DITTO_AI_ID = '1561419856727773244'; // "Ditto's AI#7769", the bot of Ditto's HQ
 const LIMIT_ERR = /usage limit|rate.?limit|limit (?:reached|hit)|out of (?:extra )?usage|quota|\b429\b|hit your limit/i;
 const DEFAULTS = { enabled: false, guildId: '', channelId: '', ownerIds: [], dittoId: '', threads: {}, dittoThreadId: '', cursors: {}, posts: {}, picks: {}, seen: [],
   stateChannelId: '', commandsChannelId: '', dittoChannelId: '', avatarBase: '', botId: '', snapMsgId: '', snapHash: '', snapAt: 0, ran: [] };
@@ -51,7 +52,7 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     return process.env.DISCORD_BOT_TOKEN || '';
   };
   const dittoHookFile = path.join(stateDir, 'bridge-webhook-ditto');
-  const dittoAiIds = () => (D.getSetting(db, 'link', {}).peers ?? []).map((p) => p.id); // Ditto's AI posts as his HQ's bot, the one HQ Link is paired with
+  const dittoAiIds = () => [...new Set([...(D.getSetting(db, 'link', {}).peers ?? []).map((p) => p.id), DITTO_AI_ID])]; // Ditto's AI posts as his HQ's bot, the one HQ Link is paired with
   const hook = (file = hookFile) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
 
   class Slow extends Error {}
@@ -218,7 +219,9 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     return { file: f };
   }
 
-  const toDitto = (c, text) => { if (c.dittoThreadId) enqueue({ threadId: c.dittoThreadId, username: 'Agent HQ', content: clip(`<@${c.dittoId}> ${redact(text)}`, 1900), mentions: { users: c.dittoId ? [c.dittoId] : [] } }); };
+  // every post in #ditto-collab mentions Ditto and his AI (his HQ's bot), so both see it
+  const dittoPing = (c) => { const ids = [...new Set([c.dittoId, ...dittoAiIds()].filter((x) => SNOWFLAKE.test(x ?? '')))]; return { tag: ids.map((x) => `<@${x}>`).join(' '), mentions: { users: ids } }; };
+  const toDitto = (c, text) => { if (c.dittoThreadId) { const p = dittoPing(c); enqueue({ threadId: c.dittoThreadId, username: 'Agent HQ', content: clip(`${p.tag} ${redact(text)}`, 1900), mentions: p.mentions }); } };
   // Is Voltage's AI able to work right now? A failed task in the last 2 hours that names a usage limit, or the pause switch.
   function availability() {
     const since = new Date(now() - 2 * 3600e3).toISOString();
@@ -262,7 +265,7 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
       ? `For Ditto's Claude, step ${i + 1} of ${steps.length}: ${steps[i]}`
       : "For Ditto's Claude: that is every step for now, thanks. Before you change Agent HQ, ping with node scripts/hq-work.mjs start \"<topic>\"; Voltage's HQ answers with its version.";
     save({ ...config(), dittoAi: { hash, next: i + 1, at: now(), done: i >= steps.length } });
-    enqueue({ threadId: c.dittoThreadId, username: 'Agent HQ', content: clip(redact(withStatus(msg)), 1900) });
+    toDitto(c, withStatus(msg));
     if (c.threads.lead) enqueue({ threadId: c.threads.lead, username: 'Agent HQ', content: clip(`Ditto's AI said: ${redact(text).replace(/\s+/g, ' ').slice(0, 400)}\nI sent it ${i < steps.length ? `step ${i + 1}` : 'the closing note'}.`, 900) });
   }
 
@@ -293,7 +296,7 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
       return;
     }
     if (/^ditto:/i.test(text)) {
-      enqueue({ threadId: c.dittoThreadId, username: 'Agent HQ', content: clip(`<@${c.dittoId}> ${redact(text.slice(6).trim())}`, 1900), mentions: { users: c.dittoId ? [c.dittoId] : [] } });
+      toDitto(c, text.slice(6).trim());
       return;
     }
     if (/^share\s/i.test(text)) {
