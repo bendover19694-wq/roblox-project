@@ -266,3 +266,39 @@ test('co-op: "starting Agent HQ work" reaches the other HQ, which answers with i
   assert.equal((await b.call('GET', '/api/link')).json.peerWork, null);
   assert.equal((await a.call('POST', '/api/link/work', { state: 'maybe', topic: 'x' })).status, 400);
 });
+
+test('partner access levels: lane allows editing roles but not the Lead, all allows everything; a new level is offered to the partner to match', async () => {
+  const { a, b } = await pair();
+  assert.equal((await allow(a, { enabled: true, level: 'lane', autoRoles: ['lead'], dailyLimit: 30 })).status, 400);
+  assert.equal((await allow(a, { enabled: true, level: 'nope', autoRoles: [], dailyLimit: 1 })).status, 400);
+  assert.equal((await allow(a, { enabled: true, level: 'all', autoRoles: ['lead', 'builder'], dailyLimit: 500 })).status, 200);
+  assert.equal((await allow(a, { enabled: true, level: 'lane', autoRoles: ['builder', 'ui'], dailyLimit: 30 })).status, 200);
+  await b.call('POST', '/api/link/poll', {});
+  const asks = (await b.call('GET', '/api/asks?state=open')).json;
+  const ask = (Array.isArray(asks) ? asks : asks.asks).find((x) => /set partner access to "lane"/.test(x.title));
+  assert.ok(ask, 'the partner is asked to match');
+  assert.equal((await b.call('POST', `/api/asks/${ask.id}/answer`, { answer: 'access-match-lane' })).status, 200);
+  const pa = (await b.call('GET', '/api/settings')).json.partnerAccess ?? (await b.call('GET', '/api/settings')).json.settings?.partnerAccess;
+  assert.equal(pa.level, 'lane');
+  assert.ok(pa.autoRoles.includes('builder') && !pa.autoRoles.includes('lead'));
+});
+
+test('lane check: an editing partner task that changed files outside the lane asks the owner, and never undoes anything', async () => {
+  const { createLink } = await import('../link.mjs');
+  const store = new Map();
+  const asks = [];
+  const D = { getSetting: (_db, k, f) => (store.has(k) ? store.get(k) : f), setSetting: (_db, k, v) => store.set(k, v), createAsk: (_db, x) => { asks.push(x); return { id: `a${asks.length}`, ...x }; } };
+  let files = ['src/old.luau'];
+  const queued = [];
+  const link = createLink({ db: null, D, stateDir: os.tmpdir(), emit: () => {}, queueTask: (t) => { queued.push(t); return { id: `t${queued.length}`, ...t }; }, roleIds: () => ['builder', 'scout', 'lead'], changedFiles: async () => files });
+  store.set('partnerAccess', { enabled: true, level: 'lane', autoRoles: ['builder'], dailyLimit: 30 });
+  assert.equal(link.partnerRun({ name: 'Ditto', role: 'builder', title: 't', text: 'make the shop' }), null, 'no co-op split yet: the owner decides');
+  store.set('coop', { partnerLane: ['games/clipping-empire/src/client/**'] });
+  const t = link.partnerRun({ name: 'Ditto', role: 'builder', title: 'Shop UI', text: 'make the shop' });
+  assert.match(queued[0].body, /Edit only Ditto's lane: games\/clipping-empire\/src\/client\/\*\*/);
+  await new Promise((r) => setTimeout(r, 10));
+  files = ['src/old.luau', 'games/clipping-empire/src/client/Shop.luau', 'tools/agent-hq/server.mjs'];
+  assert.deepEqual(await link.laneCheck({ ...t, state: 'review' }), ['tools/agent-hq/server.mjs']);
+  assert.match(asks[0].why, /tools\/agent-hq\/server\.mjs/);
+  assert.equal(await link.laneCheck({ ...t, state: 'done' }), null, 'checked once');
+});

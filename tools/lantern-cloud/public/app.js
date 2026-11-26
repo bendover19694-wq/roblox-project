@@ -142,6 +142,10 @@ function render(s) {
   }) : [emptyRow()]));
 
   renderStudio(s, snap);
+  fillSelect($('mqRole'), roles, (r) => r.id, (r) => r.label, 'Waiting for HQ');
+  $('asksBadge').textContent = String(asks.length);
+  $('asksBadge').hidden = !asks.length;
+  window.mobileRender?.(s, roles);
   renderTools(s, snap, roleName);
   fillSelect($('msgRole'), roles, (r) => r.id, (r) => r.label, 'Waiting for HQ');
   fillSelect($('taskRole'), roles, (r) => r.id, (r) => r.label, 'Waiting for HQ');
@@ -167,6 +171,9 @@ function renderStudio(s, snap) {
   }) : [empty('No shared work yet', 'Chat and shared tasks between the two HQs show up here.')]));
   $('linkPanel').hidden = !isOwner;
   $('proposePanel').hidden = me.role !== 'collab';
+  $('mq').hidden = false; // the owner queues on his PC or a cloud; Ditto may use either Claude cloud
+  $('mqWherePc').hidden = !isOwner;
+  if (!isOwner && $('mqWhere').value === 'pc') $('mqWhere').value = 'ditto';
   for (const id of ['tabMsg', 'tabTask']) $(id).hidden = !isOwner;
   renderStudioBrief(snap, log);
   renderCollab(snap, log);
@@ -329,6 +336,41 @@ $('taskForm').addEventListener('submit', async (e) => {
   if (b) b.disabled = false;
 });
 
+$('mqForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const b = e.submitter;
+  if (b) b.disabled = true;
+  const where = $('mqWhere').value;
+  const task = { role: $('mqRole').value, title: $('mqTitleIn').value.trim(), body: $('mqBody').value.trim() };
+  let ok = false;
+  if (where === 'pc') ok = await send({ type: 'task', ...task }, 'Work queued.');
+  else {
+    try { const r = await api('/api/cloud-tasks', { ...task, cloud: where }); toast(`Sent to ${where === 'ditto' ? "Ditto's" : "Voltage's"} Claude cloud (request #${r.number}).`); ok = true; loadCloud(); } catch (err) { toast(err.message, true); }
+  }
+  if (ok) {
+    $('mqTitleIn').value = '';
+    $('mqBody').value = '';
+  }
+  if (b) b.disabled = false;
+});
+
+// Cloud requests (issues in the private hq-collab repo) and whether a cloud worker finished them.
+async function loadCloud() {
+  const ul = $('cloudList');
+  try {
+    const r = await api('/api/cloud-tasks');
+    ul.replaceChildren(...(r.configured ? (r.tasks.length ? r.tasks.map((t) => {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = t.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = `#${t.number} ${t.title}`;
+      li.append(a, ` · ${t.cloud || '?'} · ${t.done ? 'done' : 'waiting'}${t.comments ? ` · ${t.comments} replies` : ''}`);
+      return li;
+    }) : [Object.assign(document.createElement('li'), { textContent: 'No cloud work yet.' })]) : [Object.assign(document.createElement('li'), { textContent: 'Cloud work is not set up yet (GITHUB_TOKEN on Render).' })]));
+  } catch (err) { ul.replaceChildren(Object.assign(document.createElement('li'), { textContent: `Could not load cloud work: ${err.message}` })); }
+}
+loadCloud();
+setInterval(() => { if (!document.hidden) loadCloud(); }, 60000);
+
 const ROLE_ID = /^[a-z][a-z0-9-]{0,29}$/;
 $('linkForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -349,19 +391,27 @@ $('proposeForm').addEventListener('submit', async (e) => {
   if (await send({ type: 'relay', text: $('proposeText').value.trim(), ...(role && { role }) }, `Sent. ${role ? `${role}: ${note}.` : 'Voltage decides who takes it.'}`)) $('proposeText').value = '';
 });
 
-// sections: hash routes, no reload
+// sections: hash routes, no reload. Phone views (chat, asks, tasks) sit on the tab bar; on a wide screen they fold into Agent HQ.
 const SECTIONS = ['studio', 'hq', 'collab', 'tools'];
+const PHONE_VIEWS = ['chat', 'asks', 'tasks'];
+const phone = matchMedia('(max-width: 759.98px)');
 function route() {
-  const name = SECTIONS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'studio';
-  for (const n of SECTIONS) {
-    document.querySelector(`.sec[data-sec="${n}"]`).hidden = n !== name;
-    const a = document.querySelector(`.nav a[data-sec="${n}"]`);
-    if (n === name) a.setAttribute('aria-current', 'page');
+  let view = location.hash.slice(1);
+  if (!SECTIONS.includes(view) && !PHONE_VIEWS.includes(view)) view = phone.matches ? 'chat' : 'studio';
+  if (!phone.matches && PHONE_VIEWS.includes(view)) view = 'hq';
+  const name = PHONE_VIEWS.includes(view) ? (view === 'chat' ? 'chat' : 'hq') : view;
+  document.body.dataset.view = view;
+  for (const n of [...SECTIONS, 'chat']) document.querySelector(`.sec[data-sec="${n}"]`).hidden = n !== name;
+  for (const a of document.querySelectorAll('.nav a, .tabbar a')) {
+    if ((a.dataset.sec || a.dataset.view) === view) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
+  window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
+phone.addEventListener('change', route);
 route();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {}); // the app still works without it
 
 function bubble(who, text) {
   const b = el('div', `bubble ${who}`, text);

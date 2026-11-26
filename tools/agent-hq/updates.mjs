@@ -10,6 +10,13 @@ const git = (root, args) => new Promise((resolve) => {
   execFile('git', ['-C', root, ...args], { windowsHide: true, timeout: 10000 }, (e, out) => resolve(e ? '' : String(out).trim()));
 });
 
+/** Paths with uncommitted changes (git status), for the partner lane check.
+ * shortcut: a file that was already changed before a partner task and changed again by it is not caught; upgrade to per-task worktrees if that matters. */
+export async function gitChanged(root) {
+  const out = await new Promise((resolve) => execFile('git', ['-C', root, 'status', '--porcelain', '-uall'], { windowsHide: true, timeout: 20000, maxBuffer: 16 * 1024 * 1024 }, (e, o) => resolve(e ? '' : String(o))));
+  return out.split('\n').filter(Boolean).map((l) => l.slice(3).split(' -> ').pop().replace(/^"|"$/g, ''));
+}
+
 export function appBranch({ home = os.homedir() } = {}) {
   try { return JSON.parse(fs.readFileSync(path.join(home, 'Documents', 'Agent-HQ-App.json'), 'utf8')).branch || null; } catch { return null; }
 }

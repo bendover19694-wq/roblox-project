@@ -145,20 +145,27 @@ function youCard() {
 
 // Roles that cannot change game files; only these can run on a partner's request without your OK (the server enforces it too).
 const PARTNER_OK = ['scout', 'designer', 'reviewer', 'kid-tester', 'playtester', 'liveops'];
+const LEVELS = [['read', 'Read only', 'Only roles that cannot edit files run on his say.'], ['lane', 'Edits in his lane', 'Editing roles run too, but only inside his co-op lane; files changed outside it come to you.'], ['all', 'Everything', 'Any role, the Lead included, any file. His text drives agents on your PC with your Claude account.']];
 function partnerCard() {
-  const cur = { enabled: true, autoRoles: ['scout', 'designer'], dailyLimit: 5, ...(store.settings.partnerAccess || {}) };
+  const cur = { enabled: true, autoRoles: ['scout', 'designer'], dailyLimit: 5, level: 'read', ...(store.settings.partnerAccess || {}) };
   const save = async (patch) => {
     const value = { ...cur, ...patch };
     if (await act(() => api('POST', '/api/settings', { key: 'partnerAccess', value }), 'Saved')) { store.settings = { ...store.settings, partnerAccess: value }; notify(); }
   };
+  const roles = store.roles.filter((r) => (cur.level === 'read' ? PARTNER_OK.includes(r.id) : cur.level === 'all' || r.id !== 'lead'));
+  const max = cur.level === 'read' ? 50 : 500;
+  // a new level turns on every role it allows (read keeps only the safe ones); the partner's HQ is told and its owner may match it
+  const setLevel = (level) => save({ level, enabled: true, autoRoles: level === 'read' ? cur.autoRoles.filter((r) => PARTNER_OK.includes(r)) : store.roles.map((r) => r.id).filter((r) => level === 'all' || r !== 'lead'), dailyLimit: level === 'read' ? Math.min(cur.dailyLimit, 50) : Math.max(cur.dailyLimit, 30) });
   return h('section', { class: 'card stack sm' },
     h('h2', { class: 'section-title' }, 'Partner agents'),
-    h('p', { class: 'muted' }, "Let Ditto use these agents without asking you each time. Other roles, and anything over the daily limit, still wait for your OK."),
+    h('p', { class: 'muted' }, "Let Ditto use these agents without asking you each time. Other roles, and anything over the daily limit, still wait for your OK. When you change the level, his HQ is told and he is asked to match it."),
+    h('div', { class: 'stack sm', role: 'radiogroup', 'aria-label': 'Partner access level' }, LEVELS.map(([id, label, hint]) => h('label', { class: 'check' },
+      h('input', { type: 'radio', name: 'partner-level', checked: cur.level === id, onchange: () => setLevel(id) }), h('span', {}, h('strong', {}, label), ` · ${hint}`)))),
     h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: cur.enabled, onchange: (e) => save({ enabled: e.target.checked }) }), h('span', {}, 'Allow partner requests to run right away')),
-    h('div', { class: 'row gap wrap', role: 'group', 'aria-label': 'Roles that run right away' }, store.roles.filter((r) => PARTNER_OK.includes(r.id)).map((r) =>
+    h('div', { class: 'row gap wrap', role: 'group', 'aria-label': 'Roles that run right away' }, roles.map((r) =>
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: cur.autoRoles.includes(r.id),
         onchange: (e) => save({ autoRoles: e.target.checked ? [...cur.autoRoles, r.id] : cur.autoRoles.filter((x) => x !== r.id) }) }), h('span', {}, r.label)))),
-    field('Tasks per day', h('input', { class: 'input num-in', type: 'number', min: 0, max: 50, value: cur.dailyLimit, 'aria-label': 'Partner tasks per day', onchange: (e) => save({ dailyLimit: Math.max(0, Math.min(50, Math.round(Number(e.target.value) || 0))) }) })));
+    field('Tasks per day', h('input', { class: 'input num-in', type: 'number', min: 0, max, value: cur.dailyLimit, 'aria-label': 'Partner tasks per day', onchange: (e) => save({ dailyLimit: Math.max(0, Math.min(max, Math.round(Number(e.target.value) || 0))) }) })));
 }
 
 export function render() {
