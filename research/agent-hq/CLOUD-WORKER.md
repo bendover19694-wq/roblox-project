@@ -25,7 +25,13 @@ For each issue:
 If there is nothing to do, stop at once without changes.
 ```
 
-Setup on claude.ai (Ditto's Claude Code can do it with `/schedule`): cron `15 */6 * * *`, model Sonnet, sources
-`https://github.com/bendover19694-wq/roblox-project` and `https://github.com/bendover19694-wq/hq-collab`, no connectors, then a
+**Ditto's routine works from his fork**, so he needs no write access to Voltage's repo: sources
+`https://github.com/dittowashunted/roblox-project` and `https://github.com/bendover19694-wq/hq-collab`, and in step 2 and 4 of
+the prompt: "Work in your fork dittowashunted/roblox-project (fetch coop/clipping-empire from bendover19694-wq/roblox-project
+first), push the branch cloud/issue-<number> to the fork, and open the pull request from the fork into
+bendover19694-wq/roblox-project coop/clipping-empire." The game really is called GT6 Clipping Empire (games/clipping-empire/README.md).
+
+Setup on claude.ai (Ditto's Claude Code can do it with `/schedule`): cron `15 */6 * * *`, model Sonnet, sources as above
+(Voltage: `https://github.com/bendover19694-wq/roblox-project` and `https://github.com/bendover19694-wq/hq-collab`), no connectors, then a
 GitHub webhook trigger: `hook_type: app`, `scope_id: bendover19694-wq/hq-collab`, `events: ["issues.labeled"]`.
 The Claude GitHub app must be able to reach both repos (Ditto needs collaborator access to hq-collab first).
