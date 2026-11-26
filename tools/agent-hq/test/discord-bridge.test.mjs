@@ -142,7 +142,7 @@ test('plain owner messages become HQ messages for that role; strangers and bots 
   assert.equal(r.hq().length, 0);
 });
 
-test('ditto: posts to ditto-collab mentioning only Ditto; unsafe share paths are refused', async () => {
+test('ditto: posts to ditto-collab mention Ditto and his AI; unsafe share paths are refused', async () => {
   const r = rig();
   const view = await ready(r);
   r.f.say(view.threads.lead, { id: OWNER }, 'ditto: want to swap maps?');
@@ -155,7 +155,7 @@ test('ditto: posts to ditto-collab mentioning only Ditto; unsafe share paths are
   await flush(r);
   const posts = r.hooks();
   const toDitto = posts.find((h) => h.search.includes(view.dittoThreadId) && h.body.content?.includes('swap maps'));
-  assert.deepEqual(toDitto.body.allowed_mentions, { users: [DITTO] });
+  assert.deepEqual(toDitto.body.allowed_mentions, { users: [DITTO, '1561419856727773244'] });
   const refused = posts.filter((h) => h.search.includes(view.threads.lead) && h.body.content?.startsWith('Not shared'));
   assert.equal(refused.length, 2);
   assert.equal(r.hq().length, 0, 'none of these reached the agents');
@@ -267,7 +267,7 @@ test('ditto channel: owner posts use its own webhook without thread_id; Ditto st
   await flush(r);
   const out = r.hooks().find((h) => h.body.content?.includes('swap maps'));
   assert.ok(!out.search.includes('thread_id'));
-  assert.deepEqual(out.body.allowed_mentions, { users: [DITTO] });
+  assert.deepEqual(out.body.allowed_mentions, { users: [DITTO, '1561419856727773244'] });
   const wait = r.hooks().find((h) => h.search.includes(`thread_id=${view.threads.lead}`) && h.body.content.includes('Reply "send"'));
   assert.ok(wait);
   assert.equal(r.hq().length, 0, 'nothing reaches HQ until the owner says send');
@@ -540,7 +540,7 @@ test("Ditto's orders: safe asks run at once on a read-only role and he hears bac
   r.f.calls.length = 0;
   assert.deepEqual(r.bridge.replyDitto('Top 3: A, B, C'), { ok: true });
   await flush(r);
-  assert.ok(r.hooks().some((h) => h.body.content.startsWith(`<@${DITTO}> Top 3`) && h.body.allowed_mentions?.users?.includes(DITTO)));
+  assert.ok(r.hooks().some((h) => h.body.content.startsWith(`<@${DITTO}> <@1561419856727773244> Top 3`) && h.body.allowed_mentions?.users?.includes(DITTO)));
 });
 
 test("Ditto's orders: allowlist, hidden characters, one bound answer per task, Lead and secret-looking answers held", async () => {
