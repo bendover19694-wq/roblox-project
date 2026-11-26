@@ -1286,8 +1286,9 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     res.end(data);
   }
 
-  function serveIndex(res) {
-    const file = path.join(publicDir, 'index.html');
+  // "/" is the hub (public/hub); the previous dashboard stays at "/legacy" for the pages the hub does not have yet.
+  function serveIndex(res, rel = fs.existsSync(path.join(publicDir, 'hub', 'index.html')) ? 'hub/index.html' : 'index.html') {
+    const file = path.join(publicDir, rel);
     let html;
     try { html = fs.readFileSync(file, 'utf8'); } catch { throw new HttpError(404, 'index.html missing'); }
     // Never embed the owner token: any local process (agents included) can GET this page.
@@ -1356,6 +1357,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
 
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
       if (pathname === '/' || pathname === '/index.html') return serveIndex(res);
+      if (pathname === '/legacy') return serveIndex(res, 'index.html');
       if (pathname.startsWith('/static/')) {
         const f = readFileIn(publicDir, pathname.slice(8));
         if (!f) throw new HttpError(404, 'not found');
