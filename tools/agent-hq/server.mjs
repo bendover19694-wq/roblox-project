@@ -1,5 +1,5 @@
 // Agent HQ server: HTTP API, SSE, static files. Zero dependencies.
-import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { createCoop, mountCoop, COOP_OWNER_ONLY } from './coop.mjs'; import { createUiLab, mountUiLab, UILAB_OWNER_ONLY } from './ui-lab.mjs'; import { createUpdates, mountUpdates, UPDATES_OWNER_ONLY, versionInfo } from './updates.mjs'; import { createBridge, mountBridge, BRIDGE_OWNER_ONLY } from './discord-bridge.mjs'; import { mountGamesAdmin, mountOpenStudio } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs';
+import { createLink, mountLink, LINK_OWNER_ONLY } from './link.mjs'; import { createCoop, mountCoop, COOP_OWNER_ONLY } from './coop.mjs'; import { createUiLab, mountUiLab, UILAB_OWNER_ONLY } from './ui-lab.mjs'; import { createUpdates, mountUpdates, UPDATES_OWNER_ONLY, versionInfo, gitChanged } from './updates.mjs'; import { createBridge, mountBridge, BRIDGE_OWNER_ONLY } from './discord-bridge.mjs'; import { mountGamesAdmin, mountOpenStudio } from './games-admin.mjs'; import { inferGame, mountGameContext, GAME_CONTEXT_OWNER_ONLY } from './game-context.mjs'; import { loadDoc } from './notebook-doc.mjs';
 import { createAssetCatalog, mountCatalog, CATALOG_OWNER_ONLY } from './catalog.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -326,7 +326,7 @@ ${task.body}`;
   const queueTask = ({ selected, ...f }) => { if (!f.game) f.game = inferGame({ parentGame: f.parentId && D.getTask(db, f.parentId)?.game, selected, text: `${f.title}
 ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued(f); }; // 3D model work waits for a reference sheet (model-refs.mjs)
   const assetCatalog = createAssetCatalog({ root, stateDir, addAsset, fetchImpl: catalogFetch ?? globalThis.fetch, lihfolkPath: catalogLihfolk ?? process.env.HQ_LIHFOLK_ASSETS, polyhavenLocal: catalogMirror, extraPacks: autoTimers ? installedPacks() : [], extra: () => uilab.catalogEntries() });
-  const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), roleIds: () => rolesMerged().map((x) => x.id), fetchImpl: linkFetch ?? globalThis.fetch, version: () => versionInfo(root) }); const bridge = createBridge({ db, D, stateDir, root, roles: rolesMerged, port: () => boundPort, fetchImpl: linkFetch ?? globalThis.fetch, now }); listeners.add(bridge.onEvent); const coop = createCoop({ db, D, link, emit }); const updates = createUpdates({ root, db, D, link, emit }); const uilab = createUiLab({ stateDir, root, games: () => D.listGames(db), notify: (text) => postMessage({ role: 'designer', from: 'designer', text }), taskState: (id) => (id ? D.getTask(db, id)?.state : null), queueTask: (f) => queueTask({ ...f, engine: f.engine ?? (settingsAll().runMode === 'hourly' ? 'app' : 'claude-cli') }) }); // studies follow the run mode, never the designer's image lane
+  const link = createLink({ db, D, stateDir, emit, queueTask: (f) => queueTask(f), roleIds: () => rolesMerged().map((x) => x.id), fetchImpl: linkFetch ?? globalThis.fetch, version: () => versionInfo(root), changedFiles: () => gitChanged(root) }); const bridge = createBridge({ db, D, stateDir, root, roles: rolesMerged, port: () => boundPort, fetchImpl: linkFetch ?? globalThis.fetch, now }); listeners.add(bridge.onEvent); const coop = createCoop({ db, D, link, emit }); const updates = createUpdates({ root, db, D, link, emit }); const uilab = createUiLab({ stateDir, root, games: () => D.listGames(db), notify: (text) => postMessage({ role: 'designer', from: 'designer', text }), taskState: (id) => (id ? D.getTask(db, id)?.state : null), queueTask: (f) => queueTask({ ...f, engine: f.engine ?? (settingsAll().runMode === 'hourly' ? 'app' : 'claude-cli') }) }); // studies follow the run mode, never the designer's image lane
   const postMessage = (f) => { const m = D.addMessage(db, f); emit('message', m); return m; };
 
   const spendGuard = createSpendGuard({ db, emit, now, postMessage });
@@ -1141,7 +1141,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     }
     const value = validateSetting(body.key, body.value, roleIds);
     D.setSetting(db, body.key, value);
-    if (body.key === 'knowledgeLihfolk' || body.key === 'knowledgeReferences') rebuildKnowledge();
+    if (body.key === 'knowledgeLihfolk' || body.key === 'knowledgeReferences') rebuildKnowledge(); else if (body.key === 'partnerAccess') link.accessChanged(value);
     emit('settings', { key: body.key, value });
     return { key: body.key, value };
   });

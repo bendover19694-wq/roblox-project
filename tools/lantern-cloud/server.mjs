@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAuth, sessionCookie, pendingCookie } from './auth.mjs';
 import { createDiscord } from './discord.mjs';
 import { createBrain, createBot } from './brain.mjs';
+import { createCloudTasks, cloudRequest } from './cloud-tasks.mjs';
 import { createTunnel, safePath } from './tunnel.mjs';
 import { searchGames } from './roblox-search.mjs';
 import { createHqState, noHqState, validateCommand, postCommand } from './hq-state.mjs';
@@ -26,7 +27,8 @@ const SECURITY_HEADERS = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
   'Referrer-Policy': 'same-origin', // no-referrer makes browsers send Origin: null on form posts
 };
-const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', png: 'image/png' };
+const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', png: 'image/png', webmanifest: 'application/manifest+json' };
+const APP_ICONS = new Set(['icon-192.png', 'icon-512.png', 'apple-touch-icon.png']); // installable app (PWA) icons, public like the logo
 
 export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebSocketImpl, now = Date.now, publicDir = path.join(HERE, 'public'), avatarDir = path.join(HERE, 'avatars') } = {}) {
   // the password hash: DV_PASSWORD_HASH, or the older LANTERN_PASSWORD_HASH already set on Render
@@ -55,6 +57,7 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     return list.length > max;
   };
   const tunnel = createTunnel({ secret: env.TUNNEL_SECRET, now });
+  const cloud = createCloudTasks({ token: env.GITHUB_TOKEN, fetch: f });
   const brain = createBrain({ fetch: f, apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL, getState: () => hq.get(), findGames: (q) => searchGames(q, { fetch: f, limit: 6 }) });
   const sendCommand = async (command) => {
     if (!discord || !env.COMMANDS_CHANNEL_ID) throw new Error('Discord commands channel is not configured');
@@ -144,6 +147,9 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     if (get && p === '/style.css') return file(res, publicDir, 'style.css', TYPES.css);
     if (get && (p === '/img/logo.png' || p === '/img/favicon.png' || p === '/favicon.ico')) return file(res, path.join(publicDir, 'img'), p === '/img/logo.png' ? 'logo.png' : 'favicon.png', TYPES.png);
     if (get && (p === '/fonts/space-grotesk.woff2' || p === '/fonts/geist-mono.woff2')) return file(res, path.join(publicDir, 'fonts'), p.slice(7), 'font/woff2');
+    if (get && p === '/manifest.webmanifest') return file(res, publicDir, 'manifest.webmanifest', TYPES.webmanifest);
+    if (get && p === '/sw.js') return file(res, publicDir, 'sw.js', TYPES.js); // root scope; the worker never caches /api
+    if (get && p.startsWith('/img/') && APP_ICONS.has(p.slice(5))) return file(res, path.join(publicDir, 'img'), p.slice(5), TYPES.png);
     if (get && p === '/login') return loginPage(res, 200, auth.hasPassword ? '' : NOTES[503], { 'Set-Cookie': pendingCookie('', 0) });
     if (get && p === '/login/code') return auth.hasPending(req.headers.cookie) ? codePage(res, 200, '') : redirect(res, '/login');
     if (tunnel.enabled && (p === '/tunnel/next' || p.startsWith('/tunnel/reply/'))) {
@@ -238,6 +244,14 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
         }
         return json(res, 200, { ok: true, id: v.command.id });
       }
+      if (p === '/api/cloud-tasks') { // both accounts: work for Voltage's or Ditto's Claude cloud routine (cloud-tasks.mjs)
+        if (get) { try { return json(res, 200, { configured: cloud.configured(), tasks: cloud.configured() ? await cloud.list() : [] }); } catch (e) { return json(res, e.status ?? 502, { error: e.message }); } }
+        if (!post) return json(res, 405, { error: 'GET or POST' });
+        if (limited(`cloud:${me.role}`, 10)) return json(res, 429, { error: 'Slow down: 10 cloud requests a minute.' });
+        const r = cloudRequest(await readJson(req), me.name);
+        if (r.error) return json(res, 400, { error: r.error });
+        try { return json(res, 200, { ok: true, ...(await cloud.create(r)) }); } catch (e) { return json(res, e.status ?? 502, { error: e.message }); }
+      }
       if (post && p === '/api/chat') {
         const { text } = await readJson(req);
         if (typeof text !== 'string' || !text.trim() || text.length > 2000) return json(res, 400, { error: 'text must be 1 to 2000 characters' });
@@ -258,6 +272,7 @@ export function createApp({ env = process.env, fetch: f = globalThis.fetch, WebS
     }
     if (get && p === '/') return file(res, publicDir, 'index.html', TYPES.html);
     if (get && p === '/app.js') return file(res, publicDir, 'app.js', TYPES.js);
+    if (get && p === '/mobile.js') return file(res, publicDir, 'mobile.js', TYPES.js);
     return send(res, 404, 'not found');
   }
 

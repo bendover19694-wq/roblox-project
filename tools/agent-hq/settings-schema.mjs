@@ -35,7 +35,10 @@ export const PARTNER_AUTO_OK = JSON.parse(fs.readFileSync(new URL('./roles.json'
   .filter((r) => r.id !== 'lead' && !r.needsStudio && // the Lead can hand work to every role, so it never runs on a partner's say
      !(r.mcp || []).some((m) => UNSAFE_MCP.test(m)) && !(r.allowedTools || []).some((t) => UNSAFE_TOOL.test(t))) // Studio, Blender (runs Python), Meshy (credits), Penpot (runs code): never on a partner's say
   .map((r) => r.id);
-export const DEFAULT_PARTNER_ACCESS = { enabled: false, autoRoles: [], dailyLimit: 0 }; // off until the owner opts in
+export const DEFAULT_PARTNER_ACCESS = { enabled: false, autoRoles: [], dailyLimit: 0, level: 'read' }; // off until the owner opts in
+// level: read = only roles that cannot edit run on a partner's say; lane = editing roles too, checked against the partner's co-op lane;
+// all = any role, the Lead included, no lane check. Changing it tells the partner's HQ, whose owner may match it (link.mjs).
+export const PARTNER_LEVELS = ['read', 'lane', 'all'];
 // Co-op game (coop.mjs): one game built by two HQs. Lanes are repo paths or globs; the partner's HQ holds the mirror image.
 export const DEFAULT_COOP = { enabled: false, game: '', me: '', partner: '', myLane: [], partnerLane: [], shared: [], shareBoard: false };
 const LANE_PATH = /^(?!\/)(?!.*\.\.)[\w./*-]{1,120}$/;
@@ -203,12 +206,14 @@ function validateCustom(key, value, roleIds) {
       if (!isObj(value)) throw bad('partnerAccess must be an object');
       const v = { ...DEFAULT_PARTNER_ACCESS, ...value };
       if (typeof v.enabled !== 'boolean') throw bad('partnerAccess.enabled must be a boolean');
-      if (!Array.isArray(v.autoRoles) || v.autoRoles.length > 20) throw bad('partnerAccess.autoRoles must be a list of role ids');
+      if (!PARTNER_LEVELS.includes(v.level)) throw bad(`partnerAccess.level must be one of ${PARTNER_LEVELS.join(', ')}`);
+      if (!Array.isArray(v.autoRoles) || v.autoRoles.length > 40) throw bad('partnerAccess.autoRoles must be a list of role ids');
       for (const r of v.autoRoles) {
         if (!roleIds.includes(r)) throw bad(`unknown role ${r}`);
-        if (!PARTNER_AUTO_OK.includes(r)) throw bad(`${r} can change game files, so it cannot run on a partner's request without your OK`);
+        if (v.level === 'read' && !PARTNER_AUTO_OK.includes(r)) throw bad(`${r} can change game files, so it cannot run on a partner's request without your OK (set level to lane or all)`);
+        if (v.level === 'lane' && r === 'lead') throw bad('the Lead can hand work to every role, so it runs on a partner\'s say only at level all');
       }
-      return { enabled: v.enabled, autoRoles: [...new Set(v.autoRoles)], dailyLimit: intIn(v.dailyLimit, 'partnerAccess.dailyLimit', 0, 50) };
+      return { enabled: v.enabled, level: v.level, autoRoles: [...new Set(v.autoRoles)], dailyLimit: intIn(v.dailyLimit, 'partnerAccess.dailyLimit', 0, v.level === 'read' ? 50 : 500) };
     }
     case 'codexAccounts': case 'claudeAccounts': return validAccounts(value, bad);
     case 'coop': {

@@ -5,8 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#06070a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Agent HQ">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <title>DV Enterprises</title>
 <link rel="icon" href="/img/favicon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -29,6 +36,17 @@
 <main id="main" class="shell">
   <p id="notice" class="notice" role="status" hidden></p>
 
+<div id="sec-chat" class="sec" data-sec="chat" hidden>
+  <h1 class="sr">Chat</h1>
+  <div id="agentList" class="agents" role="radiogroup" aria-label="Talk to"></div>
+  <p id="chatWho" class="fine"></p>
+  <div id="mfeed" class="mfeed" role="log" aria-live="polite" aria-label="Conversation"></div>
+  <form id="mForm" class="mcomposer">
+    <label class="sr" for="mText">Message</label>
+    <textarea id="mText" rows="1" maxlength="1800" placeholder="Message" required enterkeyhint="send"></textarea>
+    <button type="submit" class="primary" id="mSend">Send</button>
+  </form>
+</div>
 <div id="sec-studio" class="sec" data-sec="studio">
   <section class="hero" aria-labelledby="headline">
     <p class="eyebrow">DV Enterprises</p>
@@ -61,15 +79,36 @@
 <div id="sec-hq" class="sec" data-sec="hq" hidden>
   <div class="layout">
     <div class="col-main">
-      <section class="panel" aria-labelledby="asksTitle">
+      <section class="panel" id="panelAsks" aria-labelledby="asksTitle">
         <header class="panel-head"><h2 id="asksTitle">Needs you</h2><span id="asksCount" class="count"></span></header>
         <div id="asks" class="asks"><div class="skeleton"></div><div class="skeleton short"></div></div>
       </section>
-      <section class="panel" aria-labelledby="tasksTitle">
+      <section class="panel" id="panelTasks" aria-labelledby="tasksTitle">
         <header class="panel-head"><h2 id="tasksTitle">In progress</h2><span id="tasksCount" class="count"></span></header>
         <ul id="tasks" class="tasks"><li class="skeleton"></li><li class="skeleton"></li><li class="skeleton short"></li></ul>
       </section>
     </div>
+
+    <section class="panel mq" id="mq" aria-labelledby="mqTitle" hidden>
+      <header class="panel-head"><h2 id="mqTitle">Queue work</h2></header>
+      <form id="mqForm" class="stack">
+        <label for="mqRole">Agent</label>
+        <select id="mqRole"></select>
+        <label for="mqTitleIn">Title</label>
+        <input id="mqTitleIn" maxlength="200" placeholder="Fix the Shop text size on phones" required>
+        <label for="mqBody">Details</label>
+        <textarea id="mqBody" maxlength="1500" rows="4" placeholder="What done looks like"></textarea>
+        <label for="mqWhere">Run on</label>
+        <select id="mqWhere">
+          <option value="pc" id="mqWherePc">Voltage's PC (waits while it is off)</option>
+          <option value="voltage">Voltage's Claude cloud (runs with PCs off)</option>
+          <option value="ditto">Ditto's Claude cloud (runs with PCs off)</option>
+        </select>
+        <button type="submit" class="primary">Queue work</button>
+      </form>
+      <h3 class="cloud-head">Cloud work</h3>
+      <ul id="cloudList" class="cloud-list" aria-live="polite"></ul>
+    </section>
 
     <aside class="col-side panel composer" aria-label="Talk to HQ">
       <div class="tabs" role="tablist" aria-label="Composer">
@@ -199,7 +238,14 @@
   </div>
 </div>
 </main>
+<nav id="tabbar" class="tabbar" aria-label="App">
+  <a href="#chat" data-view="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Chat</span></a>
+  <a href="#asks" data-view="asks"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5M12 16v.5"/></svg><span>Asks</span><b id="asksBadge" hidden></b></a>
+  <a href="#tasks" data-view="tasks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h9"/></svg><span>Tasks</span></a>
+  <a href="#collab" data-view="collab"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2.4"/><path d="M3.5 19c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5M16 14.6c2.3 0 3.9 1.2 4.5 3.9"/></svg><span>Collab</span></a>
+</nav>
 <p id="toast" class="toast" role="status" hidden></p>
 <script src="/app.js"></script>
+<script src="/mobile.js"></script>
 </body>
 </html>

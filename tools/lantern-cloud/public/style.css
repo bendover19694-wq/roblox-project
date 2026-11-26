@@ -247,3 +247,40 @@ a.more:hover { color: var(--text); }
 .g-name { color: var(--text); font-weight: 600; text-decoration: none; }
 a.g-name:hover { text-decoration: underline; }
 .opt.small { justify-self: start; min-height: 44px; padding: 8px 14px; margin-top: 4px; font-size: 13px; }
+
+/* Phone app: tab bar and chat view (under 760px) */
+.tabbar, .mq { display: none; }
+.agents { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; scrollbar-width: none; }
+.agents::-webkit-scrollbar { display: none; }
+.agent { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 14px 6px 8px; border-radius: 999px; }
+.agent .avatar { width: 28px; height: 28px; border-radius: 50%; }
+.agent:not(:has(.avatar)) { padding-left: 16px; }
+.agent[aria-checked="true"] { border-color: var(--cyan); background: #112030; color: #fff; }
+.mfeed { display: grid; gap: 10px; align-content: start; overflow-y: auto; min-height: 200px; padding: 8px 0; }
+.bubble.sys { justify-self: center; background: none; border: 0; color: var(--muted); font-size: 13px; }
+.mcomposer { display: flex; gap: 8px; align-items: flex-end; }
+.mcomposer textarea { min-height: 44px; max-height: 140px; resize: none; }
+.mcomposer button { min-height: 44px; }
+@media (max-width: 759.98px) {
+  body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  .bar { padding-top: max(12px, env(safe-area-inset-top)); }
+  .shell { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .tabbar { position: fixed; z-index: 25; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); padding-bottom: env(safe-area-inset-bottom); background: rgba(11, 13, 18, 0.96); backdrop-filter: blur(14px); border-top: 1px solid var(--line-2); }
+  .tabbar a { position: relative; display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 56px; color: var(--silver); text-decoration: none; font-size: 12px; }
+  .tabbar a[aria-current="page"] { color: var(--cyan); }
+  .tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .tabbar b { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--magenta); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+  .tabbar b[hidden] { display: none; }
+  .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .col-side { display: none; }
+  .mq { display: block; }
+  .mq[hidden] { display: none; }
+  body[data-view="chat"] .mfeed { height: calc(100dvh - 330px - env(safe-area-inset-bottom)); min-height: 220px; }
+  body[data-view="chat"] .mcomposer { position: sticky; bottom: calc(64px + env(safe-area-inset-bottom)); background: var(--bg); padding: 8px 0; }
+  body[data-view="asks"] #panelTasks, body[data-view="asks"] .mq, body[data-view="tasks"] #panelAsks { display: none; }
+  button, .opt, .opt-ro, select, input { min-height: 44px; }
+  .nav { display: none; }
+}
+.cloud-head { margin: 16px 0 6px; font-size: 0.95rem; }
+.cloud-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.85rem; overflow-wrap: anywhere; }
+.cloud-list a { color: inherit; }

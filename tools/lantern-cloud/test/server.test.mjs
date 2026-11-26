@@ -181,3 +181,19 @@ test('snapshot staleness drives hqOnline', async () => {
   assert.ok(st.snapshotAge >= 11 * 60_000);
   s.close();
 });
+
+test('installable app files are public with the right types; the page scripts and /api stay behind sign-in', async () => {
+  const s = await boot();
+  try {
+    const m = await s.req('/manifest.webmanifest');
+    assert.equal(m.status, 200);
+    assert.match(m.headers.get('content-type'), /^application\/manifest\+json/);
+    assert.equal((await m.json()).display, 'standalone');
+    const sw = await s.req('/sw.js');
+    assert.equal(sw.status, 200);
+    assert.match(sw.headers.get('content-type'), /javascript/);
+    for (const i of ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png']) assert.equal((await s.req(`/img/${i}`)).headers.get('content-type'), 'image/png');
+    assert.equal((await s.req('/img/nope.png')).status, 303); // not an app icon: falls through to the sign-in redirect
+    assert.equal((await s.req('/mobile.js')).status, 303);
+  } finally { s.close(); }
+});

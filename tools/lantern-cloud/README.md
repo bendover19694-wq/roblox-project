@@ -28,6 +28,7 @@ Environment variables (secrets never go in the repo):
 | `TOTP_SECRET` | optional but recommended: turns on authenticator codes, see below |
 | `DITTO_PASSWORD_HASH` | optional: turns on the collaborator account for Ditto (same `hash-password.mjs`) |
 | `DITTO_TOTP_SECRET` | optional: Ditto's own authenticator key (`node totp-setup.mjs`); without it he signs in on the password alone |
+| `GITHUB_TOKEN` | optional: turns on "Run on: Claude cloud" (fine-grained token, Issues read and write on `hq-collab` only; see `research/agent-hq/CLOUD-WORKER.md`) |
 | `COLLAB_IDS` | `1253880514822279219` (Ditto's Discord id) |
 | `OWNER_IDS` | `821903980661178418` |
 | `GUILD_ID` | `1551059008826376232` |
