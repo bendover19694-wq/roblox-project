@@ -77,6 +77,9 @@ export function scopedWriteTools(allowedTools = [], files = [], gameDir = '.') {
     const full = glob.startsWith('assets/') ? glob : prefix + glob;
     rules.push(`Edit(${full})`, `Write(${full})`);
   }
+  // A game in its own folder: a writing role may edit anything inside it, so a task never stalls on one file its role list
+  // missed (exact-file rules were also matched unreliably). Agent HQ's code, other games and secrets stay outside the rule.
+  if (prefix) rules.push(`Edit(${prefix}**)`, `Write(${prefix}**)`);
   return { allowed: [...rest, ...rules], disallowed: [] };
 }
 

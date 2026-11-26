@@ -40,6 +40,8 @@ test('claudeArgs scopes edits to the role files in the game folder', () => {
   assert.ok(builder.includes('Edit(games/top-eleven/src/server/**)'));
   assert.ok(builder.includes('Write(games/top-eleven/src/server/**)'));
   assert.ok(builder.includes('Edit(assets/**)'));
+  assert.ok(builder.includes('Edit(games/top-eleven/**)') && builder.includes('Write(games/top-eleven/**)'), 'a writer may edit anything inside its own game folder');
+  assert.ok(!builder.some((x) => /^(Edit|Write)\(tools\//.test(x)), 'never Agent HQ itself');
   assert.ok(!builder.includes('Edit') && !builder.includes('Write'));
   // a writer keeps its edit rules; only PowerShell is off (all rules are written for Bash)
   assert.deepEqual(builder.slice(builder.indexOf('--disallowedTools'), builder.indexOf('--disallowedTools') + 2), ['--disallowedTools', 'PowerShell']);
