@@ -73,7 +73,7 @@ const MIGRATIONS = [
   ['tasks', 'gateFor', 'TEXT'], ['tasks', 'attempt', 'INTEGER NOT NULL DEFAULT 1'], ['tasks', 'threadMessageId', 'TEXT'],
   ['tasks', 'attachPaths', 'TEXT'], ['tasks', 'taskToken', 'TEXT'], ['messages', 'attachPaths', 'TEXT'], ['asks', 'verdict', 'TEXT'],
   ['asks', 'verdictNote', 'TEXT'], ['tasks', 'reworkCount', 'INTEGER NOT NULL DEFAULT 0'], ['messages', 'archive', 'TEXT'],
-  ['games', 'reworkCount', 'INTEGER NOT NULL DEFAULT 0'], ['games', 'isPublic', 'INTEGER NOT NULL DEFAULT 0'], ['games', 'publicSinceUtc', 'TEXT'], ['games', 'gateData', 'TEXT'],
+  ['games', 'reworkCount', 'INTEGER NOT NULL DEFAULT 0'], ['games', 'isPublic', 'INTEGER NOT NULL DEFAULT 0'], ['games', 'publicSinceUtc', 'TEXT'], ['games', 'gateData', 'TEXT'], ['games', 'archivedAt', 'TEXT'],
   ['stage_requests', 'reason', 'TEXT'], ['stage_requests', 'criteriaFailed', 'TEXT'],
   ['pitches', 'origin', "TEXT NOT NULL DEFAULT 'scout'"], ['pitches', 'data', 'TEXT'], ['pitches', 'decidedAt', 'TEXT'], ['pitches', 'note', 'TEXT'],
 ];
@@ -383,7 +383,7 @@ export function createGame(db, { slug, name }) {
   db.prepare('INSERT INTO games (slug,name,stage,version,updatedAt) VALUES (?,?,?,?,?)').run(slug, name, 'pitched', 1, now());
   return getGame(db, slug);
 }
-const GAME_COLS = ['name', 'stage', 'version', 'versionType', 'note', 'nextStep', 'universeId', 'changelog'];
+const GAME_COLS = ['name', 'stage', 'version', 'versionType', 'note', 'nextStep', 'universeId', 'changelog', 'archivedAt'];
 export function updateGame(db, slug, patch) {
   const p = { ...patch };
   if ('changelog' in p) p.changelog = p.changelog == null ? null : JSON.stringify(p.changelog);
@@ -414,7 +414,8 @@ export function gameWork(db, slug) {
   const working = db.prepare("SELECT DISTINCT role FROM tasks WHERE game=? AND state='working'").all(slug).map((r) => r.role);
   const todos = db.prepare(`${ASK_SELECT} WHERE a.state='open' AND a.kind IN ('try','decision') AND a.taskId IN (SELECT id FROM tasks WHERE game=?)
     ORDER BY a.createdAt DESC, a.rowid DESC`).all(slug).map(askOut);
-  return { openTasks, working, todos };
+  const lastActivity = db.prepare('SELECT MAX(COALESCE(endedAt, startedAt, createdAt)) t FROM tasks WHERE game=?').get(slug).t; // for "by activity" on the Games page
+  return { openTasks, working, todos, lastActivity };
 }
 // open asks created by a role for tasks of a game
 export const gameAsksBy = (db, slug, role) =>

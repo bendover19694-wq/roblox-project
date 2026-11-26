@@ -426,9 +426,9 @@ export function createBridge({ db, D, stateDir, root = process.cwd(), roles, por
     const mine = !task || (c.dittoTasks ?? []).includes(task.id);
     if (task && !mine && task.role !== 'lead') throw new Error('this task did not come from Ditto');
     if (task && mine) save({ ...config(), dittoTasks: (config().dittoTasks ?? []).filter((x) => x !== task.id) }); // one answer per task
-    if (!mine || looksSecret(clean)) {
+    if (task || looksSecret(clean)) { // owner's rule (2026-11-25): every agent answer to Ditto waits for the owner's "send"
       if (!c.threads.lead) throw new Error('no Lead thread yet');
-      const why = mine ? 'it may contain a secret or a private file' : 'it comes from the Lead';
+      const why = !task ? 'it may contain a secret or a private file' : mine ? 'every agent answer to Ditto waits for you' : 'it comes from the Lead';
       enqueue({ threadId: c.threads.lead, username: 'Agent HQ', content: clip(`Held for you because ${why}: a reply to Ditto. Reply "send" to this message to send it.\n\n${clean.slice(0, 1500)}`, 1900), askId: `dittoreply:${clean.slice(0, 1500)}` });
       return { ok: true, held: true };
     }

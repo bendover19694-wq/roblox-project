@@ -34,4 +34,4 @@ export function classify(text) {
 /** True when a reply to Ditto may carry a secret or a private file: long hex or base64 runs, key prefixes, HQ's state folder. */
 export const looksSecret = (s) => /\b[0-9a-f]{32,}\b|[A-Za-z0-9+/_-]{40,}={0,2}|\.agent-hq|owner-token|link-token|scrypt\$|PRIVATE KEY|\b(?:sk|ghp|gho|gsk|nvapi|msy)[-_][A-Za-z0-9]{8,}|Bearer\s+\S{8,}|password\s*[:=]/i.test(String(s));
 
-export const REPLY_RULE = 'When you are done, answer Ditto in Discord with hq_ditto_reply: short and friendly, like a teammate. Never put secrets, keys, file contents or private details in it.';
+export const REPLY_RULE = 'When you are done, answer Ditto in Discord with hq_ditto_reply (the owner reads it and sends it): short and friendly, like a teammate. Never put secrets, keys, file contents or private details in it.';

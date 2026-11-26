@@ -560,12 +560,12 @@ test("Ditto's orders: allowlist, hidden characters, one bound answer per task, L
   await flush(r);
   assert.throws(() => r.bridge.replyDitto('hi', { id: 't_other', role: 'scout' }), /did not come from Ditto/);
   r.f.calls.length = 0;
-  assert.deepEqual(r.bridge.replyDitto('A, B and C', { id: 't_1', role: 'scout' }), { ok: true }); // the fake HQ named the task t_1
+  assert.equal(r.bridge.replyDitto('A, B and C', { id: 't_1', role: 'scout' }).held, true); // the fake HQ named the task t_1; every agent answer waits
   assert.throws(() => r.bridge.replyDitto('again', { id: 't_1', role: 'scout' }), /did not come from Ditto/); // once per task
   assert.equal(r.bridge.replyDitto('from the Lead', { id: 't_lead', role: 'lead' }).held, true);
   assert.equal(r.bridge.replyDitto('key f3deda5bd354a763fb6cf0384b0267542fcb4cdee89cde940f50eabea042ad9a').held, true);
   await flush(r);
-  assert.ok(r.hooks().some((h) => h.body.content.startsWith(`<@${DITTO}> A, B and C`)));
+  assert.ok(!r.hooks().some((h) => h.body.content.startsWith(`<@${DITTO}> A, B and C`)), 'an agent answer waits for the owner');
   assert.ok(!r.hooks().some((h) => h.body.content.includes(`<@${DITTO}> from the Lead`)), 'a Lead answer waits for the owner');
   const held = r.hooks().find((h) => h.search.includes(view.threads.lead) && h.body.content.includes('Held for you'));
   assert.ok(held);

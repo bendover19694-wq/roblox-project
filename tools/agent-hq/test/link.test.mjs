@@ -249,3 +249,20 @@ test('partner access setting refuses roles that can change game files, and bad s
   assert.equal((await b.call('POST', '/api/link/share', { title: 't', role: 'Bad Role' })).status, 400);
   assert.equal((await b.call('POST', '/api/link/partner-task', { text: 'x', role: 'scout' }, b.token)).status, 403); // owner only
 });
+
+test('co-op: "starting Agent HQ work" reaches the other HQ, which answers with its version; a bad state is refused', async () => {
+  const { a, b } = await pair();
+  assert.equal((await a.call('POST', '/api/link/work', { state: 'start', topic: 'UI Lab <scraper>' })).status, 200);
+  await b.call('POST', '/api/link/poll', {});
+  const vb = (await b.call('GET', '/api/link')).json;
+  assert.equal(vb.peerWork.topic, 'UI Lab scraper');
+  assert.match(vb.log.at(-1).text, /started Agent HQ work: UI Lab scraper @ [0-9a-f]{7}/);
+  for (let i = 0; i < 50 && !(await a.call('GET', '/api/link')).json.peerVersion; i++) { await new Promise((r) => setTimeout(r, 40)); await a.call('POST', '/api/link/poll', {}); }
+  const va = (await a.call('GET', '/api/link')).json;
+  assert.match(va.peerVersion.commit, /^[0-9a-f]{40}$/);
+  assert.equal(va.peerVersion.from, 'Friend');
+  await a.call('POST', '/api/link/work', { state: 'done', topic: 'UI Lab scraper' });
+  await b.call('POST', '/api/link/poll', {});
+  assert.equal((await b.call('GET', '/api/link')).json.peerWork, null);
+  assert.equal((await a.call('POST', '/api/link/work', { state: 'maybe', topic: 'x' })).status, 400);
+});

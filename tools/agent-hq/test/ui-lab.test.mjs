@@ -29,7 +29,8 @@ const lab = (over = {}) => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-uilab-'));
   const tasks = [];
   const l = createUiLab({ stateDir, root: '/repo', queueTask: (t) => { tasks.push(t); return { id: `t_${tasks.length}` }; },
-    palette: async () => JSON.stringify({ palette: [{ hex: '#ff0000', n: 9 }, { hex: '#00ff00', n: 4 }], sheet: null, count: 2 }), ...over });
+    palette: async () => JSON.stringify({ palette: [{ hex: '#ff0000', n: 9 }, { hex: '#00ff00', n: 4 }], sheet: null, count: 2 }),
+    cutout: async () => JSON.stringify({ items: [] }), games: () => [{ slug: 'clipping-empire', name: 'GT6 Clipping Empire' }], ...over });
   return { l, stateDir, tasks };
 };
 
@@ -158,4 +159,78 @@ test('game finder: search, then a kit from public icons and CDN screenshots, cap
   await assert.rejects(l.capture(pack.id, async () => {}), /only kits made from a Roblox game/);
   const rows = l.catalogEntries();
   assert.ok(rows.some((r) => r.id === `uilab:${kit.id}` && r.source === 'uilab' && r.type === 'ui-kit'));
+});
+
+test('a screenshot of any game is cut into buttons and icons; a rescan replaces the cut, never the pack icons', async () => {
+  let runs = 0;
+  const { l, stateDir } = lab({ cutout: async (shot, out, prefix) => {
+    runs += 1;
+    assert.ok(fs.existsSync(shot));
+    fs.writeFileSync(path.join(out, `${prefix}-el-0000.png`), PNG);
+    fs.writeFileSync(path.join(out, `${prefix}-ic-0001.png`), PNG);
+    return JSON.stringify({ items: [{ file: `${prefix}-el-0000.png`, kind: 'element', box: [1, 2, 30, 40] }, { file: `${prefix}-ic-0001.png`, kind: 'icon', box: [5, 6, 10, 10] }, { file: '../evil.png', kind: 'icon', box: [0, 0, 1, 1] }] });
+  } });
+  const k = await l.ingest({ name: 'Other game HUD', filename: 'hud.gif', data: PNG, game: 'clipping-empire', use: 'buttons' });
+  assert.equal(k.kind, 'screenshot');
+  assert.equal(k.game, 'clipping-empire');
+  assert.ok(k.tags.includes('buttons'));
+  assert.deepEqual(k.icons.map((i) => i.class), ['element', 'icon'], 'a file name the script did not make is ignored');
+  assert.deepEqual(k.icons[0].box, [1, 2, 30, 40]);
+  assert.equal(k.counts.icons, 2);
+  const again = await l.scan(k.id);
+  assert.equal(runs, 2);
+  assert.equal(again.icons.length, 2, 'a rescan does not pile up');
+  assert.ok(fs.existsSync(path.join(stateDir, 'media', again.icons[1].file)));
+  const missing = lab({ cutout: async () => { throw new Error("python failed: ModuleNotFoundError: No module named 'scipy'"); } }).l;
+  assert.match((await missing.ingest({ name: 'x', filename: 'x.png', data: PNG })).cutError, /pip install pillow numpy scipy/);
+});
+
+test('a Figma .fig file gives up its extensionless images by their bytes', async () => {
+  const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+  const got = zipImages(zip([['canvas.fig', Buffer.from('fig-kiwi')], ['images/abc123', PNG, true], ['images/def456', JPG], ['images/notimg', Buffer.from('xx')]]), { sniff: true });
+  assert.deepEqual(got.map((e) => e.name), ['images/abc123.png', 'images/def456.jpg']);
+  assert.equal(zipImages(zip([['images/abc123', PNG]])).length, 0, 'plain zips do not sniff');
+  const { l } = lab();
+  const k = await l.ingest({ name: 'Figma kit', filename: 'kit.fig', data: zip([['images/abc123', PNG]]) });
+  assert.equal(k.kind, 'pack');
+  assert.equal(k.counts.icons, 1);
+});
+
+test('bin: archived kits leave the library and catalog, come back, and only leave for good from the bin', async () => {
+  const { l, stateDir } = lab();
+  const k = await l.ingest({ name: 'Old kit', filename: 'o.zip', data: zip([['a.png', PNG]]) });
+  assert.throws(() => l.remove(k.id), /bin first/);
+  assert.throws(() => l.setMeta(k.id, { game: 'nope' }), /unknown game/);
+  l.setMeta(k.id, { archived: true, game: 'clipping-empire' });
+  assert.equal(l.list().kits.length, 0);
+  assert.equal(l.list('', { bin: true }).kits[0].game, 'clipping-empire');
+  assert.equal(l.catalogEntries().length, 0);
+  l.setMeta(k.id, { archived: false });
+  assert.equal(l.list('', { game: 'clipping-empire' }).kits.length, 1);
+  l.setMeta(k.id, { archived: true });
+  assert.deepEqual(l.remove(k.id), { ok: true });
+  assert.equal(l.get(k.id), null);
+  assert.ok(!fs.existsSync(path.join(stateDir, 'media', 'uilab', k.id)));
+});
+
+test('shot_icons.py finds both buttons on a drawn HUD and the icon inside one (skips without numpy/scipy)', async (t) => {
+  const { execFileSync } = await import('node:child_process');
+  const script = path.resolve(import.meta.dirname, '../../../scripts/uilab/shot_icons.py');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-cut-'));
+  const draw = `from PIL import Image, ImageDraw
+im = Image.new('RGB', (800, 450))
+d = ImageDraw.Draw(im)
+for y in range(450): d.line([(0, y), (800, y)], fill=(120, 190 + y // 10, 255))
+d.rounded_rectangle([40, 40, 240, 200], 18, fill=(230, 40, 80), outline=(10, 10, 10), width=6)
+d.ellipse([90, 70, 190, 170], fill=(250, 200, 40), outline=(10, 10, 10), width=6)
+d.rounded_rectangle([500, 300, 760, 400], 18, fill=(60, 200, 60), outline=(10, 10, 10), width=6)
+im.save(r'${path.join(dir, 'hud.png')}')`;
+  try { execFileSync('python', ['-I', '-c', 'import numpy, scipy, PIL']); } catch { t.skip('python with pillow, numpy and scipy not found'); return; }
+  execFileSync('python', ['-I', '-c', draw]);
+  const out = JSON.parse(execFileSync('python', ['-I', script, path.join(dir, 'hud.png'), path.join(dir, 'cut'), 's0'], { encoding: 'utf8' }));
+  const near = (b, x, y, w, h) => Math.abs(b[0] - x) < 12 && Math.abs(b[1] - y) < 12 && Math.abs(b[2] - w) < 20 && Math.abs(b[3] - h) < 20;
+  assert.ok(out.items.some((i) => i.kind === 'element' && near(i.box, 40, 40, 200, 160)), JSON.stringify(out.items));
+  assert.ok(out.items.some((i) => i.kind === 'element' && near(i.box, 500, 300, 260, 100)));
+  assert.ok(out.items.some((i) => i.kind === 'icon' && near(i.box, 90, 70, 100, 100)), 'the coin inside the red button');
+  assert.ok(out.items.every((i) => fs.existsSync(path.join(dir, 'cut', i.file))));
 });

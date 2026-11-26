@@ -1,21 +1,24 @@
-// UI Lab: drop a Roblox UI file (.rbxm .rbxmx .rbxl .rbxlx), an icon pack (.zip) or a screenshot. HQ tears it down
+// UI Lab: drop a Roblox UI file (.rbxm .rbxmx .rbxl .rbxlx), an icon pack (.zip), a Figma file (.fig) or a screenshot of any game. HQ tears it down
 // (icons, textures, palette, gradients, fonts, strokes, corners, tags), shows it as a kit card, and a designer agent
 // studies it and writes a note. Notes link to related kits by shared colours and tags, and are searchable by every agent.
 // Safety: Roblox files are parsed by Lune and never run; zips are unpacked image-only with path checks; thumbnails come
-// only from Roblox's own CDN. Kit images live under <stateDir>/media/uilab/<id>/ (served as inert media), data under <stateDir>/uilab/<id>/.
+// only from Roblox's own CDN. Screenshots are cut into every button, panel and icon (scripts/uilab/shot_icons.py). Kit images live under <stateDir>/media/uilab/<id>/ (served as inert media), data under <stateDir>/uilab/<id>/.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { execFile } from 'node:child_process';
 import { findGames, gameMedia } from './game-finder.mjs';
+import { createUiMocks, mountUiMocks, UIMOCKS_OWNER_ONLY } from './ui-mocks.mjs';
 
-export const EXTS = { '.rbxm': 'roblox', '.rbxmx': 'roblox', '.rbxl': 'roblox', '.rbxlx': 'roblox', '.zip': 'pack', '.png': 'screenshot', '.jpg': 'screenshot', '.jpeg': 'screenshot', '.webp': 'screenshot' };
+export const EXTS = { '.rbxm': 'roblox', '.rbxmx': 'roblox', '.rbxl': 'roblox', '.rbxlx': 'roblox', '.zip': 'pack', '.png': 'screenshot', '.jpg': 'screenshot', '.jpeg': 'screenshot', '.webp': 'screenshot', '.gif': 'screenshot', '.fig': 'pack' };
 export const MAX_BYTES = 60 * 1024 * 1024;
 const IMG = /\.(png|jpe?g|webp|gif)$/i;
 const ID = /^[a-z0-9-]{3,60}$/;
 const CDN = /^https:\/\/t[r0-9]\.rbxcdn\.com\//;
-const MAX_ICONS = 600;
+const MAX_ICONS = 5000; // the kit page shows icons 200 at a time, so big packs stay fast
+const CUT = /^s\d+-(?:el|ic)-\d{4}\.png$/;
+const magic = (b) => (b.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) ? '.png' : b[0] === 0xff && b[1] === 0xd8 ? '.jpg' : '');
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'kit';
 const arr = (v) => (Array.isArray(v) ? v : []); // Lune writes an empty table as {}
@@ -24,7 +27,7 @@ const run = (cmd, args, opts) => new Promise((resolve, reject) => {
 });
 
 /** Image entries of a zip, read with the central directory (no extraction tool, no shell). Throws on unsafe paths. */
-export function zipImages(buf, { max = 10000, maxTotal = 300 * 1024 * 1024 } = {}) {
+export function zipImages(buf, { max = 10000, maxTotal = 300 * 1024 * 1024, sniff = false } = {}) {
   const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   if (eocd < 0) throw new Error('not a zip file');
   const count = buf.readUInt16LE(eocd + 10);
@@ -38,13 +41,15 @@ export function zipImages(buf, { max = 10000, maxTotal = 300 * 1024 * 1024 } = {
     const name = buf.subarray(p + 46, p + 46 + nlen).toString('utf8').replace(/\\/g, '/');
     p += 46 + nlen + elen + clen;
     if (name.startsWith('/') || name.split('/').includes('..') || name.includes(':')) throw new Error(`unsafe path in zip: ${name}`);
-    if (name.endsWith('/') || !IMG.test(name)) continue;
+    const bare = sniff && !/\.[^/]+$/.test(name); // a Figma .fig keeps its images as images/<hash>, with no extension
+    if (name.endsWith('/') || (!IMG.test(name) && !bare)) continue;
     if (out.length >= max || (total += usize) > maxTotal) throw new Error('zip holds too many images');
     const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
     const data = buf.subarray(start, start + csize);
     if (usize > 20 * 1024 * 1024) throw new Error(`image too large in zip: ${name}`);
     const body = method === 0 ? data : method === 8 ? zlib.inflateRawSync(data, { maxOutputLength: usize }) : null; // never inflate past the declared size (zip bombs)
-    if (body && body.length === usize) out.push({ name, body });
+    const ext = bare && body ? magic(body) : '';
+    if (body && body.length === usize && (!bare || ext)) out.push({ name: name + ext, body });
   }
   return out;
 }
@@ -62,7 +67,8 @@ export function related(kit, kits) {
   }).filter((r) => r.colours >= 2 || r.tags >= 2).sort((a, b) => b.score - a.score).slice(0, 6);
 }
 
-export function createUiLab({ stateDir, root, queueTask = () => null, taskState = () => null, fetchImpl = globalThis.fetch, lune = 'lune', python = 'python', now = Date.now,
+export function createUiLab({ stateDir, root, queueTask = () => null, taskState = () => null, fetchImpl = globalThis.fetch, lune = 'lune', python = 'python', now = Date.now, games = () => [], notify = () => {},
+  cutout = (shot, out, prefix) => run(python, ['-I', path.join(root, 'scripts', 'uilab', 'shot_icons.py'), shot, out, prefix]),
   teardown = (src) => run(lune, ['run', path.join(root, 'scripts', 'uilab', 'teardown.luau'), src], { cwd: root }),
   palette = (dir, sheet) => run(python, ['-I', path.join(root, 'scripts', 'uilab', 'palette.py'), dir, sheet, '120']) }) {
   const dataDir = path.join(stateDir, 'uilab');
@@ -104,6 +110,26 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
     return files;
   }
 
+  // Every screenshot of a kit is cut into its buttons, panels and icons, whatever game or app it came from.
+  async function cutShots(kit) {
+    const icons = path.join(mediaDir, kit.id, 'icons');
+    fs.mkdirSync(icons, { recursive: true });
+    for (const f of fs.readdirSync(icons)) if (CUT.test(f)) fs.rmSync(path.join(icons, f));
+    const cut = [];
+    delete kit.cutError;
+    for (const [n, rel] of arr(kit.screens).slice(0, 40).entries()) {
+      try {
+        const r = JSON.parse(await cutout(path.join(stateDir, 'media', rel), icons, `s${n}`));
+        for (const it of arr(r.items).filter((i) => CUT.test(String(i.file)))) {
+          cut.push({ name: `${path.basename(rel).replace(/\.\w+$/, '')} ${it.kind === 'icon' ? 'icon' : 'button'} ${cut.length + 1}`, class: it.kind === 'icon' ? 'icon' : 'element', box: arr(it.box).slice(0, 4), from: rel, file: `uilab/${kit.id}/icons/${it.file}` });
+        }
+      } catch (e) { kit.cutError = /No module/.test(e.message) ? 'Cutting icons out of screenshots needs: pip install pillow numpy scipy' : e.message.slice(0, 300); }
+    }
+    kit.icons = [...arr(kit.icons).filter((i) => !i.from), ...cut];
+    kit.counts = { ...kit.counts, icons: kit.icons.filter((i) => i.file).length, cut: cut.length };
+    return kit;
+  }
+
   async function study(kit, ask = '', engine) {
     const t = queueTask({
       title: `Study UI kit: ${kit.name}`.slice(0, 200), role: 'designer', ...(engine ? { engine } : {}), createdBy: 'owner',
@@ -119,7 +145,7 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
     return t;
   }
 
-  async function ingest({ name, filename, data, source = '', licence = '', ask = '' }) {
+  async function ingest({ name, filename, data, source = '', licence = '', ask = '', game = '', use = '' }) {
     const ext = path.extname(String(filename)).toLowerCase();
     const kind = EXTS[ext];
     if (!kind) throw new Error(`UI Lab takes ${Object.keys(EXTS).join(' ')} files`);
@@ -130,7 +156,7 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
     const icons = path.join(media, 'icons');
     fs.mkdirSync(work, { recursive: true });
     fs.mkdirSync(icons, { recursive: true });
-    const kit = { id, name: String(name || path.basename(filename, ext)).slice(0, 80), kind, file: path.basename(String(filename)).slice(0, 120), source: String(source).slice(0, 500), licence: String(licence).slice(0, 300), createdAt: new Date(now()).toISOString(), counts: {}, tags: [], palette: [], gradients: [], fonts: [], strokes: [], corners: [], icons: [], screens: [], sheet: null, notes: { state: 'none' } };
+    const kit = { id, name: String(name || path.basename(filename, ext)).slice(0, 80), kind, file: path.basename(String(filename)).slice(0, 120), source: String(source).slice(0, 500), licence: String(licence).slice(0, 300), createdAt: new Date(now()).toISOString(), game: gameOk(game), counts: {}, tags: [], palette: [], gradients: [], fonts: [], strokes: [], corners: [], icons: [], screens: [], sheet: null, notes: { state: 'none' } };
     if (kind === 'roblox') {
       const src = path.join(work, `source${ext}`);
       fs.writeFileSync(src, data);
@@ -141,8 +167,8 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
       kit.icons = imgs.map((i) => ({ id: i.id, name: i.name, class: i.class, uses: i.uses, file: files.has(i.id) ? `uilab/${id}/icons/${files.get(i.id)}` : null }));
       kit.palette = arr(t.palette).map((c) => ({ hex: c.key, n: c.n }));
     } else if (kind === 'pack') {
-      const entries = zipImages(data);
-      entries.slice(0, 4000).forEach((e, i) => {
+      const entries = zipImages(data, { sniff: ext === '.fig' });
+      entries.slice(0, 10000).forEach((e, i) => {
         const safe = e.name.split('/').map((s) => s.replace(/[^\w.-]+/g, '_')).join('__').slice(-120);
         fs.writeFileSync(path.join(icons, `${String(i).padStart(4, '0')}-${safe}`), e.body);
       });
@@ -155,7 +181,9 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
       fs.writeFileSync(path.join(shots, `screen${ext}`), data);
       kit.screens = [`uilab/${id}/screens/screen${ext}`];
       kit.counts = { screens: 1 };
+      await cutShots(kit);
     }
+    if (use) kit.tags = [...new Set([use, ...kit.tags])];
     try { // palette from the pixels and one contact sheet for agents
       const p = JSON.parse(await palette(media, path.join(media, 'sheet.png')));
       if (!kit.palette.length) kit.palette = arr(p.palette);
@@ -188,6 +216,7 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
     const kit = { id, name: String(name).slice(0, 80), kind, file: source || kind, source: String(source).slice(0, 500), licence: String(licence).slice(0, 300), createdAt: new Date(now()).toISOString(),
       counts: { ...counts, icons: files.size, screens: kept.length }, tags: [kind], palette: [], gradients: [], fonts: [], strokes: [], corners: [], screens: kept, sheet: null, notes: { state: 'none' },
       icons: list.map((i) => ({ id: String(i.id), name: i.name, class: i.class, file: files.has(String(i.id)) ? `uilab/${id}/icons/${files.get(String(i.id))}` : null })) };
+    if (kept.length) await cutShots(kit);
     try { const p = JSON.parse(await palette(media, path.join(media, 'sheet.png'))); kit.palette = arr(p.palette); if (p.sheet) kit.sheet = `uilab/${id}/sheet.png`; } catch (e) { kit.paletteError = e.message; }
     write(kit);
     if (doStudy) await study(kit, ask);
@@ -205,6 +234,7 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
     await capturer(placeId, shots);
     kit.screens = fs.readdirSync(shots).filter((f) => IMG.test(f)).map((f) => `uilab/${id}/screens/${f}`);
     kit.counts = { ...kit.counts, screens: kit.screens.length };
+    await cutShots(kit);
     write(kit);
     await study(kit, 'Study the in-game screenshots: HUD layout, buttons, windows, fonts and colours.');
     return read(id);
@@ -235,32 +265,59 @@ export function createUiLab({ stateDir, root, queueTask = () => null, taskState 
   }
 
   const note = (id) => { try { return fs.readFileSync(path.join(dataDir, id, 'notes.md'), 'utf8'); } catch { return ''; } };
-  const card = (k) => ({ id: k.id, name: k.name, kind: k.kind, tags: k.tags, counts: k.counts, palette: arr(k.palette).slice(0, 8), preview: arr(k.icons).filter((i) => i.file).slice(0, 8).map((i) => i.file).concat(arr(k.screens)).slice(0, 8), notes: k.notes?.state ?? 'none', createdAt: k.createdAt, source: k.source });
+  const gameOk = (g) => (g && games().some((x) => x.slug === g) ? g : '');
+  function setMeta(id, { game, archived }) {
+    const kit = read(id);
+    if (!kit) throw new Error('no such kit');
+    if (game !== undefined) { if (game && !gameOk(game)) throw new Error('unknown game'); kit.game = game || ''; }
+    if (archived !== undefined) kit.archivedAt = archived ? new Date(now()).toISOString() : null;
+    write(kit);
+    return read(id);
+  }
+  function remove(id) { // from the bin only: the kit, its images and its searchable note
+    const kit = read(id);
+    if (!kit) throw new Error('no such kit');
+    if (!kit.archivedAt) throw new Error('move it to the bin first');
+    for (const p of [path.join(dataDir, id), path.join(mediaDir, id), path.join(stateDir, 'research-notes', `uilab-${id}.md`)]) fs.rmSync(p, { recursive: true, force: true });
+    return { ok: true };
+  }
+  const kitsFor = (game) => all().filter((k) => !k.archivedAt && (k.game === game || !k.game)).sort((a, b) => (b.game === game) - (a.game === game) || (b.notes?.state === 'done') - (a.notes?.state === 'done'));
+  const mocks = createUiMocks({ stateDir, queueTask, taskState, notify, games, kitsFor, now });
+  const card = (k) => ({ id: k.id, name: k.name, kind: k.kind, game: k.game ?? '', archivedAt: k.archivedAt ?? null, tags: k.tags, counts: k.counts, palette: arr(k.palette).slice(0, 8), preview: arr(k.icons).filter((i) => i.file).slice(0, 8).map((i) => i.file).concat(arr(k.screens)).slice(0, 8), notes: k.notes?.state ?? 'none', createdAt: k.createdAt, source: k.source });
 
-  function list(q = '') {
+  function list(q = '', { bin = false, game = null } = {}) {
     const words = String(q).toLowerCase().split(/\s+/).filter(Boolean);
-    const kits = all().filter((k) => !words.length || words.every((w) => `${k.name} ${arr(k.tags).join(' ')} ${k.file} ${note(k.id)}`.toLowerCase().includes(w)));
+    const kits = all().filter((k) => !!k.archivedAt === bin && (game === null || (k.game ?? '') === game)).filter((k) => !words.length || words.every((w) => `${k.name} ${arr(k.tags).join(' ')} ${k.file} ${note(k.id)}`.toLowerCase().includes(w)));
     kits.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const sum = (f) => kits.reduce((n, k) => n + (Number(k.counts?.[f]) || 0), 0);
     return { stats: { kits: kits.length, icons: sum('icons'), screens: sum('screens') }, kits: kits.map(card) };
   }
 
   // asset catalog rows: one per kit, so a catalog search for "shop" or "egg" finds UI kits too
-  const catalogEntries = () => all().map((k) => ({ id: `uilab:${k.id}`, source: 'uilab', type: 'ui-kit', name: k.name, tags: [...arr(k.tags), k.kind, 'ui'],
+  const catalogEntries = () => all().filter((k) => !k.archivedAt).map((k) => ({ id: `uilab:${k.id}`, source: 'uilab', type: 'ui-kit', name: k.name, tags: [...arr(k.tags), k.kind, 'ui'],
     description: `UI Lab kit (${k.kind}): ${k.counts?.icons ?? 0} icons, ${k.counts?.screens ?? 0} screenshots, palette ${arr(k.palette).slice(0, 5).map((c) => c.hex).join(' ')}. Open #/uilab/${k.id}; read it with hq_uilab_kit.`,
     licence: k.licence || 'see the kit source', file: null }));
-  return { catalogEntries, ingestAssets, importGame, capture, find: (q) => findGames(q, fetchImpl), ingest, study: async (id, ask, engine) => { const k = read(id); if (!k) throw new Error('no such kit'); return study(k, ask, engine); }, saveNote, list, get: (id) => { const k = read(id); return k ? { ...k, note: note(id) } : null; } };
+  const scan = async (id) => { const k = read(id); if (!k) throw new Error('no such kit'); if (!arr(k.screens).length) throw new Error('this kit has no screenshots'); await cutShots(k); write(k); return read(id); };
+  return { mocks, scan, setMeta, remove, catalogEntries, ingestAssets, importGame, capture, find: (q) => findGames(q, fetchImpl), ingest, study: async (id, ask, engine) => { const k = read(id); if (!k) throw new Error('no such kit'); return study(k, ask, engine); }, saveNote, list, get: (id) => { const k = read(id); return k ? { ...k, note: note(id) } : null; } };
 }
 
 export function mountUiLab(route, lab, { str, bad, isObj, agentTask, HttpError }) {
   const id = (s) => { if (!ID.test(s)) throw bad('bad kit id'); return s; };
-  route('GET', /^\/api\/uilab$/, ({ query }) => lab.list(query?.get('q') ?? ''));
+  route('GET', /^\/api\/uilab$/, ({ query }) => lab.list(query?.get('q') ?? '', { bin: query?.get('bin') === '1', game: query?.has('game') ? query.get('game') : null }));
+  const wrap = async (fn) => { try { return await fn(); } catch (e) { if (e instanceof HttpError) throw e; throw bad(e.message); } };
+  route('POST', /^\/api\/uilab\/([a-z0-9-]+)\/scan$/, ({ m }) => wrap(() => lab.scan(id(m[1]))));
+  route('POST', /^\/api\/uilab\/([a-z0-9-]+)\/meta$/, ({ m, body }) => wrap(() => {
+    if (!isObj(body)) throw bad('body must be an object');
+    return lab.setMeta(id(m[1]), { game: body.game === undefined ? undefined : str(body.game, 'game', { max: 40 }) ?? '', archived: typeof body.archived === 'boolean' ? body.archived : undefined });
+  }));
+  route('POST', /^\/api\/uilab\/([a-z0-9-]+)\/delete$/, ({ m }) => wrap(() => lab.remove(id(m[1]))));
+  mountUiMocks(route, lab.mocks, { str, bad, isObj, agentTask, HttpError });
   route('GET', /^\/api\/uilab\/find$/, async ({ query }) => {
     try { return { games: await lab.find(query?.get('q') ?? '') }; } catch (e) { throw new HttpError(502, e.message); }
   });
   route('GET', /^\/api\/uilab\/([a-z0-9-]+)$/, ({ m }) => lab.get(id(m[1])) ?? (() => { throw new HttpError(404, 'no such kit'); })());
   route('POST', /^\/api\/uilab\/assets$/, async ({ body }) => {
-    if (!isObj(body) || !Array.isArray(body.items) || body.items.length > 2000) throw bad('items must be a list of up to 2000 {id, name}');
+    if (!isObj(body) || !Array.isArray(body.items) || body.items.length > 5000) throw bad('items must be a list of up to 5000 {id, name}');
     const items = body.items.filter((i) => isObj(i) && /^\d{1,20}$/.test(String(i.id))).map((i) => ({ id: String(i.id), name: String(i.name ?? '').slice(0, 80) }));
     const source = str(body.source, 'source', { max: 500 }) ?? '';
     if (source && !/^https:\/\//i.test(source)) throw bad('source must be an https link');
@@ -282,7 +339,7 @@ export function mountUiLab(route, lab, { str, bad, isObj, agentTask, HttpError }
     const source = str(body.source, 'source', { max: 500 }) ?? '';
     if (source && !/^https:\/\//i.test(source)) throw bad('source must be an https link');
     try {
-      return await lab.ingest({ name: str(body.name, 'name', { max: 80 }), filename, data: Buffer.from(body.dataBase64, 'base64'), source, licence: str(body.licence, 'licence', { max: 300 }) ?? '', ask: str(body.ask, 'ask', { max: 1000 }) ?? '' });
+      return await lab.ingest({ name: str(body.name, 'name', { max: 80 }), game: str(body.game, 'game', { max: 40 }) ?? '', use: ['buttons', 'backgrounds', 'icons', 'hud', 'windows'].includes(body.use) ? body.use : '', filename, data: Buffer.from(body.dataBase64, 'base64'), source, licence: str(body.licence, 'licence', { max: 300 }) ?? '', ask: str(body.ask, 'ask', { max: 1000 }) ?? '' });
     } catch (e) { throw bad(e.message); }
   }, { maxBody: 85 * 1024 * 1024 });
   route('POST', /^\/api\/uilab\/([a-z0-9-]+)\/study$/, async ({ m, body }) => {
@@ -299,4 +356,4 @@ export function mountUiLab(route, lab, { str, bad, isObj, agentTask, HttpError }
 }
 
 export const STUDY_ENGINES = ['claude-cli', 'codex', 'app', 'antigravity']; // codex: the ChatGPT account, read-only
-export const UILAB_OWNER_ONLY = [['POST', /^\/api\/uilab(?:\/game|\/assets|\/[a-z0-9-]+\/(?:study|capture))?$/]];
+export const UILAB_OWNER_ONLY = [['POST', /^\/api\/uilab(?:\/game|\/assets|\/[a-z0-9-]+\/(?:study|capture|scan|meta|delete))?$/], ...UIMOCKS_OWNER_ONLY];
