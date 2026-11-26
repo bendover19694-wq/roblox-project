@@ -448,6 +448,11 @@ test('games: seed, create, patch, work counts', async () => {
   assert.deepEqual([p.status, p.json.nextStep, p.json.version, p.json.universeId], [200, 'Design it', 2, '555']);
   assert.deepEqual(p.json.changelog, { heading: 'What is new', bullets: ['a', 'b'] });
   assert.equal(p.json.openTasks, 1);
+  // the game icon: an image path the owner picked, never a path out of the folder or a non-image
+  assert.equal((await api('PATCH', '/api/games/kitchen-rush', { icon: 'assets/marketing/thumb.png' })).json.icon, 'assets/marketing/thumb.png');
+  assert.equal((await api('PATCH', '/api/games/kitchen-rush', { icon: '../.agent-hq/owner-token' })).status, 400);
+  assert.equal((await api('PATCH', '/api/games/kitchen-rush', { icon: 'assets/evil.html' })).status, 400);
+  assert.equal((await api('PATCH', '/api/games/kitchen-rush', { icon: null })).json.icon, null);
   // working roles and owner to-dos
   const t = (await api('POST', '/api/tasks', { title: 'Run it', role: 'builder', game: 'space-agency' })).json;
   await api('POST', `/api/tasks/${t.id}/claim`, { engine: 'app' });

@@ -778,7 +778,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     return pubGame(D.createGame(db, { slug, name: str(body.name, 'name', { max: 100, required: true }) }));
   });
 
-  route('PATCH', /^\/api\/games\/([^/]+)$/, ({ m, body }) => {
+  const gameIcon = (v) => { if (v === null || v === '') return null; const p = str(v, 'icon', { max: 300, required: true }).replace(/\\/g, '/'); if (!/^[\w][\w ./-]*\.(?:png|jpe?g|webp|gif)$/i.test(p) || p.split('/').includes('..')) throw bad('icon must be an image path from the media or assets folder'); return p; }; route('PATCH', /^\/api\/games\/([^/]+)$/, ({ m, body }) => {
     const g = needGame(m[1]);
     if (!isObj(body)) throw bad('body must be an object');
     const patch = {};
@@ -786,7 +786,7 @@ ${f.body ?? ''}`, games: D.listGames(db) }); return refs.hold(f) ?? createQueued
     if (body.nextStep !== undefined) patch.nextStep = str(body.nextStep, 'nextStep', { max: 300 }) ?? '';
     if (body.note !== undefined) patch.note = str(body.note, 'note', { max: 2000 }) ?? '';
     if (body.versionType !== undefined) patch.versionType = str(body.versionType, 'versionType', { max: 40 }) ?? '';
-    if (body.version !== undefined) patch.version = intIn(body.version, 'version', 1, 9999);
+    if (body.version !== undefined) patch.version = intIn(body.version, 'version', 1, 9999); if (body.icon !== undefined) patch.icon = gameIcon(body.icon); // the picture the owner picked: a media or assets image path, or null
     if (body.universeId !== undefined) {
       const u = body.universeId === null || body.universeId === '' ? null : String(body.universeId).trim();
       if (u !== null && !/^\d{1,15}$/.test(u)) throw bad('universeId must be digits');

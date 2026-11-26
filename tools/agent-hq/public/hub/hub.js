@@ -125,13 +125,16 @@ const roleIc = (id, sm) => { const r = role(id); return `<span class="role-ic ${
 
 // ---------------------------------------------------------------- nav
 const OPEN = t => !['done', 'failed', 'canceled'].includes(t.state);
-const needsYou = () => S.asks.filter(a => a.state === 'open' && !a.superseded && a.kind !== 'reference');
+const askGame = a => a.game || S.tasks.find(t => t.id === a.taskId)?.game || '';
+const inGame = slug => state.game === 'all' || !slug || slug === state.game; // work with no game shows in every game
+const needsYou = () => S.asks.filter(a => a.state === 'open' && !a.superseded && a.kind !== 'reference' && inGame(askGame(a)));
+const gTasks = () => S.tasks.filter(t => inGame(t.game));
 const NAV_WORK = [
   { id:'home', label:'Home', icon:'home' },
   { id:'lead', label:'Lead', icon:'lead' },
   { id:'chat', label:'Chat', icon:'msg' },
-  { id:'team', label:'Team', icon:'team', badge:() => S.tasks.filter(t => t.state === 'working').length, g:1 },
-  { id:'tasks', label:'Tasks', icon:'tasks', badge:() => S.tasks.filter(OPEN).length, g:1 },
+  { id:'team', label:'Team', icon:'team', badge:() => gTasks().filter(t => t.state === 'working').length, g:1 },
+  { id:'tasks', label:'Tasks', icon:'tasks', badge:() => gTasks().filter(OPEN).length, g:1 },
   { id:'review', label:'Review', icon:'review', badge:() => needsYou().length },
   { id:'library', label:'Library', icon:'library' },
   { id:'vault', label:'Vault', icon:'vault' },
@@ -168,8 +171,11 @@ function renderNav(cur) {
 }
 
 // ---------------------------------------------------------------- helpers
-const state = { chatChannel: '', chatFull: {}, chatSync: false, game: 'all', libQ: '', libKind: 'all', vaultQ: '', createTab: 'assets', createGame: '', reviewSel: 0, openTask: null, chatRole: 'lead' };
+const state = { chatChannel: '', chatFull: {}, chatSync: false, game: (() => { try { return localStorage.getItem('hq-hub-game') || 'all'; } catch { return 'all'; } })(), libQ: '', libKind: 'all', vaultQ: '', createTab: 'assets', createGame: '', reviewSel: 0, openTask: null, chatRole: 'lead' };
 const gameOk = slug => state.game === 'all' || state.game === slug;
+function setGame(slug) { state.game = slug; state.reviewSel = 0; try { localStorage.setItem('hq-hub-game', slug); } catch { /* private mode */ } rerender(); }
+// a game's icon is the thumbnail its owner picked; until then the drawn scene stands in
+const gameIcon = g => g?.icon ? `<img src="${mediaUrl(g.icon)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : scene(sceneOf(g?.slug));
 const gameBySlug = s => S.games.find(g => g.slug === s);
 const gameName = s => (gameBySlug(s) || {}).name || (s ? s : 'No game');
 const SCENES = ['vault', 'street', 'truck', 'hideout'];
@@ -364,7 +370,7 @@ pages.review = () => {
   if (!r) return `<div class="page-h"><div><h1 class="h1">Review</h1></div><div class="acts"><a class="btn" href="${legacyHref('review')}">${ic('legacy')}History</a></div></div><div class="card empty">${ic('checkc')}<p>All clear. Nothing waits for you.</p></div>`;
   const opts = Array.isArray(r.options) ? r.options : [];
   return `
-  <div class="page-h"><div><h1 class="h1">Review</h1><p class="sub">Everything waiting for you.${opts.length ? '' : ' Keys: A approve, C ask for changes, R reject.'}</p></div><div class="acts"><a class="btn" href="${legacyHref('review')}">${ic('legacy')}History</a></div></div>
+  <div class="page-h"><div><h1 class="h1">Review</h1><p class="sub">Everything waiting for you${state.game === 'all' ? '' : ` in ${esc(gameName(state.game))}`}.${opts.length ? ' Keys: 1 to 9 pick an option.' : ' Keys: A approve, C ask for changes, R reject.'}</p></div><div class="acts"><a class="btn" href="${legacyHref('review')}">${ic('legacy')}History</a></div></div>
   <div class="review-wrap">
     <div class="rv-list">${list.map((x, i) => `
       <div class="card rv ${i === state.reviewSel ? 'sel' : ''}" data-rv="${i}">
@@ -378,7 +384,7 @@ pages.review = () => {
         <div class="dlg-h"><div class="dlg-ic">${ic(role(r.role).icon)}</div><div><h3>${esc(r.title)}</h3><div class="dlg-meta">${esc(role(r.role).label)} · ${esc(r.kind)} · ${ago(r.createdAt)} ago</div></div></div>
         <p class="dlg-txt" style="white-space:pre-wrap">${esc(r.why || '')}</p>
         ${r.mediaPath ? `<a class="dlg-shot" href="${mediaUrl(r.mediaPath)}" target="_blank" rel="noopener">${isImg(r.mediaPath) ? `<img src="${mediaUrl(r.mediaPath)}" alt="" style="width:100%;height:100%;object-fit:contain">` : 'Open the file'}</a>` : ''}
-        ${opts.length ? opts.map(o => `<button class="act ${o.recommended ? 'approve' : ''}" data-opt="${esc(o.id)}">${ic(o.recommended ? 'check' : 'right')}<span class="lbl">${esc(o.label)}${o.description ? `<small style="display:block;opacity:.7;font-weight:500">${esc(o.description)}</small>` : ''}</span></button>`).join('') : `
+        ${opts.length ? opts.map((o, i) => `<button class="act ${o.recommended ? 'approve' : ''}" data-opt="${esc(o.id)}">${ic(o.recommended ? 'check' : 'right')}<span class="lbl">${esc(o.label)}${o.description ? `<small>${esc(o.description)}</small>` : ''}</span>${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}</button>`).join('') : `
         <button class="act approve" data-dec="approve">${ic('check')}<span class="lbl">Approve</span><kbd>A</kbd></button>
         <button class="act changes" data-dec="changes">${ic('msg')}<span class="lbl">Ask for changes</span><kbd>C</kbd></button>
         <div class="changes-box" id="chBox"><textarea id="chTxt" placeholder="What should change?"></textarea><div class="row"><button class="btn btn-ghost" data-dec="cancel">Cancel</button><button class="btn pill solid" data-dec="send">${ic('right','sm')}Send back</button></div></div>
@@ -437,7 +443,7 @@ pages.create = () => {
   <div class="page-h" style="margin-bottom:0"><div><h1 class="h1">Create <span class="badge-new">${ic('spark','sm')}New</span></h1><p class="sub">${t[4]} It goes to the ${esc(role(t[3]).label)} as a task.</p></div></div>
   <div class="tabs">${tabs.map(([k, l, i]) => `<button class="${state.createTab === k ? 'on' : ''}" data-ctab="${k}">${ic(i)}${l}</button>`).join('')}</div>
   <div class="h-sec">For which game</div>
-  <div class="games-strip"><button class="gchip ${!state.createGame ? 'on' : ''}" data-cgame="">${ic('grid')}No game</button>${S.games.map(g => `<button class="gchip ${state.createGame === g.slug ? 'on' : ''}" data-cgame="${g.slug}"><span class="gi">${scene(sceneOf(g.slug))}</span>${esc(g.name)}</button>`).join('')}</div>
+  <div class="games-strip"><button class="gchip ${!state.createGame ? 'on' : ''}" data-cgame="">${ic('grid')}No game</button>${S.games.map(g => `<button class="gchip ${state.createGame === g.slug ? 'on' : ''}" data-cgame="${g.slug}"><span class="gi">${gameIcon(g)}</span>${esc(g.name)}</button>`).join('')}</div>
   <div class="card prompt">
     <textarea id="cPrompt" placeholder="${ph}"></textarea>
     <div class="prompt-bar"><span class="sp"></span><button class="go btn-glow" data-act="gen">${ic('wand')}Create</button></div>
@@ -450,7 +456,7 @@ pages.games = () => `
   <div class="page-h"><div><h1 class="h1">Games</h1><p class="sub">Every game the studio is working on, and where it is in the pipeline.</p></div><div class="acts"><a class="btn pill solid" href="${legacyHref('games')}">${ic('plus')}New game</a></div></div>
   ${S.games.length ? `<div class="grid3">${S.games.filter(g => !g.archivedAt).map(g => { const si = STAGES.indexOf(g.stage); return `
     <div class="card game-c" data-pick="${g.slug}">
-      <div class="cov">${scene(sceneOf(g.slug))}</div>
+      <div class="cov">${gameIcon(g)}</div>
       <div class="bd"><b>${esc(g.name)}</b><p class="sub" style="font-size:13px">${esc(g.note || g.nextStep || '')}</p>
         <div class="row"><span class="tag">v${esc(g.version)}</span><span class="tag">${cap(g.stage)}</span><span class="tag">${S.tasks.filter(t => t.game === g.slug && OPEN(t)).length} open tasks</span>${g.isPublic ? '<span class="tag">Public</span>' : ''}</div>
         <div class="stage-bar">${STAGES.map((s, i) => `<i class="${i <= si ? 'on' : ''}" title="${cap(s)}"></i>`).join('')}</div>
@@ -592,6 +598,8 @@ function route(anim = true) {
   const nav = ALL_NAV.find(n => n.id === id);
   $('#crumbPage').textContent = nav ? nav.label : 'Home';
   $('#gameName').textContent = state.game === 'all' ? 'All games' : gameName(state.game);
+  const gp = document.querySelector('#gamePick .gp-ic'); const gi = gameBySlug(state.game)?.icon; if (gp) gp.innerHTML = state.game !== 'all' && gi ? `<img src="${mediaUrl(gi)}" alt="">` : ic('grid');
+  iconPicker();
   const v = $('#view');
   if (S.err === 'signin') v.innerHTML = `<div class="card empty">${ic('key')}<p>Sign in: open Agent HQ from the desktop shortcut (it adds your owner key), or use the <a href="${LEGACY}">old dashboard</a>.</p></div>`;
   else if (!S.loaded) v.innerHTML = S.err ? `<div class="card empty">${ic('x')}<p>Agent HQ did not answer: ${esc(S.err)}</p></div>` : loading();
@@ -665,7 +673,7 @@ document.addEventListener('click', e => {
   if (d.kind) { state.libKind = d.kind; return rerender(); }
   if (d.ctab) { state.createTab = d.ctab; return rerender(); }
   if (d.cgame !== undefined) { state.createGame = d.cgame; return rerender(); }
-  if (d.pick) { state.game = d.pick; location.hash = '#/home'; return route(); }
+  if (d.pick) { setGame(d.pick); location.hash = '#/home'; return route(); }
   if (d.pitch) return act(() => api('POST', `/api/pitches/${d.pitch}/decide`, { state: d.d === 'approve' ? 'approved' : 'declined' }), d.d === 'approve' ? 'Approved' : 'Passed').then(load);
   if (d.act) {
     switch (d.act) {
@@ -705,10 +713,10 @@ $('#gamePick').addEventListener('click', e => { e.stopPropagation(); openGameMen
 function openGameMenu(anchor) {
   const m = $('#gameMenu');
   if (!m.hidden) { m.hidden = true; return; }
-  m.innerHTML = [`<button data-g="all" class="${state.game === 'all' ? 'on' : ''}"><span class="gi">${ic('grid')}</span>All games</button>`, ...S.games.filter(g => !g.archivedAt).map(g => `<button data-g="${g.slug}" class="${state.game === g.slug ? 'on' : ''}"><span class="gi">${scene(sceneOf(g.slug))}</span>${esc(g.name)}</button>`)].join('');
+  m.innerHTML = [`<button data-g="all" class="${state.game === 'all' ? 'on' : ''}"><span class="gi">${ic('grid')}</span>All games</button>`, ...S.games.filter(g => !g.archivedAt).map(g => `<button data-g="${g.slug}" class="${state.game === g.slug ? 'on' : ''}"><span class="gi">${gameIcon(g)}</span>${esc(g.name)}</button>`)].join('');
   const r = anchor.getBoundingClientRect();
   m.style.left = r.left + 'px'; m.style.top = r.bottom + 6 + 'px'; m.hidden = false;
-  m.onclick = ev => { const b = ev.target.closest('[data-g]'); if (!b) return; state.game = b.dataset.g; m.hidden = true; rerender(); };
+  m.onclick = ev => { const b = ev.target.closest('[data-g]'); if (!b) return; setGame(b.dataset.g); m.hidden = true; };
 }
 
 // command palette
@@ -718,7 +726,7 @@ function cmdItems() {
     ...NAV_LEGACY.map(n => ({ label:n.label, icon:n.icon, hint:'Legacy', go:() => location.href = legacyHref(n.id) })),
     ...S.roles.map(r => ({ label:r.label, icon:role(r.id).icon, hint:'Role', go:() => { state.chatRole = r.id; X.msgs = null; location.hash = '#/lead/' + r.id; } })),
     ...S.tasks.filter(OPEN).map(t => ({ label:t.title, icon:'tasks', hint:STATE_LBL[t.state] || t.state, go:() => { state.openTask = t.id; location.hash = '#/tasks'; rerender(); } })),
-    ...S.games.map(g => ({ label:g.name, icon:'games', hint:'Game', go:() => { state.game = g.slug; location.hash = '#/home'; rerender(); } })),
+    ...S.games.map(g => ({ label:g.name, icon:'games', hint:'Game', go:() => { setGame(g.slug); location.hash = '#/home'; } })),
   ];
 }
 let cmdSel = 0, cmdList = [];
@@ -744,6 +752,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.key === 'Escape') $('#gameMenu').hidden = true;
+  if (!typing && $('#view').dataset.page === 'review' && /^[1-9]$/.test(e.key)) { const b = document.querySelectorAll('#view [data-opt]')[Number(e.key) - 1]; if (b) { e.preventDefault(); b.click(); return; } }
   if (typing || $('#view').dataset.page !== 'review' || !$('#chBox')) return;
   const map = { a:'approve', c:'changes', r:'reject' };
   if (map[e.key.toLowerCase()]) { e.preventDefault(); decide(map[e.key.toLowerCase()]); }
@@ -755,6 +764,52 @@ setInterval(() => { const s = Math.round((Date.now() - lastRefresh) / 1000); $('
 setInterval(() => { vaultIdx++; const el = $('#vaultLine'); const w = S.tasks.filter(t => t.state === 'working'); if (!el || w.length < 2) return; const t = w[vaultIdx % w.length]; el.style.transition = 'opacity .3s'; el.style.opacity = 0; setTimeout(() => { el.innerHTML = `<b>${esc(role(t.role).label)}</b> is working on ${esc(t.title)}`; el.style.opacity = 1; }, 300); }, 4500);
 setInterval(load, 60000);
 setInterval(() => { if (curPage() === 'chat') loadPage('chat', true); }, 20000); // safety net if the event stream drops
+
+// The icon picker: every live game needs an icon. Choices are that game's thumbnails, icons and concept images
+// (assets scoped to it, and pictures in its reviews). It cannot be closed without a pick; with no choices it offers to have some made.
+let pickerFor = '';
+async function iconPicker() {
+  const box = $('#iconPick');
+  const todo = S.loaded ? S.games.filter(x => !x.archivedAt && !x.icon) : [];
+  if (!todo.length) { if (box) box.hidden = true; pickerFor = ''; return; }
+  if (!X.assets) { try { X.assets = await api('GET', '/api/assets'); } catch { X.assets = { assets: [] }; } }
+  const choices = (g) => {
+    const fromAssets = (X.assets.assets || []).filter(a => a.scope === `game:${g.slug}` && ['thumbnail', 'icon', 'image'].includes(a.kind) && isImg(a.file) && !a.missing)
+      .sort((a, b) => ['thumbnail', 'icon', 'image'].indexOf(a.kind) - ['thumbnail', 'icon', 'image'].indexOf(b.kind)).map(a => ({ path: a.file, name: a.name }));
+    const fromReviews = S.asks.filter(a => a.mediaPath && isImg(a.mediaPath) && askGame(a) === g.slug).map(a => ({ path: a.mediaPath, name: a.title }));
+    const seen = new Set();
+    return [...fromAssets, ...fromReviews].filter(o => !seen.has(o.path) && seen.add(o.path)).slice(0, 24);
+  };
+  const asked = (g) => { try { return Date.now() - (Number(localStorage.getItem(`hq-icon-asked-${g.slug}`)) || 0) < 24 * 3600e3; } catch { return false; } };
+  // the first game that has options, or has not asked for some in the last day; a game waiting for its icons is skipped
+  const g = todo.find(x => choices(x).length || !asked(x));
+  if (!g) { if (box) box.hidden = true; pickerFor = ''; return; }
+  if (pickerFor === g.slug && box && !box.hidden) return;
+  pickerFor = g.slug;
+  const opts = choices(g);
+  const el = box || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'iconPick', className: 'icon-pick' }));
+  el.hidden = false;
+  el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'ipTitle');
+  el.innerHTML = `<div class="ip-card"><h2 id="ipTitle">Pick an icon for ${esc(g.name)}</h2><p class="sub">Every game needs one; it shows in the game menu and on its card. Pick from what the agents made for it.</p>
+    ${opts.length ? `<div class="ip-grid">${opts.map((o, i) => `<button class="ip-opt" data-ip="${i}" title="${esc(o.name)}"><img src="${mediaUrl(o.path)}" alt="${esc(o.name)}"></button>`).join('')}</div>`
+      : `<p>No thumbnails or concept images for this game yet.</p><button class="btn pill solid" data-ipmake="1">Ask the Thumbnails agent for 3 icon options</button>`}</div>`;
+  el.onclick = async (ev) => {
+    const b = ev.target.closest('[data-ip]');
+    if (b) {
+      const o = opts[Number(b.dataset.ip)];
+      if (await act(() => api('PATCH', `/api/games/${encodeURIComponent(g.slug)}`, { icon: o.path }), `${g.name} has its icon`)) { el.hidden = true; pickerFor = ''; await load(); }
+      return;
+    }
+    if (ev.target.closest('[data-ipmake]')) {
+      if (await act(() => api('POST', '/api/tasks', { role: 'thumbnails', game: g.slug, title: `3 square game icon options for ${g.name}`.slice(0, 200), body: `Make 3 square 512x512 game icon options for ${g.name}, save each with hq_asset_add as kind icon for this game, and ask the owner to pick one.` }), 'Queued for the Thumbnails agent')) {
+        el.innerHTML = `<div class="ip-card"><h2 id="ipTitle">Icons for ${esc(g.name)} are on the way</h2><p class="sub">The Thumbnails agent is making 3 options. This asks again when they are ready.</p></div>`;
+        setTimeout(() => { el.hidden = true; }, 2500);
+        try { localStorage.setItem(`hq-icon-asked-${g.slug}`, String(Date.now())); } catch { /* private mode */ }
+      }
+    }
+  };
+  el.querySelector('button')?.focus();
+}
 
 hydrate();
 window.addEventListener('hashchange', () => route());

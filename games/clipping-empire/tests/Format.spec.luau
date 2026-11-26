@@ -1,0 +1,22 @@
+local Format = shared("Format")
+
+test("short rounds down and never up a suffix", function()
+	assert(Format.short(999) == "999", Format.short(999))
+	assert(Format.short(999999) == "999.9K", Format.short(999999))
+	assert(Format.short(1000) == "1K", Format.short(1000))
+	assert(Format.short(1250000) == "1.2M", Format.short(1250000))
+	assert(Format.short(3e15) == "3Qa", Format.short(3e15))
+end)
+
+test("money adds the sign and dollar", function()
+	assert(Format.money(1500) == "$1.5K", Format.money(1500))
+	assert(Format.money(-20) == "-$20", Format.money(-20))
+	assert(Format.duration(75) == "1m 15s", Format.duration(75))
+end)
+
+test("multiplier labels round down and stay short", function()
+	assert(Format.mult(1) == "x1", Format.mult(1))
+	assert(Format.mult(2.25) == "x2.25", Format.mult(2.25))
+	assert(Format.mult(11.39) == "x11.3", Format.mult(11.39))
+	assert(Format.mult(1500) == "x1.5K", Format.mult(1500))
+end)
