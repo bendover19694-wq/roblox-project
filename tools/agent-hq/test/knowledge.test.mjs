@@ -315,3 +315,15 @@ test('routes: owner or agent token, bad input is a 400, nothing without a token'
   assert.equal((await get('/api/knowledge/read?source=docs&path=..%2F..%2Fx.md', s.token)).status, 400);
   assert.equal((await get('/api/knowledge/read?source=lihfolk&path=nope.md', s.token)).status, 404);
 });
+
+test('a note whose title holds every word of the query comes first, even from a low-trust source', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-kn-exact-'));
+  fs.mkdirSync(path.join(dir, 'research-notes'));
+  fs.mkdirSync(path.join(dir, 'research'));
+  fs.writeFileSync(path.join(dir, 'research-notes', 'ce-miami-ref-board.md'), '# CE-Miami ref board: palette and lighting\n\nSand #f4e1b5, coral #ff7f6e.\n');
+  for (let i = 0; i < 10; i++) fs.writeFileSync(path.join(dir, 'research', `n${i}.md`), `# Lighting note ${i}\n\npalette lighting board miami ref ce palette lighting\n`);
+  const k = createKnowledge({ env: {}, home: dir, root: dir, stateDir: dir });
+  const r = await k.search('CE-Miami ref board palette lighting');
+  assert.equal(r.results[0].title, 'CE-Miami ref board: palette and lighting');
+  assert.equal(r.results[0].source, 'notes');
+});
