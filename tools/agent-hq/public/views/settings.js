@@ -144,7 +144,7 @@ function youCard() {
 }
 
 // Roles that cannot change game files; only these can run on a partner's request without your OK (the server enforces it too).
-const PARTNER_OK = ['scout', 'designer', 'reviewer', 'kid-tester', 'playtester', 'liveops'];
+const PARTNER_OK = ['scout', 'liveops']; // the only roles that cannot write (server: PARTNER_AUTO_OK); the rest need level lane
 const LEVELS = [['read', 'Read only', 'Only roles that cannot edit files run on his say.'], ['lane', 'Edits in his lane', 'Editing roles run too, but only inside his co-op lane; files changed outside it come to you.'], ['all', 'Everything', 'Any role, the Lead included, any file. His text drives agents on your PC with your Claude account.']];
 function partnerCard() {
   const cur = { enabled: true, autoRoles: ['scout', 'designer'], dailyLimit: 5, level: 'read', ...(store.settings.partnerAccess || {}) };
