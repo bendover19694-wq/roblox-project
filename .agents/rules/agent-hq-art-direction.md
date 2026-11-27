@@ -2,6 +2,9 @@
 
 These rules are mandatory for every `generate_image` call made for Run a Space Agency, whether it comes from an Agent HQ task, `/hq-design`, the design automation, or a direct request. If a task asks for something that breaks a rule, follow the rule and say so in your `hq_note`. Evidence for each rule: `research/video-notes/roblox-art-direction-sources.md`.
 
+## 0. No image tool in this session? Make it by hand, then render
+On the instant claude-cli lane there is no `generate_image` and no Claude Design. Build the concept as an HTML page or SVG (real layout, the game's own palette, the shapes and type rules below) under `assets/concepts/` or `games/<slug>/assets/concepts/`, render it with `python scripts/render_concept.py <file.html|file.svg> <out.png> [width height]` (1600 x 900 by default; 2532 x 1170 for an iPhone 14 frame), look at the PNG with Read, fix what is wrong, then attach it with `hq_add_media` or `hq_ask_owner`. For a game other than Run a Space Agency, its own docs and palette replace the house style in section 2.
+
 ## 1. Hard limits (never break)
 - **Mild content only.** Cartoon, friendly, slapstick at most. No gore, horror, weapons aimed at people, scary faces, romance, gambling imagery, or real-world violence.
 - **Show only what exists in the game.** Rockets, the spaceport, Earth, orbit rings, the Moon, Mars, planets out to Titan, mission control panels, satellites, tourists in capsules, cash, crates of supplies. Never draw features, modes, rewards or characters the game does not have. Roblox moderates store images and rejects misrepresented gameplay.

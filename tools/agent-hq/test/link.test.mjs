@@ -245,7 +245,7 @@ test('partner access setting refuses roles that can change game files, and bad s
   }
   assert.equal((await allow(b, { enabled: true, autoRoles: [], dailyLimit: 51 })).status, 400);
   assert.equal((await allow(b, { enabled: 'yes', autoRoles: [], dailyLimit: 1 })).status, 400);
-  assert.equal((await allow(b, { enabled: true, autoRoles: ['designer', 'scout'], dailyLimit: 0 })).status, 200);
+  assert.equal((await allow(b, { enabled: true, autoRoles: ['liveops', 'scout'], dailyLimit: 0 })).status, 200); // the designer writes concept files now, so it is not read-only
   assert.equal((await b.call('POST', '/api/link/share', { title: 't', role: 'Bad Role' })).status, 400);
   assert.equal((await b.call('POST', '/api/link/partner-task', { text: 'x', role: 'scout' }, b.token)).status, 403); // owner only
 });
