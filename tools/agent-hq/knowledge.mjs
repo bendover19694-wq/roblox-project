@@ -286,7 +286,12 @@ export function createKnowledge({ env = process.env, home, root = REPO, stateDir
     const first = tier(1); const second = tier(2);
     // lower-trust sources come after, but always keep a quarter of the list when they have matches
     const b = Math.min(second.length, Math.max(Math.floor(limit / 4), limit - first.length));
-    const results = [...first.slice(0, limit - b), ...second.slice(0, b)];
+    // a title that holds every word of the query is what the agent asked for, whatever its tier (up to 3, before the rest)
+    const exact = tokens.length > 1 ? entries.filter((e) => tokens.every((t) => String(e.title).toLowerCase().includes(t))).slice(0, 3)
+      .map((e) => stamp(e.source, { source: e.source, title: e.title, path: e.path, snippet: e.snippet })) : [];
+    const key = (r) => `${r.source}:${r.path}`;
+    const seen = new Set(exact.map(key));
+    const results = [...exact, ...[...first.slice(0, limit - b), ...second.slice(0, b)].filter((r) => !seen.has(key(r)))].slice(0, limit);
     return { results, skipped };
   }
 
