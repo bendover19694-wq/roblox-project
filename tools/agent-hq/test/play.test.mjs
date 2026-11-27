@@ -36,3 +36,14 @@ test('no rojo, no project file, and a failed build each give a plain 409', async
     assert.equal(calls.open.length, 0);
   }
 });
+
+test('a game in its own folder builds its own project from that folder, not the root game', async () => {
+  const { play, calls, root } = setup();
+  fs.mkdirSync(path.join(root, 'games', 'clipping-empire'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'games', 'clipping-empire', 'default.project.json'), '{}');
+  await play('clipping-empire');
+  assert.equal(calls.run[0][1][1], path.join(root, 'games', 'clipping-empire', 'default.project.json'));
+  assert.equal(calls.run[0][2].cwd, path.join(root, 'games', 'clipping-empire'));
+  await play('space-agency'); // no games/space-agency folder: the root project
+  assert.equal(calls.run[1][1][1], path.join(root, 'default.project.json'));
+});

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { findExe } from './readiness.mjs';
+import { gameFolder } from './game-context.mjs';
 
 export class PlayError extends Error {
   constructor(message) { super(message); this.status = 409; this.expose = true; }
@@ -21,15 +22,16 @@ const openDefault = (file) => new Promise((resolve, reject) => {
 });
 
 export function createPlay({ root, stateDir, find = findExe, run = runDefault, open = openDefault }) {
-  /** Build <root>/default.project.json into <stateDir>/builds/<slug>.rbxlx and open it. Returns { ok, file }. */
+  /** Build the game's own project (games/<slug>/default.project.json, else the repo root's) into <stateDir>/builds/<slug>.rbxlx and open it. Returns { ok, file }. */
   return async function play(slug) {
     const rojo = find('rojo');
     if (!rojo) throw new PlayError('Rojo is not installed on this PC, so the place cannot be built. Install it with aftman, then try again.');
-    const project = path.join(root, 'default.project.json');
+    const dir = path.join(root, gameFolder(root, slug)); // a game in its own folder builds its own project, never the root game's
+    const project = path.join(dir, 'default.project.json');
     if (!fs.existsSync(project)) throw new PlayError('default.project.json was not found in the repo, so there is nothing to build.');
     const file = path.join(stateDir, 'builds', `${slug}.rbxlx`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    try { await run(rojo, ['build', project, '-o', file], { cwd: root }); } catch (e) {
+    try { await run(rojo, ['build', project, '-o', file], { cwd: dir }); } catch (e) {
       throw new PlayError(`Rojo could not build the place: ${String(e.stderr || e.message).trim().split(/\r?\n/)[0].slice(0, 200)}`);
     }
     try { await open(file); } catch (e) { throw new PlayError(`The place was built but could not be opened: ${String(e.message).slice(0, 160)}`); }
